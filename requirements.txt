@@ -1,0 +1,44 @@
+# Verificado por instalación + import-graph + pytest en este entorno
+# (ver GUIA_EJECUCION.md). torch y ultralytics no se pinnean: torch depende
+# de la plataforma (CPU/CUDA/MPS) — instalar siguiendo https://pytorch.org/get-started/locally/
+# antes de este archivo; ultralytics no se verificó en este entorno (no se
+# pudo instalar dentro del sandbox por tiempo), pinnear con la versión que
+# ya usa dataset/lstm_4class/05_extract_features.py si está fijada ahí.
+
+fastapi==0.138.0
+uvicorn==0.49.0
+pydantic==2.13.4
+
+aiortc==1.14.0
+av==16.1.0
+
+redis==8.0.0
+
+dependency-injector==4.49.1
+
+numpy==2.2.6
+opencv-python==4.13.0.92
+
+ultralytics
+# lap es requisito de BoT-SORT (tracker por defecto de model.track(persist=True)
+# y del BOTSORT instanciado a mano en fog/infrastructure/pose/yolo_pose_adapter.py
+# — verificado leyendo ultralytics/cfg/default.yaml en esta instalación, NO es
+# ByteTrack como decía este comentario antes; ver nota de discrepancia en el
+# docstring de yolo_pose_adapter.py sobre si el dataset de entrenamiento corrió
+# bajo el mismo default). Sin instalar, ultralytics lo autoinstala en el primer
+# track()/BOTSORT(...) de cada proceso (confirmado en consola real: "Ultralytics
+# requirement ['lap>=0.5.12'] not found, attempting AutoUpdate...", instaló
+# lap-0.5.13) lo cual bloquea esa llamada con una descarga de red y puede agotar
+# timeouts de quien espera el veredicto. Pinnear evita que ocurra en caliente.
+lap>=0.5.12
+
+# Requisito de fastapi.UploadFile/Form (POST /matches/{match_id}/clip, ver
+# fog/infrastructure/api/routes.py). NO estaba instalado en backend/.venv al
+# momento de agregar este endpoint (confirmado: find .venv -iname "*multipart*"
+# no encontró nada) — instalar antes de probar ese endpoint.
+python-multipart
+
+# Tests (no usados en producción)
+pytest==9.1.1
+pytest-asyncio==1.4.0
+httpx==0.28.1
