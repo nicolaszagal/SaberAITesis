@@ -16,7 +16,15 @@ redis==8.0.0
 
 dependency-injector==4.49.1
 
-numpy==2.2.6
+numpy==2.3.4
+# Antes pinneado en 2.2.6 (release de mayo 2025) — no publica wheel para
+# cp314 en ningún sistema, así que con Python 3.14 pip intenta compilarlo
+# desde el .tar.gz y falla si no hay toolchain de Fortran/C/meson instalado
+# (visto en Windows con Python 3.14.6: "error: metadata-generation-failed
+# ... Numpy"). NumPy agregó soporte/wheels de cp314 recién en la serie
+# 2.3.x; 2.3.4 los tiene confirmados para win_amd64. Quien instale con
+# Python <3.14 también puede usar 2.3.4 sin problema (no rompe compatibilidad
+# con opencv-python/ultralytics, que no pinnean un rango estricto de numpy).
 opencv-python==4.13.0.92
 
 ultralytics

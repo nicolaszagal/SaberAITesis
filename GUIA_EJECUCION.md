@@ -30,6 +30,22 @@ versión fijada para `dataset/lstm_4class/05_extract_features.py`, usar esa
 misma para evitar divergencias de comportamiento entre tracking de
 entrenamiento y producción.
 
+### Si `pip install -r requirements.txt` intenta compilar algo desde un `.tar.gz`
+
+En general significa que PyPI no tiene un wheel precompilado para tu
+combinación exacta de Python + sistema operativo, así que pip cae al código
+fuente — y compilarlo requiere herramientas (Fortran/C/meson) que Windows no
+trae instaladas por defecto, lo cual termina en `error: metadata-generation-failed`
+o similar. Confirmado en este proyecto: con Python 3.14 en Windows, `numpy`
+pinneado en una versión anterior a 2.3.x no tenía wheel para esa versión de
+Python y fallaba así (ya corregido en `requirements.txt`, pinneado en 2.3.4).
+Si te vuelve a pasar con otro paquete, normalmente alcanza con: (a) confirmar
+que tenés la versión más reciente de `pip` (`python -m pip install --upgrade pip`,
+versiones viejas de pip a veces no encuentran wheels que sí existen), o
+(b) si tu versión de Python es muy nueva (recién salida), usar una versión de
+Python algo más madura (ej. 3.12 o 3.13) donde la mayoría de paquetes ya
+tienen wheels publicados.
+
 ## 3. Variables de entorno (todas opcionales, ver `shared/config.py`)
 
 | variable                | default                                         | uso |
