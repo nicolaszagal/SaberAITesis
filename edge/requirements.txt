@@ -1,0 +1,9 @@
+# numpy pineado (transitivo de opencv-python-headless, no una dependencia
+# nueva): sin este pin, pip resuelve numpy>=2.0 y "import cv2" falla con
+# "ImportError: numpy.core.multiarray failed to import" — este build de
+# opencv es anterior a numpy 2.0 y no tiene el shim de compatibilidad de
+# ABI que sí traen releases de opencv-python posteriores. Verificado
+# reproduciendo el fallo e instalando numpy<2 para confirmarlo.
+numpy==1.26.4
+opencv-python-headless==4.9.0.80
+websockets==12.0

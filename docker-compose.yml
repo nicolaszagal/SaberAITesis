@@ -35,3 +35,32 @@ services:
     profiles: ["localdev"]
     ports:
       - "6379:6379"
+
+  # Captura local (iPhones con Larix -> RTMP -> MediaMTX -> RTSP -> edge/ ->
+  # WebSocket al front). Separado de "localdev" porque requiere hardware
+  # real (los dos iPhones) en la misma red, no solo el pipeline Fog/Cloud.
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    profiles: ["local"]
+    ports:
+      - "1935:1935" # RTMP entrada desde los iPhones (Larix)
+      - "8554:8554" # RTSP salida, consumida por edge/
+    restart: unless-stopped
+
+  edge:
+    build: ./edge
+    depends_on:
+      - mediamtx
+    ports:
+      - "8001:8001"
+    env_file:
+      - ./edge/.env
+    profiles: ["local"]
+    restart: unless-stopped
+    healthcheck:
+      # Sin -f: el servidor WebSocket responde 426 Upgrade Required a un
+      # GET plano, que curl -f trataría como error. Alcanza con que haya
+      # respuesta HTTP (el server está arriba y aceptando conexiones);
+      # solo falla si no logra ni conectar.
+      test: ["CMD-SHELL", "curl -s -o /dev/null http://localhost:8001/ || exit 1"]
+      interval: 30s

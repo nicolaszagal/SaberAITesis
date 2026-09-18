@@ -32,19 +32,13 @@ entrenamiento y producción.
 
 ### Si `pip install -r requirements.txt` intenta compilar algo desde un `.tar.gz`
 
-En general significa que PyPI no tiene un wheel precompilado para tu
-combinación exacta de Python + sistema operativo, así que pip cae al código
-fuente — y compilarlo requiere herramientas (Fortran/C/meson) que Windows no
-trae instaladas por defecto, lo cual termina en `error: metadata-generation-failed`
-o similar. Confirmado en este proyecto: con Python 3.14 en Windows, `numpy`
-pinneado en una versión anterior a 2.3.x no tenía wheel para esa versión de
-Python y fallaba así (ya corregido en `requirements.txt`, pinneado en 2.3.4).
-Si te vuelve a pasar con otro paquete, normalmente alcanza con: (a) confirmar
-que tenés la versión más reciente de `pip` (`python -m pip install --upgrade pip`,
-versiones viejas de pip a veces no encuentran wheels que sí existen), o
-(b) si tu versión de Python es muy nueva (recién salida), usar una versión de
-Python algo más madura (ej. 3.12 o 3.13) donde la mayoría de paquetes ya
-tienen wheels publicados.
+Normalmente significa que PyPI no tiene wheel precompilado para tu
+combinación de Python + SO (frecuente con versiones de Python muy nuevas) y
+pip cae a compilar desde código fuente, lo cual falla sin un toolchain de
+C/Fortran/meson instalado. Alcanza con: (a) actualizar pip
+(`python -m pip install --upgrade pip`), o (b) usar una versión de Python
+algo más madura (3.12/3.13) con más wheels publicados. Ver el comentario
+sobre `numpy==2.3.4` en `requirements.txt` para un caso concreto ya resuelto.
 
 ## 3. Variables de entorno (todas opcionales, ver `shared/config.py`)
 
@@ -83,6 +77,10 @@ mensajes está en `CONTRATO_API.md` sección 6.
 
 Cloud no expone HTTP; es un loop de consumo de Redis (`python -m cloud.main`)
 sin servidor.
+
+Edge (captura RTSP de los iPhones → WebSocket para el front) es un tercer
+servicio independiente, solo necesario si estás probando con video real de
+las cámaras — Fog/Cloud no dependen de él. Ver sección 6.4.
 
 ## 5. Tests
 
@@ -175,6 +173,59 @@ documentación, no por defecto del SDK):
 (mismo formato que ya usan `fog/composition.py` y `cloud/composition.py`
 vía `redis.from_url`).
 
+### 6.4 Edge, local (Docker) — captura RTSP → WebSocket
+
+Servicio independiente de Fog/Cloud: redistribuye el video de las dos
+cámaras como frames JPEG por WebSocket al front. No hace pose, features ni
+inferencia — eso sigue siendo trabajo de Fog/Cloud.
+
+```
+iPhone (Larix, RTMP) → mediamtx (RTSP) → edge/ (bridge WS) → front
+```
+
+**Requisitos:** dos iPhones con Larix Broadcaster (u otra app RTMP) en la
+misma red que la máquina que corre `mediamtx`, publicando a
+`rtmp://<IP de esa máquina>:1935/live/front` y `.../live/top`. Solo Docker
+— `mediamtx` no tiene instalación por venv, se usa la imagen oficial.
+
+```bash
+cd backend/edge
+cp .env.example .env   # completar si el RTSP no corre en localhost:8554
+```
+
+| variable          | default (`.env.example`)                          | requerida | uso |
+|--------------------|-----------------------------------------------------|-----------|-----|
+| `RTSP_FRONT_URL`   | `rtsp://host.docker.internal:8554/live/front`        | sí        | URL RTSP de la cámara "front" servida por mediamtx |
+| `RTSP_TOP_URL`     | `rtsp://host.docker.internal:8554/live/top`          | sí        | URL RTSP de la cámara "top" |
+| `WS_PORT`          | `8001`                                               | no        | puerto del servidor WebSocket |
+| `JPEG_QUALITY`     | `70`                                                 | no        | calidad de codificación JPEG (0-100) |
+| `TARGET_FPS`       | `15`                                                 | no        | framerate de redistribución hacia los clientes WS |
+
+Sin `RTSP_FRONT_URL`/`RTSP_TOP_URL` el proceso falla al arrancar con
+`KeyError` — comportamiento esperado (falla rápido en vez de arrancar mal
+configurado).
+
+Levantar (perfil `local`, separado de `localdev`: este requiere las
+cámaras físicas conectadas, no solo Fog/Cloud):
+
+```bash
+cd backend
+docker compose --profile local up mediamtx edge
+```
+
+Verificar:
+
+- **mediamtx** recibiendo el RTMP de los iPhones: sus logs deberían
+  mostrar la conexión entrante en `:1935`.
+- **edge** sirviendo WebSocket: conectarse a `ws://localhost:8001/front` o
+  `ws://localhost:8001/top` (un mensaje binario JPEG por frame). Un GET
+  HTTP plano a `http://localhost:8001/` responde `426 Upgrade Required`
+  — es el comportamiento esperado del healthcheck del compose, no un error.
+- **Reconexión:** si se corta la señal de un iPhone, los logs de `edge`
+  muestran `Stream perdido, reconectando en Xs...` (backoff 1s→2s→4s→8s)
+  y `Stream restaurado` al recuperarse — no hace falta reiniciar el
+  contenedor.
+
 ## 7. Limitaciones conocidas de esta entrega
 
 - Sin CI configurado (decisión explícita: tests corren manualmente).
@@ -183,3 +234,7 @@ vía `redis.from_url`).
 - Sin integración física con la luz Favero real; el front debe simularla y
   reportarla vía `POST /webrtc/{match_id}/luz` (ver `CONTRATO_API.md`).
 - Smoke test end-to-end con clip real del dataset todavía pendiente.
+- Edge no tiene tests automatizados ni conexión con Fog/Cloud (solo
+  redistribuye video crudo al front); su healthcheck de Docker verifica
+  que el servidor WebSocket responda, no que las cámaras RTSP estén
+  conectadas — para eso hay que mirar los logs (ver sección 6.4).
