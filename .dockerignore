@@ -1,0 +1,16 @@
+# Build context = backend/. dataset/yolov8x-pose.pt (133 MB) y el resto del
+# dataset grande NUNCA están acá (viven en el sibling ../dataset, fuera de
+# este repo) — esto solo evita mandar basura local al daemon de Docker.
+
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+tests/
+edge_test/
+
+.git/
+.DS_Store
+
+*.md

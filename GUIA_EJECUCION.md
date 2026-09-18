@@ -102,7 +102,80 @@ No cubierto por estos tests (pendiente, ver tarea "Smoke test end-to-end"):
 `YoloV8PoseAdapter` (requiere `ultralytics` + modelo real) y el flujo
 completo WebRTC -> Redis -> Cloud -> WebSocket con un clip real del dataset.
 
-## 6. Limitaciones conocidas de esta entrega
+## 6. Docker
+
+Fog y Cloud tienen imágenes separadas (`Dockerfile.fog`, `Dockerfile.cloud`)
+porque casi no comparten dependencias: Cloud es un worker puro (Redis +
+torch, sin FastAPI/aiortc/opencv/ultralytics — ver `requirements-cloud.txt`
+vs `requirements-fog.txt`).
+
+### 6.1 Fog, local
+
+```bash
+cd backend
+cp .env.example .env   # completar REDIS_URL (ver 6.3)
+docker compose build fog
+docker compose up fog
+```
+
+Requiere `dataset/` como sibling de `backend/` en tu filesystem (mismo
+layout que la sección 1 y que le pedimos replicar a Carlos) — se monta
+como volumen de solo lectura, no se hornea en la imagen.
+
+**Mac: WebRTC en Docker.** aiortc elige sus puertos UDP de ICE al azar (no
+se pueden fijar a un rango — confirmado por el maintainer de aiortc en
+[aiortc/aiortc#487](https://github.com/aiortc/aiortc/issues/487)), así que
+el contenedor de Fog necesita `network_mode: host` (ya seteado en
+`docker-compose.yml`) para que esos puertos sean alcanzables. Docker
+Desktop para Mac no soporta red de host de forma estable: hay un toggle
+beta desde la versión 4.34 (Settings > Resources > Network > **Enable host
+networking**; requiere haber iniciado sesión, desactivar *Enhanced
+Container Isolation*, y reiniciar Docker Desktop) pero la comunidad reporta
+inestabilidad. Si falla la conexión WebRTC con esto activado, el fallback
+es correr Fog con venv (sección 2) en vez de Docker — el endpoint de subir
+clip (`/matches/{match_id}/clip`) no usa WebRTC y funciona en Docker en Mac
+sin esto.
+
+### 6.2 Cloud, Render
+
+Antes de desplegar, confirmar que el checkpoint está comiteado y pusheado:
+
+```bash
+git status backend/dataset/lstm_4class/checkpoints/best_model.pt
+```
+
+Render solo ve lo que está en el repo de GitHub, no tu filesystem local —
+a diferencia de `dataset/yolov8x-pose.pt` (133 MB, de Fog), este checkpoint
+(556 KB) sí está pensado para vivir en el repo de `backend/`.
+
+En Render: **New > Background Worker** (no *Web Service* — Cloud no expone
+HTTP, y un Web Service espera que algún puerto responda al health check).
+Conectar el repo de GitHub y configurar:
+
+- **Dockerfile Path**: `Dockerfile.cloud`
+- **Root Directory**: vacío (el repo de GitHub que clonó Carlos ya es la
+  raíz que contiene `Dockerfile.cloud`)
+- Variable de entorno `REDIS_URL`: la misma URL de Upstash que usa Fog
+  (sección 6.3)
+
+### 6.3 Redis entre Fog (local) y Cloud (remoto)
+
+Con Fog corriendo en tu máquina y Cloud en Render, ambos necesitan ver el
+mismo Redis por internet. Comparé dos opciones (verificado en su
+documentación, no por defecto del SDK):
+
+- **Redis Key Value de Render**: requiere agregar tu IP a una allowlist
+  para habilitar la URL externa — se rompe si tu IP cambia (típico en
+  conexión residencial) o si corrés Fog desde otra red.
+- **Upstash**: por defecto acepta conexiones desde cualquier IP (solo
+  usuario/password + TLS, sin allowlist que mantener) — recomendado por
+  eso para este caso, donde Fog no corre siempre desde la misma red.
+
+`REDIS_URL` queda igual en ambos lados: `rediss://default:PASSWORD@HOST.upstash.io:PORT`
+(mismo formato que ya usan `fog/composition.py` y `cloud/composition.py`
+vía `redis.from_url`).
+
+## 7. Limitaciones conocidas de esta entrega
 
 - Sin CI configurado (decisión explícita: tests corren manualmente).
 - `MatchRepositoryPort` solo tiene implementación en memoria

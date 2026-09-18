@@ -53,5 +53,14 @@ class SessionRegistry:
     def get(self, match_id: str) -> MatchSession | None:
         return self._sessions.get(match_id)
 
+    def get_or_create_default(self, match_id: str) -> MatchSession:
+        """Para endpoints que aceptan un match_id no configurado antes vía
+        POST /matches/config: reutiliza la sesión existente (con su
+        weapon_side_A/B ya fijado) o crea una con el default right/right."""
+        session = self.get(match_id)
+        if session is None:
+            session = self.create(match_id, WeaponSide.RIGHT, WeaponSide.RIGHT)
+        return session
+
     def remove(self, match_id: str) -> None:
         self._sessions.pop(match_id, None)

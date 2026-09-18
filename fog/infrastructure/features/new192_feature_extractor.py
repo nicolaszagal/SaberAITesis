@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from fog.domain.models import ExtractedFeatures, TrackedSequence, WeaponSide
+from fog.domain.models import ExtractedFeatures, PersonPose, TrackedSequence, WeaponSide
 from fog.ports.feature_extractor import FeatureExtractorPort
 from shared.feature_extractor import FEAT_VEL, TOTAL_FEATURES, extract_person_features, interpolate_sequence
 
@@ -32,6 +32,32 @@ _VEL_CLAMP = 5.0
 # columnas en 0 — replicarlo es necesario para que la accuracy en
 # producción coincida con la documentada (53.8% / 66.3% con máscara Favero).
 DEFAULT_ABLATE_INDICES = [95, 191]
+
+
+class _PersonTrackState:
+    """Estado de un tirador que `extract_person_features` necesita del
+    frame anterior para calcular velocidades/deltas. Encapsula la tupla de
+    6 valores previos que antes se repetía en dos variables paralelas
+    (una por tirador) en `_extract_sequence`."""
+
+    def __init__(self):
+        self.prev_rel = np.zeros(FEAT_VEL, dtype=np.float32)
+        self.prev_dist_ankles = 0.0
+        self.prev_weapon_ext = 0.0
+        self.prev_cm_x = 0.0
+        self.prev_cm_y = 0.0
+        self.prev_elbow_angle = 0.0
+
+    def step(self, person: PersonPose, frame_w: int, frame_h: int, weapon_side: WeaponSide) -> np.ndarray:
+        (
+            feat, self.prev_rel, self.prev_dist_ankles, self.prev_weapon_ext,
+            self.prev_cm_x, self.prev_cm_y, self.prev_elbow_angle,
+        ) = extract_person_features(
+            person.detected, person.keypoints_xy, person.keypoints_conf, person.box_xyxy,
+            frame_w, frame_h, self.prev_rel, self.prev_dist_ankles, self.prev_weapon_ext,
+            weapon_side.value, self.prev_cm_x, self.prev_cm_y, self.prev_elbow_angle,
+        )
+        return feat
 
 
 class New192FeatureExtractor(FeatureExtractorPort):
@@ -77,35 +103,15 @@ class New192FeatureExtractor(FeatureExtractorPort):
                 "frames_processed": frames_processed,
             })
 
-        prev_rel_a = np.zeros(FEAT_VEL, dtype=np.float32)
-        prev_rel_b = np.zeros(FEAT_VEL, dtype=np.float32)
-        prev_dist_ankles_a = prev_dist_ankles_b = 0.0
-        prev_weapon_ext_a = prev_weapon_ext_b = 0.0
-        prev_cm_x_a = prev_cm_y_a = prev_elbow_angle_a = 0.0
-        prev_cm_x_b = prev_cm_y_b = prev_elbow_angle_b = 0.0
+        state_a = _PersonTrackState()
+        state_b = _PersonTrackState()
 
         seq_a: list[np.ndarray] = []
         seq_b: list[np.ndarray] = []
 
         for tf in tracked.frames:
-            feat_a, prev_rel_a, prev_dist_ankles_a, prev_weapon_ext_a, prev_cm_x_a, prev_cm_y_a, prev_elbow_angle_a = (
-                extract_person_features(
-                    tf.person_a.detected, tf.person_a.keypoints_xy, tf.person_a.keypoints_conf,
-                    tf.person_a.box_xyxy, tracked.frame_w, tracked.frame_h,
-                    prev_rel_a, prev_dist_ankles_a, prev_weapon_ext_a, weapon_side_a.value,
-                    prev_cm_x_a, prev_cm_y_a, prev_elbow_angle_a,
-                )
-            )
-            feat_b, prev_rel_b, prev_dist_ankles_b, prev_weapon_ext_b, prev_cm_x_b, prev_cm_y_b, prev_elbow_angle_b = (
-                extract_person_features(
-                    tf.person_b.detected, tf.person_b.keypoints_xy, tf.person_b.keypoints_conf,
-                    tf.person_b.box_xyxy, tracked.frame_w, tracked.frame_h,
-                    prev_rel_b, prev_dist_ankles_b, prev_weapon_ext_b, weapon_side_b.value,
-                    prev_cm_x_b, prev_cm_y_b, prev_elbow_angle_b,
-                )
-            )
-            seq_a.append(feat_a)
-            seq_b.append(feat_b)
+            seq_a.append(state_a.step(tf.person_a, tracked.frame_w, tracked.frame_h, weapon_side_a))
+            seq_b.append(state_b.step(tf.person_b, tracked.frame_w, tracked.frame_h, weapon_side_b))
 
         seq_a, corr_a = interpolate_sequence(seq_a)
         seq_b, corr_b = interpolate_sequence(seq_b)

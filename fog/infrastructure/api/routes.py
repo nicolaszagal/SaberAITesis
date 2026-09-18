@@ -146,9 +146,7 @@ async def webrtc_luz(
     body: LuzRequest,
     sessions: SessionRegistry = Depends(Provide[Container.sessions]),
 ) -> LuzAck:
-    session = sessions.get(match_id)
-    if session is None:
-        session = sessions.create(match_id, WeaponSide.RIGHT, WeaponSide.RIGHT)
+    session = sessions.get_or_create_default(match_id)
     session.set_luz(LuzSignal(has_luz_a=body.has_luz_A, has_luz_b=body.has_luz_B))
     return LuzAck(match_id=match_id, has_luz_A=body.has_luz_A, has_luz_B=body.has_luz_B)
 
@@ -187,9 +185,7 @@ async def upload_clip(
     executor: Executor = Depends(Provide[Container.executor]),
     verdict_timeout_s: float = Depends(Provide[Container.config.clip_upload_verdict_timeout_s]),
 ) -> ClipUploadResponse:
-    session = sessions.get(match_id)
-    if session is None:
-        session = sessions.create(match_id, WeaponSide.RIGHT, WeaponSide.RIGHT)
+    session = sessions.get_or_create_default(match_id)
 
     tracked = await process_uploaded_clip(file, pose_estimator, executor)
 
@@ -231,9 +227,7 @@ async def ws_veredicto(
     documentado en CONTRATO_API.md y en VerdictMessage (schemas.py). Envía
     un único mensaje JSON con el veredicto en cuanto está disponible."""
     await websocket.accept()
-    session = sessions.get(match_id)
-    if session is None:
-        session = sessions.create(match_id, WeaponSide.RIGHT, WeaponSide.RIGHT)
+    session = sessions.get_or_create_default(match_id)
     session.ws = websocket
 
     try:
@@ -241,14 +235,7 @@ async def ws_veredicto(
             # Conexión tardía: el veredicto ya llegó (ForwardVerdictToClient
             # no pudo enviarlo porque session.ws aún no existía). Lo mandamos
             # nosotros, una sola vez.
-            verdict = session.verdict
-            await websocket.send_json({
-                "type": "veredicto",
-                "match_id": verdict.match_id,
-                "fencer": verdict.fencer,
-                "action": verdict.action,
-                "confidence": verdict.confidence,
-            })
+            await websocket.send_json(session.verdict.to_ws_message())
         else:
             # Conexión temprana: session.ws ya quedó asignado arriba, así que
             # cuando el veredicto llegue será fog.application.forward_verdict.

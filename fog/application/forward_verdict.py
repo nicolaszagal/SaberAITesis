@@ -29,10 +29,4 @@ class ForwardVerdictToClient:
 
         session.set_verdict(verdict)
         if session.ws is not None:
-            await session.ws.send_json({
-                "type": "veredicto",
-                "match_id": verdict.match_id,
-                "fencer": verdict.fencer,
-                "action": verdict.action,
-                "confidence": verdict.confidence,
-            })
+            await session.ws.send_json(verdict.to_ws_message())

@@ -98,6 +98,15 @@ class VerdictView:
     action: str
     confidence: float
 
+    def to_ws_message(self) -> dict:
+        return {
+            "type": "veredicto",
+            "match_id": self.match_id,
+            "fencer": self.fencer,
+            "action": self.action,
+            "confidence": self.confidence,
+        }
+
 
 @dataclass
 class Match:

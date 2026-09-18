@@ -1,0 +1,37 @@
+# Uso local. Cloud "real" se despliega en Render con Dockerfile.cloud
+# directo (no con este compose) — ver GUIA_EJECUCION.md sección Docker.
+# Acá: Fog corriendo en esta máquina contra Redis remoto (Upstash u otro),
+# y opcionalmente Cloud + un Redis local solo para probar el pipeline
+# completo sin depender de Render/Upstash mientras desarrollás.
+
+services:
+  fog:
+    build:
+      context: .
+      dockerfile: Dockerfile.fog
+    # Necesario para que aiortc/WebRTC sea alcanzable (ver el comentario
+    # largo en Dockerfile.fog). En Docker Desktop para Mac, requiere
+    # habilitar el toggle beta "Enable host networking" antes de levantar
+    # este servicio, o el front no va a poder completar la conexión WebRTC.
+    network_mode: host
+    env_file:
+      - .env
+    volumes:
+      # Sibling de backend/, igual estructura que ya usás en venv (y la que
+      # le pedimos a Carlos replicar). Solo lectura: el contenedor no
+      # necesita escribir ahí.
+      - ../dataset:/app/dataset:ro
+
+  cloud:
+    build:
+      context: .
+      dockerfile: Dockerfile.cloud
+    profiles: ["localdev"]
+    env_file:
+      - .env
+
+  redis:
+    image: redis:7-alpine
+    profiles: ["localdev"]
+    ports:
+      - "6379:6379"
