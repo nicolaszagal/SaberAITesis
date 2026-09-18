@@ -189,15 +189,26 @@ misma red que la máquina que corre `mediamtx`, publicando a
 — `mediamtx` no tiene instalación por venv, se usa la imagen oficial.
 
 **`mediamtx` no se levanta desde `backend/`.** Ya está definido en
-`../SaberAISoftware/docker-compose.yml` (contenedor `sabre_mediamtx`,
-mismo profile `local`, mismos puertos 1935/8554) — es una única instancia
-compartida por todo el sistema (front y Edge le apuntan a la misma), no
-una por repo. Antes de levantar Edge, confirmar que está arriba:
+`SaberAISoftware/docker-compose.yml` (sibling de `backend/` — mismo nivel
+que `dataset/`, ver sección 1), contenedor `sabre_mediamtx`, mismo profile
+`local`, mismos puertos 1935/8554 — es una única instancia compartida por
+todo el sistema (front y Edge le apuntan a la misma), no una por repo.
+
+Antes de levantar Edge, **desde cualquier lado**, confirmar si ya está
+arriba:
 
 ```bash
 docker ps --filter name=sabre_mediamtx
-# si no aparece:
-cd ../SaberAISoftware
+```
+
+Si el comando anterior no devuelve ninguna fila (no si ya aparece
+`sabre_mediamtx` corriendo, como es lo normal si el front ya lo levantó
+antes), recién ahí hace falta levantarlo — desde `SaberAISoftware/`, **no**
+desde `backend/` ni `backend/edge/` (ese repo tiene su propio
+`docker-compose.yml`, distinto al de `backend/`):
+
+```bash
+cd ../SaberAISoftware   # sibling de backend/, no backend/edge/
 docker compose --profile local up -d mediamtx
 ```
 
