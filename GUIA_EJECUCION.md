@@ -188,6 +188,19 @@ misma red que la máquina que corre `mediamtx`, publicando a
 `rtmp://<IP de esa máquina>:1935/live/front` y `.../live/top`. Solo Docker
 — `mediamtx` no tiene instalación por venv, se usa la imagen oficial.
 
+**`mediamtx` no se levanta desde `backend/`.** Ya está definido en
+`../SaberAISoftware/docker-compose.yml` (contenedor `sabre_mediamtx`,
+mismo profile `local`, mismos puertos 1935/8554) — es una única instancia
+compartida por todo el sistema (front y Edge le apuntan a la misma), no
+una por repo. Antes de levantar Edge, confirmar que está arriba:
+
+```bash
+docker ps --filter name=sabre_mediamtx
+# si no aparece:
+cd ../SaberAISoftware
+docker compose --profile local up -d mediamtx
+```
+
 ```bash
 cd backend/edge
 cp .env.example .env   # completar si el RTSP no corre en localhost:8554
@@ -206,25 +219,47 @@ Sin `RTSP_FRONT_URL`/`RTSP_TOP_URL` el proceso falla al arrancar con
 configurado).
 
 Levantar (perfil `local`, separado de `localdev`: este requiere las
-cámaras físicas conectadas, no solo Fog/Cloud):
+cámaras físicas conectadas, no solo Fog/Cloud), con `mediamtx` ya arriba
+(paso anterior):
 
 ```bash
 cd backend
-docker compose --profile local up mediamtx edge
+docker compose --profile local up edge
 ```
 
 Verificar:
 
-- **mediamtx** recibiendo el RTMP de los iPhones: sus logs deberían
-  mostrar la conexión entrante en `:1935`.
 - **edge** sirviendo WebSocket: conectarse a `ws://localhost:8001/front` o
   `ws://localhost:8001/top` (un mensaje binario JPEG por frame). Un GET
   HTTP plano a `http://localhost:8001/` responde `426 Upgrade Required`
-  — es el comportamiento esperado del healthcheck del compose, no un error.
-- **Reconexión:** si se corta la señal de un iPhone, los logs de `edge`
-  muestran `Stream perdido, reconectando en Xs...` (backoff 1s→2s→4s→8s)
-  y `Stream restaurado` al recuperarse — no hace falta reiniciar el
-  contenedor.
+  — es el comportamiento esperado del healthcheck del compose, no un error
+  (`docker ps` debería mostrar el contenedor como `healthy`).
+- **Reconexión:** si se corta la señal de un iPhone después de haber
+  transmitido, los logs de `edge` muestran `Stream perdido, reconectando
+  en Xs...` (backoff 1s→2s→4s→8s) y `Stream restaurado` al recuperarse —
+  no hace falta reiniciar el contenedor.
+
+**`Sin stream todavía (¿nadie publicó a .../live/front?)` en loop no es un
+error** — es el estado normal mientras ningún iPhone esté transmitiendo
+todavía a ese path (`edge` sigue reintentando con backoff hasta que
+alguien publique; en los logs de `mediamtx` esto se ve como `no stream is
+available on path 'live/front'`). Solo es un problema real si persiste
+**después** de que Larix confirme que está transmitiendo.
+
+**Probar el pipeline sin los iPhones**, publicando un patrón de prueba con
+`ffmpeg` desde la misma máquina que corre `mediamtx` (confirma
+mediamtx + edge de punta a punta antes de depender del hardware):
+
+```bash
+ffmpeg -re -f lavfi -i testsrc=size=320x240:rate=10 \
+  -c:v libx264 -g 10 -pix_fmt yuv420p -f flv rtmp://localhost:1935/live/front
+```
+
+`mediamtx` tarda unos segundos desde que abre la conexión RTMP hasta que
+loggea `stream is available and online` (necesita ver el primer
+keyframe) — no implica ningún problema, solo hay que esperarlo antes de
+que `edge` loggee `Stream restaurado` y un cliente WS empiece a recibir
+frames.
 
 ## 7. Limitaciones conocidas de esta entrega
 

@@ -29,6 +29,7 @@ class CameraCapture:
         self._backoff_s = _INITIAL_BACKOFF_S
         self._next_attempt_at = 0.0
         self._reconnecting = False
+        self._ever_connected = False
 
     def read_frame(self) -> bytes | None:
         """Lee y codifica un frame a JPEG. None si todavía no toca
@@ -66,6 +67,7 @@ class CameraCapture:
         if self._reconnecting:
             logger.info("[Edge][%s] Stream restaurado", self._name)
             self._reconnecting = False
+        self._ever_connected = True
         return True
 
     def _disconnect(self) -> None:
@@ -76,8 +78,14 @@ class CameraCapture:
 
     def _schedule_retry(self) -> None:
         self._reconnecting = True
-        logger.warning(
-            "[Edge][%s] Stream perdido, reconectando en %ds...", self._name, int(self._backoff_s)
-        )
+        if self._ever_connected:
+            logger.warning(
+                "[Edge][%s] Stream perdido, reconectando en %ds...", self._name, int(self._backoff_s)
+            )
+        else:
+            logger.warning(
+                "[Edge][%s] Sin stream todavía (¿nadie publicó a %s?), "
+                "reintentando en %ds...", self._name, self._rtsp_url, int(self._backoff_s)
+            )
         self._next_attempt_at = time.monotonic() + self._backoff_s
         self._backoff_s = min(self._backoff_s * 2, _MAX_BACKOFF_S)

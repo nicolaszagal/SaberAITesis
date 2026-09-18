@@ -39,18 +39,20 @@ services:
   # Captura local (iPhones con Larix -> RTMP -> MediaMTX -> RTSP -> edge/ ->
   # WebSocket al front). Separado de "localdev" porque requiere hardware
   # real (los dos iPhones) en la misma red, no solo el pipeline Fog/Cloud.
-  mediamtx:
-    image: bluenviron/mediamtx:latest
-    profiles: ["local"]
-    ports:
-      - "1935:1935" # RTMP entrada desde los iPhones (Larix)
-      - "8554:8554" # RTSP salida, consumida por edge/
-    restart: unless-stopped
-
+  #
+  # MediaMTX NO se levanta desde acá: ya lo define
+  # SaberAISoftware/docker-compose.yml (servicio "mediamtx", contenedor
+  # sabre_mediamtx, mismo profile "local", mismos puertos 1935/8554) — es
+  # una única instancia compartida por todo el sistema, no una por
+  # servicio. Definirla también acá causaba "port is already allocated" al
+  # chocar con sabre_mediamtx, y si igual arrancaba, este contenedor se
+  # quedaba sin publicar sus puertos (los tenía sabre_mediamtx) mientras
+  # edge terminaba hablándole a sabre_mediamtx de todos modos vía
+  # host.docker.internal — funcionaba por accidente, no por diseño. Antes
+  # de `docker compose --profile local up edge` acá, levantar mediamtx
+  # desde SaberAISoftware/ (`docker compose --profile local up mediamtx`).
   edge:
     build: ./edge
-    depends_on:
-      - mediamtx
     ports:
       - "8001:8001"
     env_file:
