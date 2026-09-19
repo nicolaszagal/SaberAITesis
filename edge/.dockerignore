@@ -1,0 +1,9 @@
+# COPY . . en edge/Dockerfile copia todo este directorio a la imagen —
+# excluir lo que no debe viajar ahí (secretos, config local, metadata de
+# git/compose que no hace falta dentro del contenedor).
+.env
+docker-compose.yml
+__pycache__/
+*.pyc
+.git/
+.DS_Store

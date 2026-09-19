@@ -102,29 +102,45 @@ completo WebRTC -> Redis -> Cloud -> WebSocket con un clip real del dataset.
 
 ## 6. Docker
 
-Fog y Cloud tienen imágenes separadas (`Dockerfile.fog`, `Dockerfile.cloud`)
-porque casi no comparten dependencias: Cloud es un worker puro (Redis +
-torch, sin FastAPI/aiortc/opencv/ultralytics — ver `requirements-cloud.txt`
-vs `requirements-fog.txt`).
+Cada módulo (`fog/`, `cloud/`, `edge/`) tiene su propio `Dockerfile` y su
+propio `docker-compose.yml`, independientes entre sí — no hay un
+`docker-compose.yml` único en la raíz de `backend/`. Fog y Cloud casi no
+comparten dependencias (Cloud es un worker puro: Redis + torch, sin
+FastAPI/aiortc/opencv/ultralytics — ver `requirements-cloud.txt` vs
+`requirements-fog.txt`), pero ambos sí dependen de `shared/` (config,
+feature extractor, clasificador LSTM), que vive en la raíz de `backend/`
+— por eso, aunque el `Dockerfile` de cada uno vive dentro de su propio
+directorio (igual que `edge/Dockerfile`), el **build context sigue siendo
+`backend/`** (ver el `context: ..` en `fog/docker-compose.yml` y
+`cloud/docker-compose.yml`), no el directorio del módulo. `edge/` es la
+excepción: no depende de `shared/`, así que su `docker-compose.yml` sí
+buildea con contexto propio (`build: .`).
+
+Ningún módulo tiene ya un `.env.example` — las variables que necesita cada
+uno están documentadas en la sección 3 (Fog/Cloud) y en la 6.4 (Edge); se
+crea el `.env` de cada módulo a mano con esos valores.
 
 ### 6.1 Fog, local
 
 ```bash
-cd backend
-cp .env.example .env   # completar REDIS_URL (ver 6.3)
+cd backend/fog
+cat > .env <<'EOF'
+REDIS_URL=rediss://default:PASSWORD@HOST.upstash.io:PORT
+EOF
 docker compose build fog
 docker compose up fog
 ```
 
 Requiere `dataset/` como sibling de `backend/` en tu filesystem (mismo
-layout que la sección 1 y que le pedimos replicar a Carlos) — se monta
-como volumen de solo lectura, no se hornea en la imagen.
+layout que la sección 1) — se monta como volumen de solo lectura
+(`../../dataset` desde `fog/docker-compose.yml`, dos niveles arriba para
+llegar al sibling de `backend/`), no se hornea en la imagen.
 
 **Mac: WebRTC en Docker.** aiortc elige sus puertos UDP de ICE al azar (no
 se pueden fijar a un rango — confirmado por el maintainer de aiortc en
 [aiortc/aiortc#487](https://github.com/aiortc/aiortc/issues/487)), así que
 el contenedor de Fog necesita `network_mode: host` (ya seteado en
-`docker-compose.yml`) para que esos puertos sean alcanzables. Docker
+`fog/docker-compose.yml`) para que esos puertos sean alcanzables. Docker
 Desktop para Mac no soporta red de host de forma estable: hay un toggle
 beta desde la versión 4.34 (Settings > Resources > Network > **Enable host
 networking**; requiere haber iniciado sesión, desactivar *Enhanced
@@ -150,9 +166,14 @@ En Render: **New > Background Worker** (no *Web Service* — Cloud no expone
 HTTP, y un Web Service espera que algún puerto responda al health check).
 Conectar el repo de GitHub y configurar:
 
-- **Dockerfile Path**: `Dockerfile.cloud`
-- **Root Directory**: vacío (el repo de GitHub que clonó Carlos ya es la
-  raíz que contiene `Dockerfile.cloud`)
+- **Dockerfile Path**: `cloud/Dockerfile` (cambió de `Dockerfile.cloud` —
+  si el servicio de Render ya estaba configurado con la ruta vieja desde
+  antes de este reordenamiento, **hay que actualizarlo a mano en el
+  dashboard de Render**, esto no se propaga solo)
+- **Root Directory**: vacío — el build sigue necesitando la raíz de
+  `backend/` como contexto (`cloud/Dockerfile` hace `COPY shared/ shared/`
+  y `COPY dataset/lstm_4class/checkpoints/...`, ambos fuera de `cloud/`),
+  no cambia aunque el Dockerfile ahora viva dentro de `cloud/`
 - Variable de entorno `REDIS_URL`: la misma URL de Upstash que usa Fog
   (sección 6.3)
 
@@ -172,6 +193,13 @@ documentación, no por defecto del SDK):
 `REDIS_URL` queda igual en ambos lados: `rediss://default:PASSWORD@HOST.upstash.io:PORT`
 (mismo formato que ya usan `fog/composition.py` y `cloud/composition.py`
 vía `redis.from_url`).
+
+`fog/docker-compose.yml` y `cloud/docker-compose.yml` incluyen además,
+cada uno, un servicio `redis` propio bajo el perfil `localdev`
+(`docker compose --profile localdev up`) — solo para probar ese módulo de
+forma aislada contra un Redis local sin depender de Upstash mientras
+desarrollás; no reemplaza el `REDIS_URL` compartido de arriba para correr
+Fog y Cloud juntos.
 
 ### 6.4 Edge, local (Docker) — captura RTSP → WebSocket
 
@@ -214,10 +242,16 @@ docker compose --profile local up -d mediamtx
 
 ```bash
 cd backend/edge
-cp .env.example .env   # completar si el RTSP no corre en localhost:8554
+cat > .env <<'EOF'
+RTSP_FRONT_URL=rtsp://host.docker.internal:8554/live/front
+RTSP_TOP_URL=rtsp://host.docker.internal:8554/live/top
+WS_PORT=8001
+JPEG_QUALITY=70
+TARGET_FPS=15
+EOF
 ```
 
-| variable          | default (`.env.example`)                          | requerida | uso |
+| variable          | default arriba                                       | requerida | uso |
 |--------------------|-----------------------------------------------------|-----------|-----|
 | `RTSP_FRONT_URL`   | `rtsp://host.docker.internal:8554/live/front`        | sí        | URL RTSP de la cámara "front" servida por mediamtx |
 | `RTSP_TOP_URL`     | `rtsp://host.docker.internal:8554/live/top`          | sí        | URL RTSP de la cámara "top" |
@@ -229,13 +263,13 @@ Sin `RTSP_FRONT_URL`/`RTSP_TOP_URL` el proceso falla al arrancar con
 `KeyError` — comportamiento esperado (falla rápido en vez de arrancar mal
 configurado).
 
-Levantar (perfil `local`, separado de `localdev`: este requiere las
-cámaras físicas conectadas, no solo Fog/Cloud), con `mediamtx` ya arriba
-(paso anterior):
+Levantar, con `mediamtx` ya arriba (paso anterior) — `edge/docker-compose.yml`
+es propio del módulo, no hace falta `--profile` ni correr desde `backend/`:
 
 ```bash
-cd backend
-docker compose --profile local up edge
+cd backend/edge
+docker compose up -d edge
+docker compose logs -f edge   # opcional, ver los logs sin bloquear la terminal
 ```
 
 Verificar:

@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+*.egg-info/
+
+# macOS
+.DS_Store
+
+# Config local por módulo (fog/.env, cloud/.env, edge/.env) — nunca
+# comitear, cada quien crea el suyo siguiendo GUIA_EJECUCION.md sección 3.
+.env
+
+# Excepción intencional: dataset/lstm_4class/checkpoints/best_model.pt SÍ
+# se comitea (556 KB) porque Render solo ve lo que está en el repo de
+# GitHub — ver GUIA_EJECUCION.md sección 6.2 y cloud/Dockerfile.

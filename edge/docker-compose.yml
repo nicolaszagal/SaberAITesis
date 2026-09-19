@@ -1,0 +1,22 @@
+# Uso local de Edge (bridge RTSP -> WebSocket). Build context = edge/
+# (self-contained: a diferencia de fog/cloud, no depende de shared/).
+#
+# Requiere el mediamtx compartido de SaberAISoftware/docker-compose.yml ya
+# arriba (ver GUIA_EJECUCION.md sección 6.4) — no se define acá, es una
+# única instancia compartida por todo el sistema, no una por repo.
+
+services:
+  edge:
+    build: .
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      # Sin -f: el servidor WebSocket responde 426 Upgrade Required a un
+      # GET plano, que curl -f trataría como error. Alcanza con que haya
+      # respuesta HTTP (el server está arriba y aceptando conexiones);
+      # solo falla si no logra ni conectar.
+      test: ["CMD-SHELL", "curl -s -o /dev/null http://localhost:8001/ || exit 1"]
+      interval: 30s

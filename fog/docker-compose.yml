@@ -1,0 +1,35 @@
+# Uso local de Fog (API Gateway WebRTC + extracción de pose/features).
+#
+# Build context = backend/ (no fog/): fog depende de shared/ (config,
+# feature_extractor, lstm_classifier), que vive un nivel arriba de este
+# directorio — ver fog/Dockerfile.
+#
+# Cloud "real" corre en Render aparte, con su propio Dockerfile
+# (ver ../cloud/docker-compose.yml y GUIA_EJECUCION.md sección 6.2). El
+# servicio "redis" de abajo es opcional — solo para probar Fog+Cloud+Redis
+# 100% local sin depender de un Redis remoto mientras desarrollás
+# (perfil "localdev"; por defecto Fog apunta al REDIS_URL de fog/.env).
+
+services:
+  fog:
+    build:
+      context: ..
+      dockerfile: fog/Dockerfile
+    # Necesario para que aiortc/WebRTC sea alcanzable (ver el comentario
+    # largo en fog/Dockerfile). En Docker Desktop para Mac, requiere
+    # habilitar el toggle beta "Enable host networking" antes de levantar
+    # este servicio, o el front no va a poder completar la conexión WebRTC.
+    network_mode: host
+    env_file:
+      - .env
+    volumes:
+      # Sibling de backend/ (dos niveles arriba de fog/), mismo layout que
+      # la sección 1 de GUIA_EJECUCION.md. Solo lectura: el contenedor no
+      # necesita escribir ahí.
+      - ../../dataset:/app/dataset:ro
+
+  redis:
+    image: redis:7-alpine
+    profiles: ["localdev"]
+    ports:
+      - "6379:6379"

@@ -1,6 +1,11 @@
-# Build context = backend/. dataset/yolov8x-pose.pt (133 MB) y el resto del
-# dataset grande NUNCA están acá (viven en el sibling ../dataset, fuera de
-# este repo) — esto solo evita mandar basura local al daemon de Docker.
+# Build context = backend/, usado por fog/Dockerfile y cloud/Dockerfile
+# (ambos dependen de shared/, que vive acá en la raíz — ver
+# fog/docker-compose.yml y cloud/docker-compose.yml). edge/ se buildea con
+# su propio contexto (edge/.dockerignore) y no pasa por acá.
+#
+# dataset/yolov8x-pose.pt (133 MB) y el resto del dataset grande NUNCA
+# están acá (viven en el sibling ../dataset, fuera de este repo) — esto
+# solo evita mandar basura local al daemon de Docker.
 
 .venv/
 __pycache__/
@@ -8,9 +13,16 @@ __pycache__/
 .pytest_cache/
 
 tests/
-edge_test/
+edge/
 
 .git/
 .DS_Store
 
 *.md
+
+# No hornear el Dockerfile/compose de cada módulo dentro de su propia
+# imagen (COPY fog/ fog/ y COPY cloud/ cloud/ los incluirían si no).
+fog/Dockerfile
+fog/docker-compose.yml
+cloud/Dockerfile
+cloud/docker-compose.yml
