@@ -80,6 +80,8 @@ sobre `numpy==2.3.4` en `requirements.txt` para un caso concreto ya resuelto.
 | `FEATURE_STATS_PATH`    | — (obligatoria, DEF-15)                         | mean/std de estandarización (Fog) |
 | `FEATURE_PREPROCESSING_PROFILE` | — (obligatoria)                         | perfil de recorte/ablación por versión de modelo (Fog) |
 | `FEATURE_PREPROCESSING_PROFILES_PATH` | JSON junto a `preprocessing_profile.py` | archivo de perfiles alternativo (Fog) |
+| `DATABASE_URL`          | — (sin default; credenciales)                   | PostgreSQL 16, `postgresql+asyncpg://usuario:clave@host:5432/base` (Fog) |
+| `STORAGE_DIR`           | — (sin default)                                 | raíz del almacenamiento local de clips y keypoints `.npz` por SHA-256 (Fog); en Docker, `/data/storage` |
 | `FAVERO_LUZ_TIMEOUT_S`  | `2.0`                                           | espera máxima de la luz Favero antes de clasificar sin ella |
 | `CLOUD_CONSUMER_NAME`   | `cloud-worker-1`                                | nombre de consumidor en el grupo `cloud_workers` (relevante si se levanta más de una instancia de Cloud) |
 
@@ -176,6 +178,22 @@ EOF
 docker compose build fog
 docker compose up fog
 ```
+
+**Base PostgreSQL.** `fog/docker-compose.yml` también levanta `postgres`
+(`postgres:16-alpine`, volumen `sabre_pgdata`; los clips y keypoints van en el
+volumen `sabre_storage`). Agregar a `fog/.env` `POSTGRES_PASSWORD` y
+`DATABASE_URL=postgresql+asyncpg://sabre:<POSTGRES_PASSWORD>@localhost:5432/sabre`.
+El esquema `sabre` lo crea Alembic (migración `0001`, que ejecuta
+`docs_claude/sabre_ai_schema.sql` tal cual). Desde `backend/`, con el venv y
+`DATABASE_URL` exportada, o dentro del contenedor (`docker compose exec fog alembic upgrade head`):
+
+```bash
+alembic upgrade head
+```
+
+Las pruebas de la migración usan `TEST_DATABASE_URL` (base vacía, p. ej. el
+servicio de CI) o un contenedor de testcontainers. Con Colima hace falta
+`TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`.
 
 Requiere `dataset/` como sibling de `backend/` en tu filesystem (mismo
 layout que la sección 1) — se monta como volumen de solo lectura

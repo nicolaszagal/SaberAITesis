@@ -25,3 +25,9 @@ lap>=0.5.12
 
 # Requisito de fastapi.UploadFile/Form (POST /matches/{match_id}/clip).
 python-multipart
+
+# Persistencia (PostgreSQL 16, esquema `sabre`): SQLAlchemy 2 async + asyncpg
+# + migraciones Alembic (ver alembic.ini y fog/infrastructure/persistence/).
+sqlalchemy[asyncio]==2.1.1
+asyncpg==0.31.0
+alembic==1.20.0

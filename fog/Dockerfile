@@ -56,6 +56,7 @@ RUN pip install --no-cache-dir -r requirements-fog.txt -c constraints.txt
 
 COPY fog/ fog/
 COPY shared/ shared/
+COPY alembic.ini .
 
 EXPOSE 8001
 

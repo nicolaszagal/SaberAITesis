@@ -22,8 +22,10 @@ from fog.infrastructure.features.new192_feature_extractor import New192FeatureEx
 from fog.infrastructure.features.preprocessing_profile import load_profile
 from fog.infrastructure.messaging.redis_feature_publisher import RedisFeaturePublisher
 from fog.infrastructure.messaging.redis_verdict_subscriber import RedisVerdictSubscriber
+from fog.infrastructure.persistence.database import build_engine, build_session_factory
 from fog.infrastructure.persistence.in_memory_match_repository import InMemoryMatchRepository
 from fog.infrastructure.pose.yolo_pose_adapter import YoloV8PoseAdapter
+from fog.infrastructure.storage.local_file_storage import LocalFileStorage
 from fog.infrastructure.webrtc.session_registry import SessionRegistry
 
 
@@ -66,6 +68,12 @@ class Container(containers.DeclarativeContainer):
     )
 
     match_repository = providers.Singleton(InMemoryMatchRepository)
+
+    db_engine = providers.Singleton(build_engine, database_url=config.database_url)
+
+    db_session_factory = providers.Singleton(build_session_factory, engine=db_engine)
+
+    file_storage = providers.Singleton(LocalFileStorage, root=config.storage_dir)
 
     feature_publisher = providers.Singleton(RedisFeaturePublisher, client=redis_client)
 
