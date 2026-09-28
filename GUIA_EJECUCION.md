@@ -15,6 +15,12 @@
   - `FEATURE_STATS_PATH` (Fog) — ruta al `.npz` con mean/std de las 192
     features (ver `dataset/lstm_4class/compute_stats.py`, ubicación
     histórica).
+  - `FEATURE_PREPROCESSING_PROFILE` (Fog) — nombre de la versión de modelo
+    cuyo recorte (±kσ) y ablación se aplican tras estandarizar (p. ej.
+    `lstm_6class`). Se define en
+    `fog/infrastructure/features/preprocessing_profiles.json` o en el archivo
+    que indique `FEATURE_PREPROCESSING_PROFILES_PATH` (opcional); debe
+    corresponder al `.npz` de `FEATURE_STATS_PATH`.
   - `LSTM_CHECKPOINT_PATH` (Cloud) — ruta al checkpoint del LSTM desplegado
     (`best_model.pt`, ubicación histórica en
     `dataset/lstm_4class/checkpoints/`).
@@ -71,7 +77,9 @@ sobre `numpy==2.3.4` en `requirements.txt` para un caso concreto ya resuelto.
 | `REDIS_URL`             | `redis://localhost:6379/0`                      | conexión Fog y Cloud |
 | `YOLO_POSE_MODEL_PATH`  | `dataset/yolov8x-pose.pt`                       | modelo de pose (Fog) |
 | `LSTM_CHECKPOINT_PATH`  | `dataset/lstm_4class/checkpoints/best_model.pt` | checkpoint LSTM (Cloud) |
-| `FEATURE_STATS_PATH`    | `dataset/lstm_4class/feature_stats.npz`         | mean/std de estandarización (Fog) |
+| `FEATURE_STATS_PATH`    | — (obligatoria, DEF-15)                         | mean/std de estandarización (Fog) |
+| `FEATURE_PREPROCESSING_PROFILE` | — (obligatoria)                         | perfil de recorte/ablación por versión de modelo (Fog) |
+| `FEATURE_PREPROCESSING_PROFILES_PATH` | JSON junto a `preprocessing_profile.py` | archivo de perfiles alternativo (Fog) |
 | `FAVERO_LUZ_TIMEOUT_S`  | `2.0`                                           | espera máxima de la luz Favero antes de clasificar sin ella |
 | `CLOUD_CONSUMER_NAME`   | `cloud-worker-1`                                | nombre de consumidor en el grupo `cloud_workers` (relevante si se levanta más de una instancia de Cloud) |
 
@@ -357,3 +365,13 @@ frames.
   redistribuye video crudo al front); su healthcheck de Docker verifica
   que el servidor WebSocket responda, no que las cámaras RTSP estén
   conectadas — para eso hay que mirar los logs (ver sección 6.4).
+
+## Pruebas lentas (paridad entrenamiento ↔ Fog)
+
+`pytest tests/ -q` excluye las pruebas marcadas `slow`. La paridad de features
+(`tests/fog/test_feature_parity_training_vs_fog.py`) usa YOLO real y 3 clips de
+`dataset/dataset trimmed/test_trimmed`:
+
+```bash
+pytest tests/fog/test_feature_parity_training_vs_fog.py -m slow -q
+```

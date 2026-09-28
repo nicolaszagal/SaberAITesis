@@ -142,7 +142,7 @@ Cada clip procesado por Fog genera **una sola entrada** en el stream:
 | `match_id`      | str   | igual que el de la oferta                                                           |
 | `shape`         | str   | `"T,192"` (T = frames reales del clip)                                              |
 | `dtype`         | str   |  `"float32"`                                                                        |
-| `features`      | bytes | `array.tobytes()` — array `(T,192)` ya en el orden A(96)+B(96), estandarizado con `feature_stats.npz` y con ablación aplicada en los índices 95/191 (vel_elbow_angle, igual que en entrenamiento)                                                                                           |
+| `features`      | bytes | `array.tobytes()` — array `(T,192)` ya en el orden A(96)+B(96), estandarizado con `feature_stats.npz`, con el recorte y la ablación del perfil `FEATURE_PREPROCESSING_PROFILE` de la versión de modelo (igual que en entrenamiento) y con cm_vel_x/y y body_speed relativos al rival (`0.5·(abs_A − abs_B)`, DEF-27)                                                                                           |
 | `has_luz_A`     | str   | `"true"`/`"false"`, lo reportado en la sección 3 (o `"false"` si no llegó a tiempo) |
 | `has_luz_B`     | str   | idem para B                                                                         |
 | `weapon_side_A` | str   | reenviado tal cual                                                                  |

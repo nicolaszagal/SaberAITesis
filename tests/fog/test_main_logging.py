@@ -12,6 +12,7 @@ def test_importing_fog_main_does_not_force_aioice_debug_logging(monkeypatch):
     de selección de candidatos ICE de aiortc.
     """
     monkeypatch.setattr(config, "FEATURE_STATS_PATH", "/tmp/feature_stats.npz")
+    monkeypatch.setattr(config, "FEATURE_PREPROCESSING_PROFILE", "lstm_6class")
     logging.getLogger("aioice.ice").setLevel(logging.NOTSET)
 
     import fog.main

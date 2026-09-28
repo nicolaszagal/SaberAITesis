@@ -1,8 +1,8 @@
 """Configuración compartida entre Fog y Cloud. Todo override-able por env var.
 
-Pipeline desplegado: lstm_4class (192 features, 4 clases, luz Favero como
-input del modelo, attention pooling). El pipeline anterior (182 features,
-6 clases, sin luz) quedó descartado — ver PLAN_ARQUITECTURA_DDD.md.
+Features de Fog: 192 por frame, idénticas a dataset/05_extract_features.py;
+recorte y ablación por versión de modelo (FEATURE_PREPROCESSING_PROFILE).
+Los valores de Cloud (LSTM_*) siguen siendo los de 4 clases hasta cerrar DEF-03.
 """
 
 import os
@@ -58,11 +58,13 @@ LSTM_NUM_CLASSES = 4
 LUZ_SIZE = 2
 USE_ATTENTION = True
 
-# Ablación diagnóstica de Fase B (vel_elbow_angle de A y B) — el checkpoint
-# desplegado se entrenó y evaluó con estas columnas en 0 (ver
-# dataset/lstm_4class/lstm_dataset.py, ABLATE_INDICES). Replicarla en
-# producción es necesaria para igualar la accuracy documentada.
-ABLATE_INDICES = [95, 191]
+# Preprocesamiento de features por versión de modelo (recorte ±kσ y ablación
+# de columnas): nombre del perfil definido en
+# fog/infrastructure/features/preprocessing_profiles.json (o en el archivo de
+# FEATURE_PREPROCESSING_PROFILES_PATH). Sin default: debe coincidir con el
+# checkpoint y las estadísticas desplegadas (ver require_paths()).
+FEATURE_PREPROCESSING_PROFILE = os.environ.get("FEATURE_PREPROCESSING_PROFILE")
+FEATURE_PREPROCESSING_PROFILES_PATH = os.environ.get("FEATURE_PREPROCESSING_PROFILES_PATH")
 
 MIN_FRAMES = 3
 
