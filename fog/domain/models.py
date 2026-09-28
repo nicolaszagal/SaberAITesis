@@ -87,6 +87,42 @@ class LuzSignal:
         return LuzSignal(has_luz_a=False, has_luz_b=False)
 
 
+class MotivoNoDisponible(str, Enum):
+    """Motivos de `clasificacion.motivo_no_disp` (docs_claude/sabre_ai_schema.sql).
+    Fog solo produce POSE_INCOMPLETA: es el único caso que FeatureExtractorPort
+    detecta (sin lock A/B, o secuencia bajo min_frames — ver
+    New192FeatureExtractor.extract). CONFIANZA_BAJA (umbral no documentado)
+    y CLASE_FUERA_MVP son responsabilidad de Cloud; TIMEOUT lo usa Fog
+    cuando Cloud no responde (ver ClipUploadResponse.timed_out); SIN_SENAL_FAVERO
+    no aplica en v1 (Fog no bloquea el procesamiento por falta de luz, ver
+    LuzSignal.none())."""
+
+    POSE_INCOMPLETA = "pose_incompleta"
+    CONFIANZA_BAJA = "confianza_baja"
+    CLASE_FUERA_MVP = "clase_fuera_mvp"
+    TIMEOUT = "timeout"
+    SIN_SENAL_FAVERO = "sin_senal_favero"
+
+
+@dataclass(frozen=True)
+class UnavailableResult:
+    """Resultado "no disponible" (RF-13, CU-06 flujo alterno 1a): Fog no
+    pudo extraer features válidas y no llega a publicar en Redis. A
+    diferencia de VerdictView, nunca sale de Fog vía Redis — se entrega
+    directo a la sesión (WebSocket o respuesta síncrona de
+    POST /matches/{match_id}/clip)."""
+
+    match_id: str
+    motivo: MotivoNoDisponible
+
+    def to_ws_message(self) -> dict:
+        return {
+            "type": "no_disponible",
+            "match_id": self.match_id,
+            "motivo": self.motivo.value,
+        }
+
+
 @dataclass
 class VerdictView:
     """Veredicto tal como lo recibe Fog desde Cloud, listo para reenviar al
