@@ -14,6 +14,16 @@ STREAM_FEATURES = "fog:features"
 GROUP_CLOUD = "cloud_workers"
 CONSUMER_CLOUD = os.environ.get("CLOUD_CONSUMER_NAME", "cloud-worker-1")
 
+# Dead-letter de fog:features: entradas que RedisFeatureConsumer no pudo
+# parsear (campo faltante, shape/dtype/tamaño de buffer inconsistente),
+# con el motivo agregado. Ver CONTRATO_API.md sección 5 y DEF-09.
+STREAM_FEATURES_DEAD = "fog:features:dead"
+
+# Tiempo mínimo que una entrada debe estar pendiente (sin ACK) en el grupo
+# de consumidores antes de que Cloud la reclame con XAUTOCLAIM al arrancar
+# (worker anterior que murió entre XREADGROUP y XACK). Ver DEF-09.
+CLAIM_MIN_IDLE_S = float(os.environ.get("CLAIM_MIN_IDLE_S", "60.0"))
+
 # Cloud -> Fog (un stream por match_id)
 VERDICT_STREAM_PREFIX = "cloud:verdicts:"
 
@@ -69,6 +79,13 @@ CLIP_UPLOAD_VERDICT_TIMEOUT_S = float(os.environ.get("CLIP_UPLOAD_VERDICT_TIMEOU
 
 # Mapeo fijo v1, confirmado por Nicolas: A=ROJ (izquierda en cámara), B=VER (derecha).
 FENCER_COLOR = {"A": "ROJ", "B": "VER"}
+
+# Nombre de la versión del modelo activo, publicado en cada veredicto para
+# auditoría (RF-22, DEF-09) — ver CONTRATO_API.md sección 6. No hay registro
+# de versiones todavía (CU-13, modelo_version en sabre_ai_schema.sql sigue
+# pendiente de implementar): se fija explícitamente por entorno, sin default,
+# para no inventar un nombre que no corresponda al checkpoint desplegado.
+MODEL_VERSION_NAME = os.environ.get("MODEL_VERSION_NAME")
 
 
 def require_paths(*names: str) -> None:

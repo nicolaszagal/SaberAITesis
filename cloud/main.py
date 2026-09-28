@@ -28,6 +28,12 @@ log = logging.getLogger("cloud")
 
 async def main() -> None:
     config.require_paths("LSTM_CHECKPOINT_PATH")
+    if not config.MODEL_VERSION_NAME:
+        raise RuntimeError(
+            "Falta la variable de entorno MODEL_VERSION_NAME: nombre de la "
+            "versión del modelo activo, requerido para auditoría en cada "
+            "veredicto publicado (ver CONTRATO_API.md sección 6, DEF-09)."
+        )
 
     container = Container()
     container.config.redis_url.from_value(config.REDIS_URL)

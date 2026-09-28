@@ -128,22 +128,69 @@ Cada clip procesado por Fog genera **una sola entrada** en el stream:
 Cloud consume con un grupo de consumidores `cloud_workers` (1 worker por pista, según
 diagrama). Reconstrucción: `np.frombuffer(features, dtype=dtype).reshape(shape)`.
 
+**Validación y tolerancia a fallos (DEF-09).** `RedisFeatureConsumer` valida cada entrada
+antes de reconstruir el array: campos obligatorios presentes (`match_id`, `shape`,
+`dtype`, `features`, `weapon_side_A`, `weapon_side_B`), `dtype == "float32"`,
+`shape == "T,192"` con `T >= 1`, y `len(features) == T * 192 * 4` bytes. Una entrada que
+no cumple el contrato:
+
+1. Se loguea (una línea, con el motivo).
+2. Se publica un veredicto `disponible=false` en `cloud:verdicts:{match_id}` con
+   `motivo_no_disp="mensaje_invalido"` (si el propio `match_id` no era legible, no hay
+   veredicto que publicar).
+3. Se mueve a `fog:features:dead` (mismos campos + `motivo` + `entry_id_original`) y se
+   hace `XACK` sobre `fog:features` — sin esto, la entrada queda pendiente para siempre y
+   `XREADGROUP ">"` nunca vuelve a entregarla tras un reinicio.
+
+Cualquier otra excepción durante el procesamiento de una entrada (clasificador,
+arbitraje, publisher) también se captura por mensaje: nunca detiene el loop de Cloud, solo
+se pierde el veredicto de esa entrada (queda en el log).
+
+Al arrancar, Cloud reclama con `XAUTOCLAIM` las entradas que quedaron pendientes de un
+worker anterior que murió entre `XREADGROUP` y el `XACK` (idle mínimo configurable por
+`CLAIM_MIN_IDLE_S`, 60 s por defecto) y las reprocesa con la misma validación antes de
+entrar al loop de lectura bloqueante.
+
 ## 6. Cloud → Fog: `cloud:verdicts:{match_id}` (Redis Stream)
 
-Una entrada por veredicto:
+Una entrada por veredicto. `disponible` distingue dos formas (igual que
+`clasificacion.disponible` en `sabre_ai_schema.sql`):
+
+**`disponible=true`:**
 
 | campo | tipo | descripción |
 |---|---|---|
 | `match_id` | str | |
+| `disponible` | str | `"true"` |
 | `action_class` | str | una de `AttackA, AttackB, ResponseA, ResponseB` |
 | `confidence` | str | probabilidad softmax de la clase ganadora (post arbitraje de luz), `"0.0"`-`"1.0"` |
 | `fencer` | str | `"ROJ"` si la clase termina en `A`, `"VER"` si termina en `B` (mapeo fijo v1) |
+| `probs` | str | JSON `{"AttackA": 0.61, ...}` — softmax completo, post filtro Favero (auditoría, RF-22) |
+| `latencia_inferencia_ms` | str | duración de `ActionClassifierPort.classify` en ms (auditoría, RNF-04) |
+| `modelo` | str | `shared.config.MODEL_VERSION_NAME` — nombre de la versión del modelo activo |
+| `ts` | str | timestamp ISO |
+
+**`disponible=false`** (DEF-09, mensaje de `fog:features` inválido — ver sección 5):
+
+| campo | tipo | descripción |
+|---|---|---|
+| `match_id` | str | |
+| `disponible` | str | `"false"` |
+| `motivo_no_disp` | str | uno de `clasificacion.motivo_no_disp` (`sabre_ai_schema.sql`); hoy solo `"mensaje_invalido"` |
 | `ts` | str | timestamp ISO |
 
 `action_class` ya viene resuelto por `FaveroHardMaskPolicy`: si exactamente una luz se
 encendió, el lado imposible queda con probabilidad 0 y se re-normaliza/re-argmax antes
 de publicar. Si ambas luces o ninguna se encendieron (caso ambiguo), el veredicto crudo
 del LSTM se publica sin cambios.
+
+**Pendiente (fuera de esta entrega):** `RedisVerdictSubscriber` en Fog
+(`fog/infrastructure/messaging/redis_verdict_subscriber.py`) todavía asume que toda
+entrada de este stream trae `action_class`/`confidence`/`fencer` y no lee `disponible` —
+una entrada `disponible=false` le va a lanzar `KeyError`. Fog necesita un cambio
+correspondiente para manejar este caso antes de que DEF-09 sea visible end-to-end en el
+front; no está incluido acá porque no toca ninguno de los archivos de Cloud de esta
+entrega.
 
 Fog mantiene una tarea de fondo por `match_id` activo que hace `XREAD` bloqueante sobre
 este stream y reenvía el resultado por WebSocket en cuanto llega.
@@ -178,12 +225,16 @@ este mismo WebSocket:
 
 `motivo` es uno de `clasificacion.motivo_no_disp`
 (`sabre_ai_schema.sql`): `pose_incompleta`, `confianza_baja`,
-`clase_fuera_mvp`, `timeout`, `sin_senal_favero`. Hoy Fog solo puede
+`clase_fuera_mvp`, `timeout`, `sin_senal_favero`, `mensaje_invalido`. Hoy Fog solo puede
 producir `pose_incompleta` (los dos únicos errores que devuelve
 `FeatureExtractorPort.extract` — sin lock A/B, o secuencia bajo
 `min_frames` — mapean a ese motivo); `confianza_baja` y
 `clase_fuera_mvp` son responsabilidad de Cloud y no están implementados
-todavía (el umbral de confianza no está documentado).
+todavía (el umbral de confianza no está documentado). `mensaje_invalido`
+(DEF-09) lo produce Cloud cuando una entrada de `fog:features` no respeta
+el contrato — hoy solo llega a Fog vía `cloud:verdicts:{match_id}`
+(sección 6); todavía no se reenvía por este WebSocket (ver pendiente en
+sección 6).
 
 Carlos debe traducir `action` (taxonomía interna en inglés, 4 clases) a las etiquetas en
 español que ya usa el front (`mock.ts`: "ATAQUE AL PECHO", "PARADA-RESPUESTA",

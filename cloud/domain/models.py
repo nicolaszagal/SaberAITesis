@@ -55,12 +55,51 @@ class RawVerdict:
     probs: dict[str, float] = field(default_factory=dict)  # softmax completo, por clase
 
 
+class MotivoNoDisponible(str, Enum):
+    """Motivos de `clasificacion.motivo_no_disp` (docs_claude/sabre_ai_schema.sql).
+    Cloud produce MENSAJE_INVALIDO cuando una entrada de `fog:features` no
+    respeta el contrato (campo obligatorio faltante, shape/dtype/tamaño de
+    buffer inconsistentes — ver CONTRATO_API.md sección 5 y DEF-09). Los
+    demás valores son responsabilidad de Fog (POSE_INCOMPLETA,
+    SIN_SENAL_FAVERO, ver fog/domain/models.py) o de una etapa de Cloud
+    todavía no implementada (CONFIANZA_BAJA, CLASE_FUERA_MVP, TIMEOUT)."""
+
+    POSE_INCOMPLETA = "pose_incompleta"
+    CONFIANZA_BAJA = "confianza_baja"
+    CLASE_FUERA_MVP = "clase_fuera_mvp"
+    TIMEOUT = "timeout"
+    SIN_SENAL_FAVERO = "sin_senal_favero"
+    MENSAJE_INVALIDO = "mensaje_invalido"
+
+
+@dataclass(frozen=True)
+class InvalidFeatureMessage:
+    """Entrada de `fog:features` que RedisFeatureConsumer no pudo parsear
+    (DEF-09). `match_id` es None si ni ese campo estaba presente/decodificable
+    — en ese caso no hay dónde publicar el veredicto "no disponible"."""
+
+    match_id: str | None
+    motivo: MotivoNoDisponible
+    detalle: str
+
+
 @dataclass
 class Verdict:
     """Veredicto final, después de aplicar ArbitrationPolicyPort. Es lo
-    que se publica en `cloud:verdicts:{match_id}` para Fog."""
+    que se publica en `cloud:verdicts:{match_id}` para Fog.
+
+    Dos formas, igual que `clasificacion` en sabre_ai_schema.sql:
+    - disponible=True: `action_class`, `confidence`, `fencer`, `probs`,
+      `latencia_inferencia_ms` y `modelo` van completos; `motivo_no_disp` es None.
+    - disponible=False: solo `match_id` y `motivo_no_disp`; el resto queda None.
+    """
 
     match_id: str
-    action_class: ActionClass
-    confidence: float
-    fencer: str  # "ROJ" o "VER", ver shared.config.FENCER_COLOR
+    disponible: bool
+    action_class: ActionClass | None = None
+    confidence: float | None = None
+    fencer: str | None = None  # "ROJ" o "VER", ver shared.config.FENCER_COLOR
+    probs: dict[str, float] | None = None  # softmax post filtro Favero, por clase
+    latencia_inferencia_ms: int | None = None
+    modelo: str | None = None  # shared.config.MODEL_VERSION_NAME
+    motivo_no_disp: str | None = None  # uno de MotivoNoDisponible, si disponible=False
