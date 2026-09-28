@@ -44,5 +44,5 @@ def run_migrations_online() -> None:
 
 
 if context.is_offline_mode():
-    raise RuntimeError("Las migraciones solo corren en modo online (alembic upgrade head).")
+    raise RuntimeError("Solo modo online: usar alembic upgrade head.")
 run_migrations_online()
