@@ -5,9 +5,25 @@
 - Python 3.10+ (verificado con 3.10).
 - Redis corriendo y accesible (broker entre Fog y Cloud). Sin Redis, ni Fog ni
   Cloud arrancan.
-- `dataset/yolov8x-pose.pt`, `dataset/lstm_4class/checkpoints/best_model.pt` y
-  `dataset/lstm_4class/feature_stats.npz` presentes en el repo (rutas por
-  defecto en `shared/config.py`, todas override-ables por env var).
+- `dataset/yolov8x-pose.pt` presente en el repo (ruta por defecto en
+  `shared/config.py`, override-able con `YOLO_POSE_MODEL_PATH`).
+- **Variables de entorno obligatorias, sin default (DEF-15):**
+  `dataset/lstm_4class/` ya no existe en este repo, así que las rutas que
+  antes apuntaban ahí no tienen valor por defecto. Fog y Cloud fallan al
+  arrancar con `RuntimeError: Faltan variables de entorno requeridas: ...`
+  si no están seteadas:
+  - `FEATURE_STATS_PATH` (Fog) — ruta al `.npz` con mean/std de las 192
+    features (ver `dataset/lstm_4class/compute_stats.py`, ubicación
+    histórica).
+  - `LSTM_CHECKPOINT_PATH` (Cloud) — ruta al checkpoint del LSTM desplegado
+    (`best_model.pt`, ubicación histórica en
+    `dataset/lstm_4class/checkpoints/`).
+
+  Fijar ambas con la ubicación vigente del modelo antes de arrancar, p.ej.:
+  ```bash
+  export FEATURE_STATS_PATH=/ruta/a/feature_stats.npz
+  export LSTM_CHECKPOINT_PATH=/ruta/a/best_model.pt
+  ```
 
 ## 2. Instalación
 

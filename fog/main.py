@@ -47,6 +47,8 @@ log = logging.getLogger("fog")
 # lento. Quitar una vez confirmado/descartado.
 logging.getLogger("aioice.ice").setLevel(logging.DEBUG)
 
+config.require_paths("FEATURE_STATS_PATH")
+
 container = Container()
 container.config.redis_url.from_value(config.REDIS_URL)
 container.config.yolo_pose_model_path.from_value(config.YOLO_POSE_MODEL_PATH)

@@ -25,20 +25,22 @@ YOLO_POSE_MODEL_PATH = os.environ.get(
 
 # Checkpoint del modelo LSTM desplegado (lstm_4class: 4 clases, 192 features,
 # luz Favero, attention). Seleccionado por val loss — ver PLAN_ARQUITECTURA_DDD.md.
-LSTM_CHECKPOINT_PATH = os.environ.get(
-    "LSTM_CHECKPOINT_PATH",
-    os.path.join(
-        os.path.dirname(__file__), "..", "..", "dataset", "lstm_4class", "checkpoints", "best_model.pt"
-    ),
-)
+#
+# Sin default (DEF-15): antes apuntaba a dataset/lstm_4class/checkpoints/
+# best_model.pt, que ya no existe en este repo. No se reemplaza por otra
+# ruta a ciegas — Cloud debe fijar esta variable explícitamente con la
+# ubicación vigente del checkpoint (ver require_paths() más abajo y
+# GUIA_EJECUCION.md).
+LSTM_CHECKPOINT_PATH = os.environ.get("LSTM_CHECKPOINT_PATH")
 
 # Estadísticas de estandarización (mean/std, shape (192,), calculadas solo
 # sobre train) — ver dataset/lstm_4class/compute_stats.py. FeatureExtractorPort
 # en Fog las usa para replicar el preprocesamiento de entrenamiento.
-FEATURE_STATS_PATH = os.environ.get(
-    "FEATURE_STATS_PATH",
-    os.path.join(os.path.dirname(__file__), "..", "..", "dataset", "lstm_4class", "feature_stats.npz"),
-)
+#
+# Sin default (DEF-15): antes apuntaba a dataset/lstm_4class/feature_stats.npz,
+# que ya no existe en este repo. Fog debe fijar esta variable explícitamente
+# con la ubicación vigente (ver require_paths() más abajo y GUIA_EJECUCION.md).
+FEATURE_STATS_PATH = os.environ.get("FEATURE_STATS_PATH")
 
 LSTM_HIDDEN_SIZE = 64
 LSTM_NUM_LAYERS = 1
@@ -67,3 +69,32 @@ CLIP_UPLOAD_VERDICT_TIMEOUT_S = float(os.environ.get("CLIP_UPLOAD_VERDICT_TIMEOU
 
 # Mapeo fijo v1, confirmado por Nicolas: A=ROJ (izquierda en cámara), B=VER (derecha).
 FENCER_COLOR = {"A": "ROJ", "B": "VER"}
+
+
+def require_paths(*names: str) -> None:
+    """Falla con un mensaje explícito si alguna ruta requerida no está seteada.
+
+    dataset/lstm_4class/ ya no existe en este repo (DEF-15), así que
+    LSTM_CHECKPOINT_PATH y FEATURE_STATS_PATH quedaron sin valor por
+    defecto: hay que fijarlas por variable de entorno con la ubicación
+    vigente del modelo. Fog y Cloud llaman a esta función al arrancar,
+    antes de construir su Container, para fallar con un mensaje claro en
+    vez de un FileNotFoundError opaco dentro de torch.load/np.load.
+
+    Args:
+        names: nombres de variables de este módulo a validar (por ejemplo
+            "LSTM_CHECKPOINT_PATH").
+
+    Raises:
+        RuntimeError: si alguna de las variables nombradas es None,
+            listando cuáles faltan.
+    """
+    missing = [name for name in names if not globals().get(name)]
+    if missing:
+        raise RuntimeError(
+            "Faltan variables de entorno requeridas: "
+            + ", ".join(missing)
+            + ". dataset/lstm_4class/ ya no existe (DEF-15); no hay ruta por "
+            "defecto para el modelo. Fijar cada variable con la ruta del "
+            "archivo vigente antes de arrancar (ver GUIA_EJECUCION.md)."
+        )
