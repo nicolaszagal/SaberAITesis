@@ -3,13 +3,22 @@
 (ArbitrationPolicyPort), resuelve el color del tirador y publica el
 veredicto final (VerdictPublisherPort). Mirror del loop `run()` del
 cloud/main.py anterior, ahora orquestando puertos.
+
+DEF-09: `run_forever` captura cualquier excepción por mensaje — una falla
+procesando una entrada (clasificador, arbitraje, o el publisher) nunca
+detiene el loop; solo se pierde el veredicto de esa entrada, que queda
+registrado en el log. Una entrada que el consumer no pudo parsear llega
+como `InvalidFeatureMessage`: ya fue movida a dead-letter y ACKeada por el
+adaptador (ver RedisFeatureConsumer), así que acá solo se publica el
+veredicto "no disponible".
 """
 
 from __future__ import annotations
 
 import logging
+import time
 
-from cloud.domain.models import Verdict
+from cloud.domain.models import InvalidFeatureMessage, Verdict
 from cloud.ports.action_classifier import ActionClassifierPort
 from cloud.ports.arbitration_policy import ArbitrationPolicyPort
 from cloud.ports.feature_consumer import FeatureStreamConsumerPort
@@ -33,22 +42,48 @@ class ClassifyAndPublish:
         self._publisher = publisher
 
     async def run_forever(self) -> None:
-        async for entry_id, features in self._consumer.consume():
-            raw = self._classifier.classify(features.sequence, features.luz)
-            resolved = self._arbitration.resolve(raw, features.luz)
+        async for entry_id, item in self._consumer.consume():
+            try:
+                await self._handle(entry_id, item)
+            except Exception:
+                match_id = getattr(item, "match_id", None) or "?"
+                log.exception(
+                    "[%s] fallo procesando entrada '%s', se continúa con la siguiente",
+                    match_id, entry_id,
+                )
 
-            side = resolved.action_class.value[-1]  # "A" o "B"
-            fencer = config.FENCER_COLOR[side]
+    async def _handle(self, entry_id: str, item) -> None:
+        if isinstance(item, InvalidFeatureMessage):
+            if item.match_id is not None:
+                await self._publisher.publish(Verdict(
+                    match_id=item.match_id,
+                    disponible=False,
+                    motivo_no_disp=item.motivo.value,
+                ))
+            return
 
-            log.info(
-                "[%s] veredicto: %s (%s) conf=%.3f",
-                features.match_id, resolved.action_class.value, fencer, resolved.confidence,
-            )
+        features = item
+        start = time.perf_counter()
+        raw = self._classifier.classify(features.sequence, features.luz)
+        latencia_inferencia_ms = int((time.perf_counter() - start) * 1000)
+        resolved = self._arbitration.resolve(raw, features.luz)
 
-            await self._publisher.publish(Verdict(
-                match_id=features.match_id,
-                action_class=resolved.action_class,
-                confidence=resolved.confidence,
-                fencer=fencer,
-            ))
-            await self._consumer.ack(entry_id)
+        side = resolved.action_class.value[-1]  # "A" o "B"
+        fencer = config.FENCER_COLOR[side]
+
+        log.info(
+            "[%s] veredicto: %s (%s) conf=%.3f",
+            features.match_id, resolved.action_class.value, fencer, resolved.confidence,
+        )
+
+        await self._publisher.publish(Verdict(
+            match_id=features.match_id,
+            disponible=True,
+            action_class=resolved.action_class,
+            confidence=resolved.confidence,
+            fencer=fencer,
+            probs=resolved.probs,
+            latencia_inferencia_ms=latencia_inferencia_ms,
+            modelo=config.MODEL_VERSION_NAME,
+        ))
+        await self._consumer.ack(entry_id)
