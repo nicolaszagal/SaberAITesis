@@ -3,8 +3,9 @@ WebRTC (la única vía de ingesta que expone la API — no hay endpoint REST
 de upload, ver CONTRATO_API.md sección 2), reporta luz Favero opcional, y
 espera el veredicto por WebSocket.
 
-No es parte de la suite de pytest (no corre con `pytest tests/`) — es una
-herramienta de verificación manual contra Fog+Cloud+Redis ya levantados.
+No es parte de la suite de pytest (el nombre no matchea `test_*.py` ni
+`*_test.py` para que pytest no lo recolecte) — es una herramienta de
+verificación manual contra Fog+Cloud+Redis ya levantados.
 
 Requisitos extra, solo para correr este script (no van en requirements.txt
 porque el backend en producción no los usa):
@@ -12,7 +13,7 @@ porque el backend en producción no los usa):
 
 Uso:
     cd backend
-    python tests/manual_smoke_test.py ../dataset/test/RiposteB/RiposteB_0018.mp4 \\
+    python tests/smoke_manual.py ../dataset/test/RiposteB/RiposteB_0018.mp4 \\
         --fog-url http://localhost:8001 \\
         --luz-b
 

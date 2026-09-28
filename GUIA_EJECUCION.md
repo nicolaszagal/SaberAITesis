@@ -100,6 +100,20 @@ No cubierto por estos tests (pendiente, ver tarea "Smoke test end-to-end"):
 `YoloV8PoseAdapter` (requiere `ultralytics` + modelo real) y el flujo
 completo WebRTC -> Redis -> Cloud -> WebSocket con un clip real del dataset.
 
+`tests/smoke_manual.py` cubre ese flujo end-to-end contra Fog+Cloud+Redis
+ya levantados, pero es una herramienta manual, no parte de la suite: su
+nombre evita a propósito los patrones `test_*.py` / `*_test.py` para que
+`pytest tests/ -q` no lo recolecte (antes se llamaba `manual_smoke_test.py`,
+que sí matcheaba `*_test.py` y rompía la recolección si `websockets` —
+dependencia extra solo de este script, fuera de `requirements.txt` — no
+estaba instalado; ver DEF-17). Requiere `pip install websockets` y se
+ejecuta con:
+
+```bash
+python tests/smoke_manual.py ../dataset/test/RiposteB/RiposteB_0018.mp4 \
+    --fog-url http://localhost:8001 --luz-b
+```
+
 ## 6. Docker
 
 Cada módulo (`fog/`, `cloud/`, `edge/`) tiene su propio `Dockerfile` y su
