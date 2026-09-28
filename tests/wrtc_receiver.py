@@ -5,7 +5,7 @@ es rapida (~10s para el clip de prueba), incluso replicando el import de
 cv2 y la conversion frame.to_ndarray(format="bgr24") de track_consumer.py.
 La unica variable que falta aislar es si el cuello de botella aparece
 especificamente al usar dos procesos de SO reales (como en el smoke test
-real: cliente = manual_smoke_test.py, servidor = Fog), sin meter FastAPI,
+real: cliente = smoke_manual.py, servidor = Fog), sin meter FastAPI,
 Redis ni YOLO en la ecuacion.
 
 Intercambio de SDP vía archivos en /tmp (polling), para no tener que

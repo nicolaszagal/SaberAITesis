@@ -1,7 +1,7 @@
 """Diagnostico: mide cuanto tarda aiortc en transmitir un clip via WebRTC en
 un solo proceso (dos RTCPeerConnection conectados directamente, sin FastAPI,
 Redis ni YOLO de por medio). Sirve para aislar si la lentitud observada en el
-smoke test end-to-end (ver manual_smoke_test.py) viene del transporte WebRTC
+smoke test end-to-end (ver smoke_manual.py) viene del transporte WebRTC
 en este entorno, o de otra etapa del pipeline (pose estimation, etc.).
 
 No es parte de la suite de pytest. Uso:
