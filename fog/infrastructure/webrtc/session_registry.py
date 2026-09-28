@@ -29,6 +29,10 @@ class MatchSession:
         self.ws = None  # fastapi.WebSocket, asignado por GET /ws/veredicto/{match_id}
         self.luz: LuzSignal | None = None
         self.luz_event = asyncio.Event()
+        # Instante del tocado en ms (RF-02, DEF-14). Se guarda tal cual para
+        # persistirlo más adelante (prompt D03) — no se usa para recortar
+        # el clip.
+        self.t_tocado_ms: int | None = None
         self.verdict: VerdictView | None = None
         self.verdict_event = asyncio.Event()
         self.unavailable: UnavailableResult | None = None

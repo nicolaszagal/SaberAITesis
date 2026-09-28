@@ -5,7 +5,11 @@ ejemplos de cada endpoint (ver CONTRATO_API.md).
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
+
+WeaponSideLiteral = Literal["right", "left"]
 
 
 class OfferRequest(BaseModel):
@@ -14,10 +18,10 @@ class OfferRequest(BaseModel):
     match_id: str | None = Field(
         None, description="ID del combate. Si se omite, Fog genera uno nuevo (uuid4)."
     )
-    weapon_side_A: str = Field(
+    weapon_side_A: WeaponSideLiteral = Field(
         "right", description="Lado del arma del tirador A: 'right' o 'left'."
     )
-    weapon_side_B: str = Field(
+    weapon_side_B: WeaponSideLiteral = Field(
         "right", description="Lado del arma del tirador B: 'right' o 'left'."
     )
 
@@ -58,18 +62,18 @@ class MatchConfigRequest(BaseModel):
     endpoint, /webrtc/offer sigue aceptando weapon_side_A/B directamente
     en su propio body, igual que hoy (no es un campo obligatorio)."""
 
-    weapon_side_A: str = Field(
+    weapon_side_A: WeaponSideLiteral = Field(
         "right", description="Lado del arma del tirador A: 'right' o 'left'."
     )
-    weapon_side_B: str = Field(
+    weapon_side_B: WeaponSideLiteral = Field(
         "right", description="Lado del arma del tirador B: 'right' o 'left'."
     )
 
 
 class MatchConfigResponse(BaseModel):
     match_id: str = Field(..., description="ID de combate generado (uuid4), a reutilizar en /webrtc/offer o /matches/{match_id}/clip.")
-    weapon_side_A: str
-    weapon_side_B: str
+    weapon_side_A: WeaponSideLiteral
+    weapon_side_B: WeaponSideLiteral
 
 
 class ClipUploadResponse(BaseModel):
@@ -87,8 +91,8 @@ class ClipUploadResponse(BaseModel):
     `timed_out=True` y `motivo="timeout"`."""
 
     match_id: str
-    has_luz_A: bool = Field(..., description="True si se envió luz_frame_a (no None).")
-    has_luz_B: bool = Field(..., description="True si se envió luz_frame_b (no None).")
+    has_luz_A: bool = Field(..., description="True si se recibió la luz Favero del tirador A (`has_luz_A` o, como alias obsoleto, `luz_frame_a`).")
+    has_luz_B: bool = Field(..., description="True si se recibió la luz Favero del tirador B (`has_luz_B` o, como alias obsoleto, `luz_frame_b`).")
     timed_out: bool = Field(
         ...,
         description=(
