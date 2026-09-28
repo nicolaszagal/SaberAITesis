@@ -50,8 +50,15 @@ lap>=0.5.12
 # no encontró nada) — instalar antes de probar ese endpoint.
 python-multipart
 
+# Persistencia (PostgreSQL 16, esquema `sabre`): SQLAlchemy 2 async + asyncpg
+# + migraciones Alembic (ver alembic.ini y fog/infrastructure/persistence/).
+sqlalchemy[asyncio]==2.1.1
+asyncpg==0.31.0
+alembic==1.20.0
+
 # Tests (no usados en producción)
 pytest==9.1.1
 pytest-asyncio==1.4.0
 httpx==0.28.1
 fakeredis==2.38.0  # tests/cloud/test_redis_feature_consumer.py (XREADGROUP/XAUTOCLAIM, DEF-09)
+testcontainers[postgres]==4.15.0  # tests/fog/test_migracion_esquema.py (o TEST_DATABASE_URL en CI)

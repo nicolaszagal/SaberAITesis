@@ -9,6 +9,18 @@ import os
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
+# Base PostgreSQL de Fog (esquema `sabre`, ver docs_claude/sabre_ai_schema.sql).
+# Formato SQLAlchemy async: postgresql+asyncpg://usuario:clave@host:5432/base.
+# Sin default a propósito: la URL lleva credenciales, no se versionan. Se
+# valida al construir el engine (ver fog/infrastructure/persistence/database.py).
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+# Directorio raíz del almacenamiento local de archivos (clips y keypoints
+# .npz por SHA-256). En Docker es el volumen montado en /data/storage.
+# La base solo guarda URI y hash de estos archivos. Sin default, igual que
+# DATABASE_URL: el adaptador se construye recién cuando se necesita.
+STORAGE_DIR = os.environ.get("STORAGE_DIR")
+
 # Fog -> Cloud
 STREAM_FEATURES = "fog:features"
 GROUP_CLOUD = "cloud_workers"

@@ -22,14 +22,49 @@ services:
     network_mode: host
     env_file:
       - .env
+    environment:
+      # Volumen de archivos (clips y keypoints .npz por SHA-256); la base
+      # solo guarda URI y hash.
+      STORAGE_DIR: /data/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
+      - sabre_storage:/data/storage
       # Sibling de backend/ (dos niveles arriba de fog/), mismo layout que
       # la sección 1 de GUIA_EJECUCION.md. Solo lectura: el contenedor no
       # necesita escribir ahí.
       - ../../dataset:/app/dataset:ro
+
+  # Base de registro (esquema `sabre`, ver docs_claude/sabre_ai_schema.sql).
+  # Fog corre con network_mode: host, así que llega por localhost:5432; el
+  # puerto se publica solo en loopback. Definir en fog/.env:
+  #   POSTGRES_PASSWORD=...
+  #   DATABASE_URL=postgresql+asyncpg://sabre:<POSTGRES_PASSWORD>@localhost:5432/sabre
+  # El esquema lo crea Alembic: desde backend/, `alembic upgrade head`.
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: sabre
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?definir POSTGRES_PASSWORD en fog/.env}
+      POSTGRES_DB: sabre
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - sabre_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sabre -d sabre"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     profiles: ["localdev"]
     ports:
       - "6379:6379"
+
+volumes:
+  sabre_pgdata:
+  sabre_storage:
