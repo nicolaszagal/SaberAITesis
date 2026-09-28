@@ -283,7 +283,7 @@ cd backend/edge
 cat > .env <<'EOF'
 RTSP_FRONT_URL=rtsp://host.docker.internal:8554/live/front
 RTSP_TOP_URL=rtsp://host.docker.internal:8554/live/top
-WS_PORT=8001
+WS_PORT=8002
 JPEG_QUALITY=70
 TARGET_FPS=15
 EOF
@@ -293,7 +293,7 @@ EOF
 |--------------------|-----------------------------------------------------|-----------|-----|
 | `RTSP_FRONT_URL`   | `rtsp://host.docker.internal:8554/live/front`        | sí        | URL RTSP de la cámara "front" servida por mediamtx |
 | `RTSP_TOP_URL`     | `rtsp://host.docker.internal:8554/live/top`          | sí        | URL RTSP de la cámara "top" |
-| `WS_PORT`          | `8001`                                               | no        | puerto del servidor WebSocket |
+| `WS_PORT`          | `8002`                                               | no        | puerto del servidor WebSocket |
 | `JPEG_QUALITY`     | `70`                                                 | no        | calidad de codificación JPEG (0-100) |
 | `TARGET_FPS`       | `15`                                                 | no        | framerate de redistribución hacia los clientes WS |
 
@@ -312,9 +312,10 @@ docker compose logs -f edge   # opcional, ver los logs sin bloquear la terminal
 
 Verificar:
 
-- **edge** sirviendo WebSocket: conectarse a `ws://localhost:8001/front` o
-  `ws://localhost:8001/top` (un mensaje binario JPEG por frame). Un GET
-  HTTP plano a `http://localhost:8001/` responde `426 Upgrade Required`
+- **edge** sirviendo WebSocket: conectarse a `ws://localhost:8002/front` o
+  `ws://localhost:8002/top` (también se aceptan `/ws/camera/front` y
+  `/ws/camera/top`; un mensaje binario JPEG por frame). Un GET
+  HTTP plano a `http://localhost:8002/` responde `426 Upgrade Required`
   — es el comportamiento esperado del healthcheck del compose, no un error
   (`docker ps` debería mostrar el contenedor como `healthy`).
 - **Reconexión:** si se corta la señal de un iPhone después de haber
