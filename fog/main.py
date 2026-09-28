@@ -40,13 +40,6 @@ from shared import config
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:%(name)s:%(message)s")
 log = logging.getLogger("fog")
 
-# Diagnostico temporal: ver que par de candidatos ICE selecciona aiortc para
-# la conexion real con el cliente (¿loopback 127.0.0.1, o la interfaz Wi-Fi
-# del host?). Si selecciona Wi-Fi, cada paquete de medios sale y vuelve por
-# el adaptador de red en vez de loopback, lo cual puede ser muchisimo mas
-# lento. Quitar una vez confirmado/descartado.
-logging.getLogger("aioice.ice").setLevel(logging.DEBUG)
-
 config.require_paths("FEATURE_STATS_PATH")
 
 container = Container()
