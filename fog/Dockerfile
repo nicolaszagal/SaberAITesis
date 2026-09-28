@@ -38,15 +38,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrender1 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements-fog.txt .
+COPY requirements-fog.txt constraints.txt ./
 
-# torch CPU-only vía el índice oficial (ultralytics lo requiere de
-# transitivo) — mismo criterio que GUIA_EJECUCION.md sección 2 para venv.
-# Si la máquina que corre esta imagen tiene GPU NVIDIA y querés usarla acá,
-# cambiar este índice por el de CUDA correspondiente
-# (https://pytorch.org/get-started/locally/) y reconstruir la imagen.
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
-RUN pip install --no-cache-dir -r requirements-fog.txt
+# torch + torchvision CPU-only vía el índice oficial (ultralytics requiere
+# ambos de transitivo) — mismo criterio que GUIA_EJECUCION.md sección 2
+# para venv. -c constraints.txt fija las versiones verificadas juntas
+# (DEF-19; ver constraints.txt) tanto acá como en el install de
+# requirements-fog.txt de abajo, para que ultralytics no resuelva una
+# versión distinta a la usada en desarrollo. Si la máquina que corre esta
+# imagen tiene GPU NVIDIA y querés usarla acá, cambiar este índice por el
+# de CUDA correspondiente (https://pytorch.org/get-started/locally/) y
+# reconstruir la imagen.
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu -c constraints.txt
+RUN pip install --no-cache-dir -r requirements-fog.txt -c constraints.txt
 
 COPY fog/ fog/
 COPY shared/ shared/

@@ -1,9 +1,13 @@
 # Verificado por instalación + import-graph + pytest en este entorno
-# (ver GUIA_EJECUCION.md). torch y ultralytics no se pinnean: torch depende
-# de la plataforma (CPU/CUDA/MPS) — instalar siguiendo https://pytorch.org/get-started/locally/
-# antes de este archivo; ultralytics no se verificó en este entorno (no se
-# pudo instalar dentro del sandbox por tiempo), pinnear con la versión que
-# ya usa dataset/lstm_4class/05_extract_features.py si está fijada ahí.
+# (ver GUIA_EJECUCION.md). torch y ultralytics no se pinnean acá: torch
+# depende de la plataforma (CPU/CUDA/MPS) — instalar siguiendo
+# https://pytorch.org/get-started/locally/ antes de este archivo;
+# ultralytics se deja sin fijar para no acoplar este archivo a una
+# plataforma. Las versiones de torch, torchvision y ultralytics verificadas
+# juntas en este entorno están en constraints.txt (DEF-19) — pasar
+# `-c constraints.txt` al instalar para reproducirlas, o pinnear con la
+# versión que ya usa dataset/lstm_4class/05_extract_features.py si está
+# fijada ahí.
 
 fastapi==0.138.0
 uvicorn==0.49.0

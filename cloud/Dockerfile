@@ -17,12 +17,15 @@ WORKDIR /app/backend
 # pusheado antes de desplegar.
 ENV LSTM_CHECKPOINT_PATH=/app/backend/dataset/lstm_4class/checkpoints/best_model.pt
 
-COPY requirements-cloud.txt .
+COPY requirements-cloud.txt constraints.txt ./
 
-# torch CPU-only: el modelo LSTM desplegado es chico (hidden_size=64,
-# 1 capa, ver shared/config.py) y no necesita GPU.
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
-RUN pip install --no-cache-dir -r requirements-cloud.txt
+# torch + torchvision CPU-only: el modelo LSTM desplegado es chico
+# (hidden_size=64, 1 capa, ver shared/config.py) y no necesita GPU.
+# torchvision no lo usa el código de Cloud, pero se instala junto a torch
+# con la misma versión fijada en constraints.txt (DEF-19) que en Fog, para
+# no divergir de las versiones verificadas juntas en backend/.venv.
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu -c constraints.txt
+RUN pip install --no-cache-dir -r requirements-cloud.txt -c constraints.txt
 
 COPY cloud/ cloud/
 COPY shared/ shared/

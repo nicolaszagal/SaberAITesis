@@ -1,0 +1,13 @@
+# Restricciones de versión para torch, torchvision y ultralytics (DEF-19).
+#
+# No son un requirements.txt en sí (no se instalan con `pip install -c
+# constraints.txt`, hace falta pasarlas junto a otro install: `pip install
+# -r requirements-fog.txt -c constraints.txt`) — solo fijan qué versión debe
+# resolver pip de estos tres paquetes si algo en la instalación los pide.
+#
+# Versiones verificadas juntas en backend/.venv con:
+#   python -c "from torchvision.ops import nms; import ultralytics"
+# (sin error de import ni de ABI entre torch/torchvision).
+torch==2.12.1
+torchvision==0.27.1
+ultralytics==8.4.75
