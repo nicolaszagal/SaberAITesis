@@ -17,7 +17,7 @@ import asyncio
 
 from aiortc import RTCPeerConnection
 
-from fog.domain.models import LuzSignal, VerdictView, WeaponSide
+from fog.domain.models import LuzSignal, UnavailableResult, VerdictView, WeaponSide
 
 
 class MatchSession:
@@ -31,6 +31,8 @@ class MatchSession:
         self.luz_event = asyncio.Event()
         self.verdict: VerdictView | None = None
         self.verdict_event = asyncio.Event()
+        self.unavailable: UnavailableResult | None = None
+        self.unavailable_event = asyncio.Event()
 
     def set_luz(self, luz: LuzSignal) -> None:
         self.luz = luz
@@ -39,6 +41,10 @@ class MatchSession:
     def set_verdict(self, verdict: VerdictView) -> None:
         self.verdict = verdict
         self.verdict_event.set()
+
+    def set_unavailable(self, result: UnavailableResult) -> None:
+        self.unavailable = result
+        self.unavailable_event.set()
 
 
 class SessionRegistry:

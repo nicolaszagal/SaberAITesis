@@ -75,6 +75,7 @@ class Container(containers.DeclarativeContainer):
         feature_extractor=feature_extractor,
         publisher=feature_publisher,
         repository=match_repository,
+        sessions=sessions,
         executor=executor,
         min_frames=config.min_frames,
     )

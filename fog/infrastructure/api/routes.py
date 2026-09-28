@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile, WebSocket, WebSo
 from fog.application.forward_verdict import ForwardVerdictToClient
 from fog.application.process_match import ProcessIncomingMatch
 from fog.composition import Container
-from fog.domain.models import LuzSignal, WeaponSide
+from fog.domain.models import LuzSignal, MotivoNoDisponible, WeaponSide
 from fog.infrastructure.api.schemas import (
     ClipUploadResponse,
     LuzAck,
@@ -165,7 +165,10 @@ async def webrtc_luz(
         "veredicto antes de responder — a diferencia del flujo WebRTC, "
         "que lo entrega async por WebSocket. Si match_id fue configurado "
         "antes vía POST /matches/config, se usa ese weapon_side_A/B; si "
-        "no, se asume 'right'/'right'."
+        "no, se asume 'right'/'right'. Si la extracción de features falla "
+        "(pose incompleta: sin lock A/B o clip muy corto), responde de "
+        "inmediato con disponible=false y motivo='pose_incompleta', sin "
+        "esperar a Cloud (DEF-08)."
     ),
 )
 @inject
@@ -192,7 +195,19 @@ async def upload_clip(
     luz = LuzSignal(has_luz_a=luz_frame_a is not None, has_luz_b=luz_frame_b is not None)
     session.set_luz(luz)
 
-    await process_match.execute(match_id, tracked, session.weapon_side_a, session.weapon_side_b, luz)
+    unavailable = await process_match.execute(match_id, tracked, session.weapon_side_a, session.weapon_side_b, luz)
+
+    if unavailable is not None:
+        # Extracción falló (pose incompleta): no se publicó nada en Redis,
+        # así que no tiene sentido esperar a Cloud (DEF-08).
+        return ClipUploadResponse(
+            match_id=match_id,
+            has_luz_A=luz.has_luz_a,
+            has_luz_B=luz.has_luz_b,
+            timed_out=False,
+            disponible=False,
+            motivo=unavailable.motivo.value,
+        )
 
     try:
         await asyncio.wait_for(forward_verdict.execute(match_id), timeout=verdict_timeout_s)
@@ -202,6 +217,8 @@ async def upload_clip(
             has_luz_A=luz.has_luz_a,
             has_luz_B=luz.has_luz_b,
             timed_out=True,
+            disponible=False,
+            motivo=MotivoNoDisponible.TIMEOUT.value,
         )
 
     verdict = session.verdict
@@ -210,6 +227,8 @@ async def upload_clip(
         has_luz_A=luz.has_luz_a,
         has_luz_B=luz.has_luz_b,
         timed_out=False,
+        disponible=True,
+        motivo=None,
         fencer=verdict.fencer if verdict else None,
         action=verdict.action if verdict else None,
         confidence=verdict.confidence if verdict else None,
@@ -224,8 +243,9 @@ async def ws_veredicto(
     sessions: SessionRegistry = Depends(Provide[Container.sessions]),
 ):
     """No aparece en Swagger (las rutas WebSocket no son parte de OpenAPI),
-    documentado en CONTRATO_API.md y en VerdictMessage (schemas.py). Envía
-    un único mensaje JSON con el veredicto en cuanto está disponible."""
+    documentado en CONTRATO_API.md y en VerdictMessage/NoDisponibleMessage
+    (schemas.py). Envía un único mensaje JSON —veredicto o no_disponible—
+    en cuanto el resultado está disponible (DEF-08)."""
     await websocket.accept()
     session = sessions.get_or_create_default(match_id)
     session.ws = websocket
@@ -236,14 +256,28 @@ async def ws_veredicto(
             # no pudo enviarlo porque session.ws aún no existía). Lo mandamos
             # nosotros, una sola vez.
             await websocket.send_json(session.verdict.to_ws_message())
+        elif session.unavailable is not None:
+            # Conexión tardía, resultado no disponible (mismo caso que
+            # arriba pero desde ProcessIncomingMatch en vez de
+            # ForwardVerdictToClient).
+            await websocket.send_json(session.unavailable.to_ws_message())
         else:
             # Conexión temprana: session.ws ya quedó asignado arriba, así que
-            # cuando el veredicto llegue será fog.application.forward_verdict.
-            # ForwardVerdictToClient (tarea en segundo plano lanzada desde
-            # POST /webrtc/offer) quien lo envíe. Aquí solo mantenemos la
-            # conexión abierta hasta entonces — enviar también desde aquí
-            # duplicaría el mensaje y rompía el socket (RuntimeError:
-            # "Cannot call send once a close message has been sent").
-            await session.verdict_event.wait()
+            # cuando el resultado llegue será ForwardVerdictToClient o
+            # ProcessIncomingMatch (tareas en segundo plano) quien lo envíe.
+            # Aquí solo mantenemos la conexión abierta hasta entonces —
+            # enviar también desde aquí duplicaría el mensaje y rompía el
+            # socket (RuntimeError: "Cannot call send once a close message
+            # has been sent").
+            pending = {
+                asyncio.ensure_future(session.verdict_event.wait()),
+                asyncio.ensure_future(session.unavailable_event.wait()),
+            }
+            try:
+                await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                for task in pending:
+                    if not task.done():
+                        task.cancel()
     except WebSocketDisconnect:
         pass

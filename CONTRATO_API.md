@@ -33,7 +33,7 @@ Body (JSON):
 - `weapon_side_A/B`: `"right"` o `"left"`. Brazo armado de cada tirador. Si no se envía,
   Fog usa `"right"` para ambos (igual que el MVP del dataset).
 - `match_id`: identificador que el front debe reutilizar al conectar el WebSocket de
-  veredicto (sección 5) y al reportar la luz Favero (sección 3). Si no se envía, Fog
+  veredicto (sección 7) y al reportar la luz Favero (sección 3). Si no se envía, Fog
   genera uno y lo devuelve en la respuesta.
 
 Respuesta (JSON):
@@ -71,7 +71,45 @@ Respuesta (JSON):
 { "match_id": "...", "received": true }
 ```
 
-## 4. Fog → Cloud: `fog:features` (Redis Stream)
+## 4. Edge → Fog: carga de clip sin WebRTC
+
+`POST /matches/{match_id}/clip` (multipart/form-data)
+
+Alternativa a `POST /webrtc/offer` + sección 3: sube un clip ya grabado
+en un solo request, junto con los frames en que se prendió cada luz
+Favero (`luz_frame_a`/`luz_frame_b`, índices de frame 0-based, `null`/
+omitido si esa luz no se prendió). A diferencia del flujo WebRTC, la
+respuesta es **síncrona**: corre pose+tracking+features, publica en
+Redis y espera el veredicto de Cloud (con timeout,
+`CLIP_UPLOAD_VERDICT_TIMEOUT_S`, 30 s por defecto) antes de responder.
+
+Respuesta (JSON):
+```json
+{
+  "match_id": "...",
+  "has_luz_A": true,
+  "has_luz_B": false,
+  "timed_out": false,
+  "disponible": true,
+  "motivo": null,
+  "fencer": "ROJ",
+  "action": "AttackA",
+  "confidence": 0.74
+}
+```
+
+`disponible=false` cubre dos casos (DEF-08), distinguidos por `motivo`
+(mismos valores de `clasificacion.motivo_no_disp` que la sección 7):
+
+- **Pose incompleta** (`motivo="pose_incompleta"`, `timed_out=false`):
+  Fog no pudo extraer features válidas (sin lock A/B, o clip por debajo
+  de `MIN_FRAMES`) y nunca publicó en Redis — responde de inmediato, sin
+  esperar a Cloud. `fencer`/`action`/`confidence` quedan en `null`.
+- **Timeout de Cloud** (`motivo="timeout"`, `timed_out=true`): Fog sí
+  publicó features pero Cloud no respondió dentro del timeout
+  configurado. `fencer`/`action`/`confidence` quedan en `null`.
+
+## 5. Fog → Cloud: `fog:features` (Redis Stream)
 
 Cada clip procesado por Fog genera **una sola entrada** en el stream:
 
@@ -90,7 +128,7 @@ Cada clip procesado por Fog genera **una sola entrada** en el stream:
 Cloud consume con un grupo de consumidores `cloud_workers` (1 worker por pista, según
 diagrama). Reconstrucción: `np.frombuffer(features, dtype=dtype).reshape(shape)`.
 
-## 5. Cloud → Fog: `cloud:verdicts:{match_id}` (Redis Stream)
+## 6. Cloud → Fog: `cloud:verdicts:{match_id}` (Redis Stream)
 
 Una entrada por veredicto:
 
@@ -110,7 +148,7 @@ del LSTM se publica sin cambios.
 Fog mantiene una tarea de fondo por `match_id` activo que hace `XREAD` bloqueante sobre
 este stream y reenvía el resultado por WebSocket en cuanto llega.
 
-## 6. Fog → Front: WebSocket de veredicto
+## 7. Fog → Front: WebSocket de veredicto
 
 `GET /ws/veredicto/{match_id}` (el front se conecta antes o inmediatamente después de
 enviar la oferta WebRTC, usando el mismo `match_id`).
@@ -125,6 +163,27 @@ Mensaje que Fog envía cuando el veredicto está listo:
   "confidence": 0.74
 }
 ```
+
+Si la clasificación no está disponible (DEF-08: pose incompleta, sin
+lock A/B o clip demasiado corto), Fog no publica nada en el stream
+`fog:features` — nunca le llega a Cloud — y responde de inmediato por
+este mismo WebSocket:
+```json
+{
+  "type": "no_disponible",
+  "match_id": "...",
+  "motivo": "pose_incompleta"
+}
+```
+
+`motivo` es uno de `clasificacion.motivo_no_disp`
+(`sabre_ai_schema.sql`): `pose_incompleta`, `confianza_baja`,
+`clase_fuera_mvp`, `timeout`, `sin_senal_favero`. Hoy Fog solo puede
+producir `pose_incompleta` (los dos únicos errores que devuelve
+`FeatureExtractorPort.extract` — sin lock A/B, o secuencia bajo
+`min_frames` — mapean a ese motivo); `confianza_baja` y
+`clase_fuera_mvp` son responsabilidad de Cloud y no están implementados
+todavía (el umbral de confianza no está documentado).
 
 Carlos debe traducir `action` (taxonomía interna en inglés, 4 clases) a las etiquetas en
 español que ya usa el front (`mock.ts`: "ATAQUE AL PECHO", "PARADA-RESPUESTA",
@@ -145,7 +204,7 @@ reentrenar con esa separación, no es un cambio de capa de presentación.
 `confidence` ya viene en escala 0–1; el front la muestra como % (`mock.ts` usa enteros
 0–100, ej. `94`).
 
-## 7. Notas y desviaciones respecto a los diagramas de arquitectura
+## 8. Notas y desviaciones respecto a los diagramas de arquitectura
 
 - **Modelo desplegado**: `dataset/lstm_4class/checkpoints/best_model.pt` — 4 clases
   (`AttackA, AttackB, ResponseA, ResponseB`), 192 features (96 por tirador, incluye
@@ -161,7 +220,7 @@ reentrenar con esa separación, no es un cambio de capa de presentación.
   confirmada por Nicolas para mantener fidelidad con el entrenamiento. Sin requisito de
   tiempo real en v1, el costo de latencia es aceptable.
 - **Scoring Híbrido FIE**: no implementado en v1. El veredicto que llega al front es el
-  resultado de `LSTM4ClassAdapter` ya arbitrado por `FaveroHardMaskPolicy` (sección 5),
+  resultado de `LSTM4ClassAdapter` ya arbitrado por `FaveroHardMaskPolicy` (sección 6),
   no la salida cruda del LSTM. Las reglas FIE completas (t.101-t.106, prioridad de
   ataque/cobertura/etc.) quedan para una versión posterior — `ArbitrationPolicyPort`
   está diseñado para admitir una implementación más rica sin tocar el resto del sistema.
@@ -170,7 +229,7 @@ reentrenar con esa separación, no es un cambio de capa de presentación.
 - **Mapeo A/B ↔ ROJ/VER**: fijo (`A=ROJ`, `B=VER`) para v1, confirmado por Nicolas. No
   configurable por combate todavía.
 
-## 8. Pendiente del lado del front (fuera de esta entrega)
+## 9. Pendiente del lado del front (fuera de esta entrega)
 
 Carlos necesita agregar en `var-esg`:
 1. Captura del video subido manualmente como `MediaStreamTrack` y armado del

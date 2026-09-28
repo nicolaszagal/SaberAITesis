@@ -1,14 +1,23 @@
 import numpy as np
 
 from fog.application.process_match import ProcessIncomingMatch
-from fog.domain.models import ExtractedFeatures, LuzSignal, TrackedSequence, WeaponSide
+from fog.domain.models import ExtractedFeatures, LuzSignal, MotivoNoDisponible, TrackedSequence, WeaponSide
 from fog.infrastructure.persistence.in_memory_match_repository import InMemoryMatchRepository
+from fog.infrastructure.webrtc.session_registry import SessionRegistry
 from tests.fog.fakes import FakeFeatureExtractor, FakeFeaturePublisher, InlineExecutor
 
 # Nota: ProcessIncomingMatch ya no depende de PoseEstimatorPort — pose+
 # tracking corre antes (en track_consumer.py / clip_file_reader.py) y
 # execute() recibe directamente la TrackedSequence ya calculada. Ver
 # fog/application/process_match.py.
+
+
+class FakeWebSocket:
+    def __init__(self):
+        self.sent: list[dict] = []
+
+    async def send_json(self, data: dict) -> None:
+        self.sent.append(data)
 
 
 async def test_execute_publishes_and_saves_match_on_success():
@@ -23,11 +32,12 @@ async def test_execute_publishes_and_saves_match_on_success():
         feature_extractor=extractor,
         publisher=publisher,
         repository=repository,
+        sessions=SessionRegistry(),
         executor=InlineExecutor(),
         min_frames=3,
     )
 
-    await use_case.execute(
+    result = await use_case.execute(
         match_id="m1",
         tracked=tracked,
         weapon_side_a=WeaponSide.RIGHT,
@@ -35,6 +45,7 @@ async def test_execute_publishes_and_saves_match_on_success():
         luz=LuzSignal(has_luz_a=True, has_luz_b=False),
     )
 
+    assert result is None
     assert len(publisher.published) == 1
     match_id, features, luz, side_a, side_b = publisher.published[0]
     assert match_id == "m1"
@@ -54,7 +65,7 @@ async def test_execute_defaults_to_no_luz_when_none():
 
     use_case = ProcessIncomingMatch(
         feature_extractor=extractor, publisher=publisher,
-        repository=repository, executor=InlineExecutor(),
+        repository=repository, sessions=SessionRegistry(), executor=InlineExecutor(),
     )
 
     await use_case.execute("m2", tracked, WeaponSide.RIGHT, WeaponSide.RIGHT, luz=None)
@@ -73,10 +84,58 @@ async def test_execute_does_not_publish_when_extraction_fails():
 
     use_case = ProcessIncomingMatch(
         feature_extractor=extractor, publisher=publisher,
-        repository=repository, executor=InlineExecutor(),
+        repository=repository, sessions=SessionRegistry(), executor=InlineExecutor(),
     )
 
-    await use_case.execute("m3", tracked, WeaponSide.RIGHT, WeaponSide.RIGHT, luz=None)
+    result = await use_case.execute("m3", tracked, WeaponSide.RIGHT, WeaponSide.RIGHT, luz=None)
 
     assert publisher.published == []
     assert await repository.get("m3") is None
+    assert result is not None
+    assert result.match_id == "m3"
+    assert result.motivo is MotivoNoDisponible.POSE_INCOMPLETA
+
+
+async def test_execute_sets_unavailable_on_session_and_sends_ws_when_connected():
+    """DEF-08: si el extractor falla (sin lock A/B o secuencia corta), la
+    sesión debe quedar marcada como no disponible y, si el front ya está
+    conectado por WebSocket, recibir el mensaje de inmediato — sin
+    esperar los 30 s del timeout de Cloud."""
+    tracked = TrackedSequence(frames=[], frame_w=0, frame_h=0, locked=False)
+    extractor = FakeFeatureExtractor(
+        result=ExtractedFeatures(sequence=None, stats={"error": "tracking no pudo asignar IDs A/B"})
+    )
+    publisher = FakeFeaturePublisher()
+    repository = InMemoryMatchRepository()
+    sessions = SessionRegistry()
+    session = sessions.create("m4", WeaponSide.RIGHT, WeaponSide.RIGHT)
+    session.ws = FakeWebSocket()
+
+    use_case = ProcessIncomingMatch(
+        feature_extractor=extractor, publisher=publisher,
+        repository=repository, sessions=sessions, executor=InlineExecutor(),
+    )
+
+    result = await use_case.execute("m4", tracked, WeaponSide.RIGHT, WeaponSide.RIGHT, luz=None)
+
+    assert result.motivo is MotivoNoDisponible.POSE_INCOMPLETA
+    assert session.unavailable == result
+    assert session.unavailable_event.is_set()
+    assert session.ws.sent == [
+        {"type": "no_disponible", "match_id": "m4", "motivo": "pose_incompleta"}
+    ]
+
+
+async def test_execute_unavailable_no_op_when_session_missing():
+    tracked = TrackedSequence(frames=[], frame_w=0, frame_h=0, locked=False)
+    extractor = FakeFeatureExtractor(
+        result=ExtractedFeatures(sequence=None, stats={"error": "tracking no pudo asignar IDs A/B"})
+    )
+    use_case = ProcessIncomingMatch(
+        feature_extractor=extractor, publisher=FakeFeaturePublisher(),
+        repository=InMemoryMatchRepository(), sessions=SessionRegistry(), executor=InlineExecutor(),
+    )
+
+    result = await use_case.execute("m404", tracked, WeaponSide.RIGHT, WeaponSide.RIGHT, luz=None)
+
+    assert result.motivo is MotivoNoDisponible.POSE_INCOMPLETA

@@ -77,17 +77,40 @@ class ClipUploadResponse(BaseModel):
     WebRTC (veredicto async por WebSocket), este endpoint corre el
     pipeline completo (pose+features+Redis+Cloud) y espera el veredicto
     de forma síncrona antes de responder, hasta
-    shared.config.CLIP_UPLOAD_VERDICT_TIMEOUT_S."""
+    shared.config.CLIP_UPLOAD_VERDICT_TIMEOUT_S.
+
+    `disponible=False` cubre dos casos distintos (DEF-08): si Fog no pudo
+    extraer features válidas (pose incompleta), responde de inmediato con
+    `motivo="pose_incompleta"` y `timed_out=False` — nunca llegó a
+    publicar en Redis, así que no tiene sentido esperar a Cloud. Si Fog sí
+    publicó pero Cloud no respondió dentro del timeout, responde con
+    `timed_out=True` y `motivo="timeout"`."""
 
     match_id: str
     has_luz_A: bool = Field(..., description="True si se envió luz_frame_a (no None).")
     has_luz_B: bool = Field(..., description="True si se envió luz_frame_b (no None).")
     timed_out: bool = Field(
-        ..., description="True si Cloud no publicó veredicto dentro del timeout configurado."
+        ...,
+        description=(
+            "True solo si Fog publicó features en Redis y Cloud no "
+            "respondió dentro del timeout configurado (motivo='timeout')."
+        ),
     )
-    fencer: str | None = Field(None, description="'ROJ' o 'VER'. None si timed_out=True.")
-    action: str | None = Field(None, description="Clase de acción. None si timed_out=True.")
-    confidence: float | None = Field(None, description="Confianza 0-1. None si timed_out=True.")
+    disponible: bool = Field(
+        ..., description="False si la clasificación no está disponible (ver `motivo`)."
+    )
+    motivo: str | None = Field(
+        None,
+        description=(
+            "Motivo cuando disponible=False, uno de "
+            "clasificacion.motivo_no_disp (sabre_ai_schema.sql): "
+            "'pose_incompleta', 'confianza_baja', 'clase_fuera_mvp', "
+            "'timeout', 'sin_senal_favero'. None si disponible=True."
+        ),
+    )
+    fencer: str | None = Field(None, description="'ROJ' o 'VER'. None si disponible=False.")
+    action: str | None = Field(None, description="Clase de acción. None si disponible=False.")
+    confidence: float | None = Field(None, description="Confianza 0-1. None si disponible=False.")
 
 
 class VerdictMessage(BaseModel):
@@ -100,3 +123,21 @@ class VerdictMessage(BaseModel):
     fencer: str = Field(..., description="'ROJ' o 'VER', ver shared.config.FENCER_COLOR.")
     action: str = Field(..., description="Clase de acción: AttackA, AttackB, ResponseA o ResponseB.")
     confidence: float = Field(..., description="Confianza softmax de la clase ganadora, 0-1.")
+
+
+class NoDisponibleMessage(BaseModel):
+    """Forma del mensaje que Fog envía por el WebSocket
+    GET /ws/veredicto/{match_id} cuando la clasificación no está
+    disponible (DEF-08). No es un endpoint REST — se documenta aquí solo
+    como referencia de contrato para Swagger/lectores del código."""
+
+    type: str = Field("no_disponible", description="Siempre 'no_disponible'.")
+    match_id: str
+    motivo: str = Field(
+        ...,
+        description=(
+            "Uno de clasificacion.motivo_no_disp (sabre_ai_schema.sql): "
+            "'pose_incompleta', 'confianza_baja', 'clase_fuera_mvp', "
+            "'timeout', 'sin_senal_favero'."
+        ),
+    )
