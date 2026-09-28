@@ -66,6 +66,11 @@ ABLATE_INDICES = [95, 191]
 
 MIN_FRAMES = 3
 
+# Tamaño máximo aceptado para POST /matches/{match_id}/clip (DEF-13): un
+# archivo por encima de este límite se rechaza con 413 antes de escribirlo
+# a disco. Ver fog/infrastructure/clips/clip_file_reader.py.
+CLIP_MAX_MB = float(os.environ.get("CLIP_MAX_MB", "200"))
+
 # Tiempo que Fog espera la señal de luz Favero (POST /webrtc/{match_id}/luz)
 # después de que termina el clip, antes de procesar con LuzSignal.none().
 # Ver PLAN_ARQUITECTURA_DDD.md sección 2.3.

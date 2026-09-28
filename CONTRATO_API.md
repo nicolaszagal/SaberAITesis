@@ -31,7 +31,9 @@ Body (JSON):
 ```
 
 - `weapon_side_A/B`: `"right"` o `"left"`. Brazo armado de cada tirador. Si no se envía,
-  Fog usa `"right"` para ambos (igual que el MVP del dataset).
+  Fog usa `"right"` para ambos (igual que el MVP del dataset). Tipado como enum cerrado
+  (`Literal["right", "left"]`) en todos los esquemas (DEF-13): cualquier otro valor
+  responde `422` antes de llegar al dominio.
 - `match_id`: identificador que el front debe reutilizar al conectar el WebSocket de
   veredicto (sección 7) y al reportar la luz Favero (sección 3). Si no se envía, Fog
   genera uno y lo devuelve en la respuesta.
@@ -76,12 +78,34 @@ Respuesta (JSON):
 `POST /matches/{match_id}/clip` (multipart/form-data)
 
 Alternativa a `POST /webrtc/offer` + sección 3: sube un clip ya grabado
-en un solo request, junto con los frames en que se prendió cada luz
-Favero (`luz_frame_a`/`luz_frame_b`, índices de frame 0-based, `null`/
-omitido si esa luz no se prendió). A diferencia del flujo WebRTC, la
-respuesta es **síncrona**: corre pose+tracking+features, publica en
-Redis y espera el veredicto de Cloud (con timeout,
+en un solo request, junto con la señal de luz Favero. A diferencia del
+flujo WebRTC, la respuesta es **síncrona**: corre pose+tracking+features,
+publica en Redis y espera el veredicto de Cloud (con timeout,
 `CLIP_UPLOAD_VERDICT_TIMEOUT_S`, 30 s por defecto) antes de responder.
+
+Campos del form (multipart):
+
+| campo | tipo | descripción |
+|---|---|---|
+| `file` | file | clip de video (MP4/MOV) |
+| `has_luz_A` | bool | `true` si se encendió la luz Favero de A. Opcional (default `false` si se omite junto con `has_luz_B`) |
+| `has_luz_B` | bool | idem para B |
+| `t_tocado_ms` | int (≥ 0) | instante del tocado en ms desde el inicio del clip (RF-02). Opcional — hoy solo se guarda en la sesión para persistirlo más adelante (prompt D03); no se usa para recortar el clip |
+| `luz_frame_a` | int | **[OBSOLETO]** alias de `has_luz_A`: índice de frame (0-based) en que se prendió la luz de A. Solo se usa si `has_luz_A` y `has_luz_B` vienen ambos ausentes |
+| `luz_frame_b` | int | **[OBSOLETO]** alias de `has_luz_B`, misma regla que `luz_frame_a` |
+
+`has_luz_A/B` es la forma vigente (DEF-14): antes `luz_frame_a/b` se
+reducían a un booleano (`is not None`) y se perdía la posibilidad de
+reportar el instante del tocado por separado (RF-02 pide luz A, luz B e
+instante). `luz_frame_a/b` se mantiene solo como alias obsoleto para no
+romper clientes viejos.
+
+**Validación del archivo (DEF-13):**
+
+- Si el archivo no abre como video (`cv2.VideoCapture` falla) o tiene
+  menos de `MIN_FRAMES` frames (3 por defecto): `400` con `detail`.
+- Si el archivo pesa más de `CLIP_MAX_MB` (200 MB por defecto,
+  configurable por entorno): `413` con `detail`.
 
 Respuesta (JSON):
 ```json

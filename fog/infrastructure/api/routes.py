@@ -12,7 +12,7 @@ from concurrent.futures import Executor
 
 from aiortc import RTCPeerConnection, RTCSessionDescription
 from dependency_injector.wiring import Provide, inject
-from fastapi import APIRouter, Depends, File, Form, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 
 from fog.application.forward_verdict import ForwardVerdictToClient
 from fog.application.process_match import ProcessIncomingMatch
@@ -27,7 +27,11 @@ from fog.infrastructure.api.schemas import (
     OfferRequest,
     OfferResponse,
 )
-from fog.infrastructure.clips.clip_file_reader import process_uploaded_clip
+from fog.infrastructure.clips.clip_file_reader import (
+    ClipTooLargeError,
+    InvalidClipError,
+    process_uploaded_clip,
+)
 from fog.infrastructure.webrtc.session_registry import SessionRegistry
 from fog.infrastructure.webrtc.track_consumer import consume_track
 from fog.ports.pose_estimator import PoseEstimatorPort
@@ -168,18 +172,39 @@ async def webrtc_luz(
         "no, se asume 'right'/'right'. Si la extracción de features falla "
         "(pose incompleta: sin lock A/B o clip muy corto), responde de "
         "inmediato con disponible=false y motivo='pose_incompleta', sin "
-        "esperar a Cloud (DEF-08)."
+        "esperar a Cloud (DEF-08). Si el archivo no abre como video o tiene "
+        "menos de MIN_FRAMES frames, responde 400; si supera CLIP_MAX_MB, "
+        "responde 413 (DEF-13)."
     ),
 )
 @inject
 async def upload_clip(
     match_id: str,
     file: UploadFile = File(..., description="Clip de video del combate (mismo contenido que el front enviaría por WebRTC)."),
+    has_luz_A: bool | None = Form(
+        None, description="True si se encendió la luz Favero del tirador A."
+    ),
+    has_luz_B: bool | None = Form(
+        None, description="True si se encendió la luz Favero del tirador B."
+    ),
+    t_tocado_ms: int | None = Form(
+        None, ge=0, description="Instante del tocado en ms desde el inicio del clip (RF-02). Opcional."
+    ),
     luz_frame_a: int | None = Form(
-        None, description="Índice de frame (0-based) en que se prendió la luz Favero de A. Omitir/null si no se prendió."
+        None,
+        description=(
+            "[OBSOLETO] Alias de has_luz_A: índice de frame (0-based) en que "
+            "se prendió la luz Favero de A. Se usa solo si has_luz_A/has_luz_B "
+            "se omiten ambos. Preferir has_luz_A."
+        ),
     ),
     luz_frame_b: int | None = Form(
-        None, description="Índice de frame (0-based) en que se prendió la luz Favero de B. Omitir/null si no se prendió."
+        None,
+        description=(
+            "[OBSOLETO] Alias de has_luz_B: índice de frame (0-based) en que "
+            "se prendió la luz Favero de B. Se usa solo si has_luz_A/has_luz_B "
+            "se omiten ambos. Preferir has_luz_B."
+        ),
     ),
     sessions: SessionRegistry = Depends(Provide[Container.sessions]),
     pose_estimator: PoseEstimatorPort = Depends(Provide[Container.pose_estimator]),
@@ -187,13 +212,29 @@ async def upload_clip(
     forward_verdict: ForwardVerdictToClient = Depends(Provide[Container.forward_verdict]),
     executor: Executor = Depends(Provide[Container.executor]),
     verdict_timeout_s: float = Depends(Provide[Container.config.clip_upload_verdict_timeout_s]),
+    clip_max_mb: float = Depends(Provide[Container.config.clip_max_mb]),
+    min_frames: int = Depends(Provide[Container.config.min_frames]),
 ) -> ClipUploadResponse:
     session = sessions.get_or_create_default(match_id)
 
-    tracked = await process_uploaded_clip(file, pose_estimator, executor)
+    try:
+        tracked = await process_uploaded_clip(
+            file, pose_estimator, executor, clip_max_mb=clip_max_mb, min_frames=min_frames
+        )
+    except ClipTooLargeError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except InvalidClipError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    luz = LuzSignal(has_luz_a=luz_frame_a is not None, has_luz_b=luz_frame_b is not None)
+    # has_luz_A/has_luz_B (bool) es la forma vigente (DEF-14); luz_frame_a/b
+    # (índice de frame, reducido a booleano) queda como alias obsoleto para
+    # clientes viejos, y solo se usa si los campos nuevos vienen ambos vacíos.
+    if has_luz_A is None and has_luz_B is None:
+        luz = LuzSignal(has_luz_a=luz_frame_a is not None, has_luz_b=luz_frame_b is not None)
+    else:
+        luz = LuzSignal(has_luz_a=bool(has_luz_A), has_luz_b=bool(has_luz_B))
     session.set_luz(luz)
+    session.t_tocado_ms = t_tocado_ms
 
     unavailable = await process_match.execute(match_id, tracked, session.weapon_side_a, session.weapon_side_b, luz)
 
