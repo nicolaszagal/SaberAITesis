@@ -82,6 +82,23 @@ FAVERO_LUZ_TIMEOUT_S = float(os.environ.get("FAVERO_LUZ_TIMEOUT_S", "2.0"))
 # corta de la luz Favero — default más generoso que FAVERO_LUZ_TIMEOUT_S.
 CLIP_UPLOAD_VERDICT_TIMEOUT_S = float(os.environ.get("CLIP_UPLOAD_VERDICT_TIMEOUT_S", "30.0"))
 
+# Tiempo que SessionRegistry mantiene una sesión (MatchSession) después de
+# entregar el veredicto o el "no disponible", antes de liberarla (DEF-16):
+# ventana para aceptar conexiones tardías de GET /ws/veredicto/{match_id}
+# que todavía no llegaron cuando el resultado quedó listo.
+SESSION_TTL_S = float(os.environ.get("SESSION_TTL_S", "120.0"))
+
+# Cada cuánto corre el barrido periódico que libera las sesiones vencidas
+# (más viejas que SESSION_TTL_S desde que se cerraron). No es un requisito
+# funcional, solo la cadencia del housekeeping — igual que CLAIM_MIN_IDLE_S
+# más arriba.
+SESSION_SWEEP_INTERVAL_S = float(os.environ.get("SESSION_SWEEP_INTERVAL_S", "30.0"))
+
+# TTL (segundos) del stream Redis "cloud:verdicts:{match_id}": Cloud lo fija
+# con EXPIRE en cada XADD (DEF-16) para que un match_id sin consumidor no
+# quede acumulando memoria en Redis indefinidamente.
+VERDICT_STREAM_TTL_S = int(os.environ.get("VERDICT_STREAM_TTL_S", "3600"))
+
 # Mapeo fijo v1, confirmado por Nicolas: A=ROJ (izquierda en cámara), B=VER (derecha).
 FENCER_COLOR = {"A": "ROJ", "B": "VER"}
 

@@ -84,7 +84,7 @@ class ProcessIncomingMatch:
             result = UnavailableResult(match_id=match_id, motivo=MotivoNoDisponible.POSE_INCOMPLETA)
             session = self._sessions.get(match_id)
             if session is not None:
-                session.set_unavailable(result)
+                await session.set_unavailable(result)
                 if session.ws is not None:
                     await session.ws.send_json(result.to_ws_message())
             return result

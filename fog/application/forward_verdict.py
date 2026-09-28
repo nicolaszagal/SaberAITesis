@@ -27,6 +27,6 @@ class ForwardVerdictToClient:
             log.warning("[%s] veredicto recibido pero la sesión ya no existe", match_id)
             return
 
-        session.set_verdict(verdict)
+        await session.set_verdict(verdict)
         if session.ws is not None:
             await session.ws.send_json(verdict.to_ws_message())

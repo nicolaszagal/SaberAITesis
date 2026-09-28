@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, W
 from fog.application.forward_verdict import ForwardVerdictToClient
 from fog.application.process_match import ProcessIncomingMatch
 from fog.composition import Container
-from fog.domain.models import LuzSignal, MotivoNoDisponible, WeaponSide
+from fog.domain.models import LuzSignal, MotivoNoDisponible, UnavailableResult, WeaponSide
 from fog.infrastructure.api.schemas import (
     ClipUploadResponse,
     LuzAck,
@@ -253,6 +253,11 @@ async def upload_clip(
     try:
         await asyncio.wait_for(forward_verdict.execute(match_id), timeout=verdict_timeout_s)
     except asyncio.TimeoutError:
+        # DEF-16: sin esto, esta sesión nunca queda "cerrada" (closed_at
+        # sigue None) y sweep_expired no la libera jamás.
+        await session.set_unavailable(
+            UnavailableResult(match_id=match_id, motivo=MotivoNoDisponible.TIMEOUT)
+        )
         return ClipUploadResponse(
             match_id=match_id,
             has_luz_A=luz.has_luz_a,

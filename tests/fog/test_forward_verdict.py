@@ -27,6 +27,10 @@ async def test_forward_verdict_sets_session_state_and_sends_when_ws_connected():
     assert session.ws.sent == [{
         "type": "veredicto", "match_id": "m1", "fencer": "ROJ", "action": "AttackA", "confidence": 0.91,
     }]
+    # DEF-16: tras entregar el veredicto, la sesión queda marcada como
+    # cerrada para que SessionRegistry.sweep_expired la libere pasado
+    # SESSION_TTL_S.
+    assert session.closed_at is not None
 
 
 async def test_forward_verdict_no_op_when_session_missing():
@@ -48,3 +52,4 @@ async def test_forward_verdict_sets_state_without_ws_connected():
 
     assert session.verdict == verdict
     assert session.verdict_event.is_set()
+    assert session.closed_at is not None

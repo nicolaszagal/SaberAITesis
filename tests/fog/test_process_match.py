@@ -124,6 +124,10 @@ async def test_execute_sets_unavailable_on_session_and_sends_ws_when_connected()
     assert session.ws.sent == [
         {"type": "no_disponible", "match_id": "m4", "motivo": "pose_incompleta"}
     ]
+    # DEF-16: tras entregar el "no disponible", la sesión queda marcada
+    # como cerrada para que SessionRegistry.sweep_expired la libere pasado
+    # SESSION_TTL_S.
+    assert session.closed_at is not None
 
 
 async def test_execute_unavailable_no_op_when_session_missing():

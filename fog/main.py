@@ -27,6 +27,8 @@ Ejecutar (desde backend/):
     uvicorn fog.main:app --host 0.0.0.0 --port 8001
 """
 
+import asyncio
+import contextlib
 import logging
 from contextlib import asynccontextmanager
 
@@ -60,8 +62,18 @@ async def lifespan(app: FastAPI):
     container.pose_estimator()
     container.feature_extractor()
     container.redis_client()
+    # DEF-16: barrido periódico que libera las MatchSession cerradas hace
+    # más de SESSION_TTL_S (ver SessionRegistry.sweep_forever).
+    sweep_task = asyncio.create_task(
+        container.sessions().sweep_forever(
+            config.SESSION_TTL_S, config.SESSION_SWEEP_INTERVAL_S
+        )
+    )
     log.info("Fog listo.")
     yield
+    sweep_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await sweep_task
     await container.redis_client().close()
 
 

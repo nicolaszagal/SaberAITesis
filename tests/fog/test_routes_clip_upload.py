@@ -19,6 +19,7 @@ unitarias de application/.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import tempfile
 import time
@@ -34,6 +35,7 @@ from fog.domain.models import ExtractedFeatures, TrackedSequence, VerdictView, W
 from fog.infrastructure.api import routes
 from fog.infrastructure.persistence.in_memory_match_repository import InMemoryMatchRepository
 from fog.infrastructure.webrtc.session_registry import SessionRegistry
+from fog.ports.verdict_subscriber import VerdictStreamSubscriberPort
 from tests.fog.fakes import (
     FakeFeatureExtractor,
     FakeFeaturePublisher,
@@ -41,6 +43,14 @@ from tests.fog.fakes import (
     FakeVerdictSubscriber,
     InlineExecutor,
 )
+
+
+class _HangingVerdictSubscriber(VerdictStreamSubscriberPort):
+    """Nunca resuelve: simula que Cloud no responde, para ejercitar la
+    rama de timeout de POST /matches/{match_id}/clip (DEF-16)."""
+
+    async def wait_for_verdict(self, match_id: str) -> VerdictView:
+        await asyncio.Event().wait()
 
 
 def _tiny_clip_bytes(n_frames: int = 5) -> bytes:
@@ -238,3 +248,59 @@ def test_upload_clip_non_video_file_returns_400(unlocked_tracking_client):
 
     publisher = container.feature_publisher()
     assert publisher.published == []
+
+
+@pytest.fixture
+def cloud_timeout_client():
+    """Cliente con pose+tracking exitosos (locked=True) pero Cloud que
+    nunca responde, para ejercitar la rama de timeout de POST
+    /matches/{match_id}/clip con un timeout de verdict_timeout_s chico."""
+    container = Container()
+    container.config.min_frames.from_value(3)
+    container.config.clip_upload_verdict_timeout_s.from_value(0.05)
+    container.config.luz_timeout_s.from_value(2.0)
+    container.config.clip_max_mb.from_value(200.0)
+
+    tracked = TrackedSequence(frames=[], frame_w=64, frame_h=64, locked=True)
+    container.pose_estimator.override(FakePoseEstimator(tracked=tracked))
+    container.feature_extractor.override(FakeFeatureExtractor())
+    container.feature_publisher.override(FakeFeaturePublisher())
+    container.verdict_subscriber.override(_HangingVerdictSubscriber())
+    container.match_repository.override(InMemoryMatchRepository())
+    container.executor.override(InlineExecutor())
+    container.sessions.override(SessionRegistry())
+
+    container.wire(modules=[routes])
+    app = FastAPI()
+    app.include_router(routes.router)
+
+    with TestClient(app) as client:
+        yield client, container
+
+    container.unwire()
+
+
+def test_upload_clip_marks_session_closed_when_cloud_times_out(cloud_timeout_client):
+    """DEF-16: el timeout de Cloud es, para el front, otro caso de "no
+    disponible" — la sesión debe quedar cerrada (closed_at) para que
+    SessionRegistry.sweep_expired la libere pasado SESSION_TTL_S, en vez
+    de acumularse para siempre."""
+    client, container = cloud_timeout_client
+    clip = _tiny_clip_bytes()
+
+    response = client.post(
+        "/matches/m-def16-timeout/clip",
+        files={"file": ("clip.mp4", clip, "video/mp4")},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["timed_out"] is True
+    assert body["disponible"] is False
+    assert body["motivo"] == "timeout"
+
+    session = container.sessions().get("m-def16-timeout")
+    assert session is not None
+    assert session.closed_at is not None
+    assert session.unavailable is not None
+    assert session.unavailable.motivo.value == "timeout"
