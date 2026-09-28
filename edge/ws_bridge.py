@@ -27,7 +27,7 @@ RTSP_URLS: dict[str, str] = {
     "front": os.environ["RTSP_FRONT_URL"],
     "top": os.environ["RTSP_TOP_URL"],
 }
-WS_PORT = int(os.environ.get("WS_PORT", "8001"))
+WS_PORT = int(os.environ.get("WS_PORT", "8002"))
 JPEG_QUALITY = int(os.environ.get("JPEG_QUALITY", "70"))
 TARGET_FPS = int(os.environ.get("TARGET_FPS", "15"))
 
@@ -35,8 +35,26 @@ TARGET_FPS = int(os.environ.get("TARGET_FPS", "15"))
 _clients: dict[str, set[WebSocketServerProtocol]] = {name: set() for name in RTSP_URLS}
 
 
-async def handle_connection(ws: WebSocketServerProtocol, path: str) -> None:
+_CAMERA_PATH_PREFIX = "ws/camera/"
+
+
+def _camera_from_path(path: str) -> str:
+    """Obtiene el nombre de cámara a partir de la ruta del WebSocket.
+
+    Acepta `/front`, `/top` y los alias `/ws/camera/front`, `/ws/camera/top`.
+
+    Args:
+        path: Ruta solicitada por el cliente.
+
+    Returns:
+        Nombre de cámara; puede no existir en `_clients` si la ruta es inválida.
+    """
     camera = path.strip("/")
+    return camera.removeprefix(_CAMERA_PATH_PREFIX)
+
+
+async def handle_connection(ws: WebSocketServerProtocol, path: str) -> None:
+    camera = _camera_from_path(path)
     if camera not in _clients:
         await ws.close(code=1008, reason=f"cámara desconocida: {camera!r}")
         return
