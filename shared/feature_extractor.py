@@ -9,10 +9,9 @@ reimplementa de memoria, se verificó por lectura directa del archivo.
 
 Diferencia respecto al original: aquí se devuelven los 96 valores por
 persona completos (incluye el bloque biomecánico de Fase B, offset 91:96),
-porque el pipeline desplegado ahora es `lstm_4class` (192 features, 4
-clases, con luz Favero) — ver PLAN_ARQUITECTURA_DDD.md. El truncamiento a
-91/persona que tenía la versión anterior (pipeline de 182/6 clases) se
-eliminó junto con ese pipeline, que quedó descartado.
+porque el modelo vigente usa 192 features (bloque biomecánico de Fase B
+incluido). La corrección de velocidad relativa del CM que aplica
+`process_clip` en entrenamiento vive en `apply_relative_cm_velocity`.
 
 Este módulo NO sabe nada de ultralytics ni de torch: solo opera sobre los
 arrays planos (keypoints xy/conf, box xyxy) que entrega PoseEstimatorPort.
@@ -50,6 +49,10 @@ FEAT_PER_PERSON = FEAT_POS + FEAT_VEL + FEAT_STEP + FEAT_WEAPON + FEAT_BIO  # 96
 TOTAL_FEATURES  = FEAT_PER_PERSON * 2                                       # 192
 
 ANOMALY_THR = 0.5
+
+# Offset del bloque biomecánico (cm_vel_x, cm_vel_y, body_speed, elbow_angle,
+# vel_elbow_angle) dentro del vector de 96 valores por tirador.
+BIO_OFFSET = FEAT_PER_PERSON - FEAT_BIO  # 91
 
 
 # ──────────────────────────────────────────────
@@ -227,9 +230,10 @@ def extract_person_features(detected, pts, confs, box_xyxy, frame_w, frame_h, pr
     feat[weapon_offset + 1] = weapon_ext - prev_weapon_ext
 
     # Bloque biomecánico Fase B (5 valores): velocidad del CM, rapidez del
-    # cuerpo, ángulo del codo y su velocidad. Usado por el pipeline
-    # lstm_4class (a diferencia del pipeline viejo, que los descartaba).
-    bio_offset = FEAT_PER_PERSON - FEAT_BIO
+    # cuerpo, ángulo del codo y su velocidad. cm_vel_x/y y body_speed son
+    # valores ABSOLUTOS intermedios: el extractor de Fog los sobrescribe con
+    # apply_relative_cm_velocity (igual que process_clip en entrenamiento).
+    bio_offset = BIO_OFFSET
     if prev_cm_x != 0.0:
         cm_vel_x = (cm_x - prev_cm_x) / bbox_h
         cm_vel_y = (cm_y - prev_cm_y) / bbox_h
@@ -248,6 +252,48 @@ def extract_person_features(detected, pts, confs, box_xyxy, frame_w, frame_h, pr
 
     return (feat, new_rel, new_dist_ankles, new_weapon_ext,
             cm_x, cm_y, elbow_angle)
+
+
+# ──────────────────────────────────────────────
+# Corrección de movimiento de cámara en cm_vel (DEF-27)
+# ──────────────────────────────────────────────
+
+def apply_relative_cm_velocity(feat_a, feat_b, detected_a, detected_b,
+                               prev_cm_x_a, prev_cm_x_b):
+    """
+    Reemplaza cm_vel_x/y y body_speed de ambos tiradores por la velocidad
+    relativa al rival, igual que `process_clip` en dataset/05_extract_features.py:
+    ``rel_vel_A = 0.5 * (abs_vel_A - abs_vel_B)``, ``rel_vel_B = -rel_vel_A``.
+    Un paneo de cámara desplaza a ambos por igual y se cancela en la resta.
+
+    Solo se corrige si ambos tiradores están detectados en este frame y en
+    el anterior; si no, cm_vel_x/y y body_speed quedan en 0 (como en
+    entrenamiento, donde se sobrescriben con ceros en ese caso).
+
+    Args:
+        feat_a: (96,) features del tirador A en este frame; se modifica in situ.
+        feat_b: (96,) features del tirador B en este frame; se modifica in situ.
+        detected_a: True si A fue detectado en este frame.
+        detected_b: True si B fue detectado en este frame.
+        prev_cm_x_a: CM x de A en el frame anterior (0.0 = sin previo), leído
+            ANTES de procesar el frame actual.
+        prev_cm_x_b: idem para B.
+    """
+    if detected_a and detected_b and prev_cm_x_a != 0.0 and prev_cm_x_b != 0.0:
+        abs_vel_a = feat_a[BIO_OFFSET:BIO_OFFSET + 2].copy()
+        abs_vel_b = feat_b[BIO_OFFSET:BIO_OFFSET + 2].copy()
+        rel_vel_a = 0.5 * (abs_vel_a - abs_vel_b)
+        rel_vel_b = -rel_vel_a
+    else:
+        rel_vel_a = np.zeros(2, dtype=np.float32)
+        rel_vel_b = np.zeros(2, dtype=np.float32)
+
+    feat_a[BIO_OFFSET] = rel_vel_a[0]
+    feat_a[BIO_OFFSET + 1] = rel_vel_a[1]
+    feat_a[BIO_OFFSET + 2] = float(np.hypot(rel_vel_a[0], rel_vel_a[1]))
+    feat_b[BIO_OFFSET] = rel_vel_b[0]
+    feat_b[BIO_OFFSET + 1] = rel_vel_b[1]
+    feat_b[BIO_OFFSET + 2] = float(np.hypot(rel_vel_b[0], rel_vel_b[1]))
 
 
 # ──────────────────────────────────────────────

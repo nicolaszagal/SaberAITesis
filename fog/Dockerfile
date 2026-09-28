@@ -21,7 +21,9 @@ WORKDIR /app/backend
 # de backend/). Las fijamos explícitas para no depender de esa cuenta de
 # directorios dentro del contenedor.
 ENV YOLO_POSE_MODEL_PATH=/app/dataset/yolov8x-pose.pt
-ENV FEATURE_STATS_PATH=/app/dataset/lstm_4class/feature_stats.npz
+ENV FEATURE_STATS_PATH=/app/dataset/lstm_6class/feature_stats.npz
+# Perfil de recorte/ablación del modelo (fog/infrastructure/features/preprocessing_profiles.json).
+ENV FEATURE_PREPROCESSING_PROFILE=lstm_6class
 
 # Librerías nativas requeridas por opencv-python (libGL, libglib, etc.) en
 # una imagen "slim" sin X server — causa típica de

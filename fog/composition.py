@@ -19,6 +19,7 @@ from ultralytics import YOLO
 from fog.application.forward_verdict import ForwardVerdictToClient
 from fog.application.process_match import ProcessIncomingMatch
 from fog.infrastructure.features.new192_feature_extractor import New192FeatureExtractor
+from fog.infrastructure.features.preprocessing_profile import load_profile
 from fog.infrastructure.messaging.redis_feature_publisher import RedisFeaturePublisher
 from fog.infrastructure.messaging.redis_verdict_subscriber import RedisVerdictSubscriber
 from fog.infrastructure.persistence.in_memory_match_repository import InMemoryMatchRepository
@@ -30,11 +31,12 @@ def _load_yolo_model(model_path: str) -> YOLO:
     return YOLO(model_path)
 
 
-def _build_feature_extractor(stats_path: str, ablate_indices: list[int]) -> New192FeatureExtractor:
+def _build_feature_extractor(
+    stats_path: str, profile_name: str, profiles_path: str | None
+) -> New192FeatureExtractor:
     stats = np.load(stats_path)
-    return New192FeatureExtractor(
-        mean=stats["mean"], std=stats["std"], ablate_indices=ablate_indices
-    )
+    profile = load_profile(profile_name, profiles_path)
+    return New192FeatureExtractor(mean=stats["mean"], std=stats["std"], profile=profile)
 
 
 def _build_redis_client(redis_url: str) -> "redis.Redis":
@@ -59,7 +61,8 @@ class Container(containers.DeclarativeContainer):
     feature_extractor = providers.Singleton(
         _build_feature_extractor,
         stats_path=config.feature_stats_path,
-        ablate_indices=config.ablate_indices,
+        profile_name=config.feature_preprocessing_profile,
+        profiles_path=config.feature_preprocessing_profiles_path,
     )
 
     match_repository = providers.Singleton(InMemoryMatchRepository)

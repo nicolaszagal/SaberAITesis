@@ -13,8 +13,7 @@ Responsabilidades (ver ../CONTRATO_API.md):
      responde con el veredicto de forma síncrona.
   5. Procesa los frames del clip (WebRTC o subido) frame a frame en
      cuanto llegan (PoseTrackingSession, ver ports/pose_estimator.py) y
-     extrae features 192-dim al finalizar (FeatureExtractorPort, pipeline
-     lstm_4class).
+     extrae features 192-dim al finalizar (FeatureExtractorPort).
   6. Publica las features en el stream Redis "fog:features" para Cloud.
   7. Escucha el stream de veredicto de Cloud ("cloud:verdicts:{match_id}")
      y lo reenvía al front por WebSocket (/ws/veredicto/{match_id}).
@@ -42,13 +41,14 @@ from shared import config
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:%(name)s:%(message)s")
 log = logging.getLogger("fog")
 
-config.require_paths("FEATURE_STATS_PATH")
+config.require_paths("FEATURE_STATS_PATH", "FEATURE_PREPROCESSING_PROFILE")
 
 container = Container()
 container.config.redis_url.from_value(config.REDIS_URL)
 container.config.yolo_pose_model_path.from_value(config.YOLO_POSE_MODEL_PATH)
 container.config.feature_stats_path.from_value(config.FEATURE_STATS_PATH)
-container.config.ablate_indices.from_value(config.ABLATE_INDICES)
+container.config.feature_preprocessing_profile.from_value(config.FEATURE_PREPROCESSING_PROFILE)
+container.config.feature_preprocessing_profiles_path.from_value(config.FEATURE_PREPROCESSING_PROFILES_PATH)
 container.config.min_frames.from_value(config.MIN_FRAMES)
 container.config.clip_max_mb.from_value(config.CLIP_MAX_MB)
 container.config.luz_timeout_s.from_value(config.FAVERO_LUZ_TIMEOUT_S)
@@ -58,7 +58,7 @@ container.wire(modules=[routes])
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    log.info("Cargando modelo YOLO y extractor de features (lstm_4class, 192-dim)...")
+    log.info("Cargando modelo YOLO y extractor de features (192-dim)...")
     container.pose_estimator()
     container.feature_extractor()
     container.redis_client()
