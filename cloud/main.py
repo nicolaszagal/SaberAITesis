@@ -27,6 +27,8 @@ log = logging.getLogger("cloud")
 
 
 async def main() -> None:
+    config.require_paths("LSTM_CHECKPOINT_PATH")
+
     container = Container()
     container.config.redis_url.from_value(config.REDIS_URL)
     container.config.checkpoint_path.from_value(config.LSTM_CHECKPOINT_PATH)
