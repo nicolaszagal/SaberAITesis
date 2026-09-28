@@ -16,19 +16,27 @@ cd backend
 python3 -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 
-# torch primero, siguiendo https://pytorch.org/get-started/locally/
-# según tu plataforma (CPU/CUDA/MPS) — no incluido en requirements.txt
-# porque el wheel correcto depende del hardware.
-pip install torch
+# torch (+ torchvision si vas a usar Fog) primero, siguiendo
+# https://pytorch.org/get-started/locally/ según tu plataforma
+# (CPU/CUDA/MPS) — no incluidos en requirements.txt porque el wheel
+# correcto depende del hardware. -c constraints.txt fija las versiones
+# verificadas juntas (torch==2.12.1, torchvision==0.27.1,
+# ultralytics==8.4.75 — DEF-19, ver constraints.txt) si tu plataforma
+# resuelve esos wheels; si no, instalá los que correspondan a tu hardware
+# y ajustá constraints.txt.
+pip install torch torchvision -c constraints.txt
 
-pip install -r requirements.txt
+pip install -r requirements.txt -c constraints.txt
 ```
 
-`ultralytics` no tiene versión pinneada en `requirements.txt` (no se pudo
-verificar en el entorno donde se construyó este backend). Si ya tenés una
-versión fijada para `dataset/lstm_4class/05_extract_features.py`, usar esa
-misma para evitar divergencias de comportamiento entre tracking de
-entrenamiento y producción.
+`ultralytics` no tiene versión pinneada en `requirements.txt` (para no
+acoplar el requirements.txt de desarrollo a una plataforma), pero
+`constraints.txt` fija la versión verificada junto con torch/torchvision
+en este entorno (`python -c "from torchvision.ops import nms; import
+ultralytics"` sin error). Si ya tenés una versión fijada para
+`dataset/lstm_4class/05_extract_features.py`, usar esa misma para evitar
+divergencias de comportamiento entre tracking de entrenamiento y
+producción, y actualizar `constraints.txt` en consecuencia.
 
 ### Si `pip install -r requirements.txt` intenta compilar algo desde un `.tar.gz`
 
