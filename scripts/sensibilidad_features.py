@@ -9,7 +9,8 @@ extracción de features:
     (las mismas que generaron `results/20260928_141021_predictions.csv`).
   - "fog": `YoloV8PoseAdapter` + `New192FeatureExtractor` (perfil
     `lstm_6class`), extraídas en vivo desde los clips de
-    `dataset/dataset trimmed/test_trimmed`.
+    `dataset/dataset trimmed/test_trimmed`, con el brazo armado anotado de
+    cada clip (Label Studio pk=5), igual que en la extracción de los `.npy`.
 
 No modifica nada bajo `dataset/`: solo lee `.npy`, `.mp4`, `feature_stats.npz`
 y `luz_annotations.csv`. El filtro Favero se aplica con la misma lógica que
@@ -110,11 +111,39 @@ CHECKPOINT_DIR = LSTM6_DIR / "checkpoints" / RUN_ID
 RESULTS_CSV = LSTM6_DIR / "results" / f"{RUN_ID}_predictions.csv"
 REPORT_PATH = BACKEND_DIR / "docs" / "evidencia" / "sensibilidad_features.md"
 
-# MVP: ambos tiradores usan "right" (ver docstring de dataset/05_extract_features.py,
-# "Para el MVP ambos tiradores usan 'right'"). No hay weapon_side_A/B real
-# anotado para el path de Fog en esta prueba.
-WEAPON_SIDE_A = WeaponSide.RIGHT
-WEAPON_SIDE_B = WeaponSide.RIGHT
+LABELS_DIR = DATASET_DIR / "labels"
+
+
+def load_weapon_sides() -> dict[str, tuple[WeaponSide, WeaponSide]]:
+    """Brazo armado anotado por clip de test (Label Studio, proyecto pk=5).
+
+    Es la misma fuente que usó `dataset/05_extract_features.py` al generar los
+    `.npy`; si un tirador no tiene brazo anotado se usa "right", igual que ese script.
+
+    Returns:
+        stem -> (brazo de A, brazo de B).
+    """
+    import json
+    import sqlite3
+    from glob import glob
+
+    db = sorted(glob(str(LABELS_DIR / "label_studio_backup_*.sqlite3")))[-1]
+    con = sqlite3.connect(db)
+    cur = con.cursor()
+    cur.execute(
+        "SELECT t.data, tc.result FROM task t JOIN task_completion tc ON tc.task_id = t.id "
+        "WHERE tc.was_cancelled = 0 AND t.project_id = 5")
+    sides: dict[str, tuple[WeaponSide, WeaponSide]] = {}
+    for data_s, res_s in cur.fetchall():
+        stem = Path(json.loads(data_s)["filename"]).stem
+        chosen = {"weapon_side_A": "right", "weapon_side_B": "right"}
+        for item in json.loads(res_s) if res_s else []:
+            choices = item.get("value", {}).get("choices")
+            if item.get("from_name") in chosen and choices:
+                chosen[item["from_name"]] = choices[0]
+        sides[stem] = (WeaponSide(chosen["weapon_side_A"]), WeaponSide(chosen["weapon_side_B"]))
+    con.close()
+    return sides
 
 
 def load_luz_map() -> dict[str, tuple[bool, bool]]:
@@ -179,8 +208,19 @@ def classify(model: LSTMClassifier, sequence: np.ndarray, luz_ab: tuple[bool, bo
 
 
 def extract_fog_normalized(adapter: YoloV8PoseAdapter, extractor: New192FeatureExtractor,
-                            mp4_path: Path) -> tuple[np.ndarray | None, str | None]:
-    """Corre el camino de Fog sobre un clip. Retorna (secuencia normalizada, error)."""
+                            mp4_path: Path,
+                            sides: tuple[WeaponSide, WeaponSide]) -> tuple[np.ndarray | None, str | None]:
+    """Corre el camino de Fog sobre un clip con el brazo armado anotado de cada tirador.
+
+    Args:
+        adapter: detector y tracker de Fog.
+        extractor: extractor de features de Fog.
+        mp4_path: clip de test_trimmed.
+        sides: (brazo de A, brazo de B).
+
+    Returns:
+        (secuencia normalizada, mensaje de error); uno de los dos es None.
+    """
     session = adapter.start_session()
     cap = cv2.VideoCapture(str(mp4_path))
     if not cap.isOpened():
@@ -194,7 +234,7 @@ def extract_fog_normalized(adapter: YoloV8PoseAdapter, extractor: New192FeatureE
     finally:
         cap.release()
     tracked = session.finish()
-    out = extractor.extract(tracked, WEAPON_SIDE_A, WEAPON_SIDE_B)
+    out = extractor.extract(tracked, *sides)
     if out.sequence is None:
         return None, out.stats.get("error", "error desconocido")
     return out.sequence, None
@@ -210,6 +250,7 @@ def main() -> None:
     mean, std = stats["mean"].astype(np.float32), stats["std"].astype(np.float32)
 
     luz_map = load_luz_map()
+    weapon_sides = load_weapon_sides()
     stored_predictions = load_stored_predictions()
     clips = discover_clips()
 
@@ -239,7 +280,8 @@ def main() -> None:
 
         luz_ab = luz_map.get(stem, (False, False))
 
-        norm_fog, err = extract_fog_normalized(adapter, extractor, mp4_path)
+        norm_fog, err = extract_fog_normalized(
+            adapter, extractor, mp4_path, weapon_sides.get(stem, (WeaponSide.RIGHT, WeaponSide.RIGHT)))
         if norm_fog is None:
             failures.append((stem, err))
             continue
@@ -293,6 +335,10 @@ def write_report(rows: list[dict], failures: list[tuple[str, str]], config: dict
 
     lines = []
     lines.append("# Prueba de sensibilidad de features — dataset vs Fog\n")
+    lines.append("> **Errata.** La versión anterior de este reporte pasaba brazo armado `right`/`right` a Fog, "
+                  "mientras que los `.npy` se extrajeron con el brazo anotado en Label Studio (pk=5). "
+                  "Eso sobrestimaba la discrepancia: 92/104 predicciones iguales al CSV frente a 97/104 "
+                  "con el brazo anotado, que es lo que usa esta versión.\n")
     lines.append(f"Checkpoint: `{CHECKPOINT_DIR.name}/best_model.pt` "
                   f"(luz_size={config['luz_size']}, hidden_size={config['hidden_size']}). "
                   f"Comparación contra `results/{RUN_ID}_predictions.csv`.\n")
