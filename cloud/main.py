@@ -22,8 +22,9 @@ import logging
 
 from cloud.composition import Container
 from shared import config
+from shared.logging_config import configurar_logging_tecnico
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:%(name)s:%(message)s")
+configurar_logging_tecnico()
 log = logging.getLogger("cloud")
 
 

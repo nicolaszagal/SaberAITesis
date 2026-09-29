@@ -13,6 +13,7 @@ def test_importing_fog_main_does_not_force_aioice_debug_logging(monkeypatch):
     """
     monkeypatch.setattr(config, "FEATURE_STATS_PATH", "/tmp/feature_stats.npz")
     monkeypatch.setattr(config, "FEATURE_PREPROCESSING_PROFILE", "lstm_6class")
+    monkeypatch.setattr(config, "EVIDENCE_DIR", "/tmp/evidencia")
     logging.getLogger("aioice.ice").setLevel(logging.NOTSET)
 
     import fog.main

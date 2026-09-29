@@ -84,6 +84,8 @@ sobre `numpy==2.3.4` en `requirements.txt` para un caso concreto ya resuelto.
 | `DATABASE_URL`          | — (sin default; credenciales)                   | PostgreSQL 16, `postgresql+asyncpg://usuario:clave@host:puerto/base` (Fog); con el compose, puerto `POSTGRES_HOST_PORT` (5433) |
 | `POSTGRES_HOST_PORT`    | `5433`                                          | puerto del host donde `fog/docker-compose.yml` publica PostgreSQL (solo loopback) |
 | `STORAGE_DIR`           | — (sin default)                                 | raíz del almacenamiento local de clips y keypoints `.npz` por SHA-256 (Fog); en Docker, `/data/storage` |
+| `EVIDENCE_DIR`          | — (obligatoria en Fog)                          | log de evidencia (L01): una línea JSON por revisión cerrada en `EVIDENCE_DIR/<evento_id>.jsonl` (logger `sabre.evidencia`); en Docker, `/data/evidencia` |
+| `LOG_LEVEL`             | `INFO`                                          | nivel del log técnico (Fog y Cloud); `aioice`, `aiortc`, `uvicorn.access` y `ultralytics` quedan siempre en WARNING |
 | `FAVERO_LUZ_TIMEOUT_S`  | `2.0`                                           | espera máxima de la luz Favero antes de clasificar sin ella |
 | `CLOUD_CONSUMER_NAME`   | `cloud-worker-1`                                | nombre de consumidor en el grupo `cloud_workers` (relevante si se levanta más de una instancia de Cloud) |
 

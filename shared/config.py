@@ -22,6 +22,16 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 # DATABASE_URL: el adaptador se construye recién cuando se necesita.
 STORAGE_DIR = os.environ.get("STORAGE_DIR")
 
+# Directorio del log de evidencia de la validación (logger `sabre.evidencia`):
+# una línea JSON por revisión cerrada en EVIDENCE_DIR/<evento_id>.jsonl. Es
+# distinto del log técnico. Sin default: Fog exige fijarlo al arrancar
+# (require_paths) para no perder evidencia sin darse cuenta.
+EVIDENCE_DIR = os.environ.get("EVIDENCE_DIR")
+
+# Nivel del log técnico (INFO por defecto). Las librerías ruidosas quedan en
+# WARNING aparte (ver shared/logging_config.py).
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
+
 # Fog -> Cloud
 STREAM_FEATURES = "fog:features"
 GROUP_CLOUD = "cloud_workers"

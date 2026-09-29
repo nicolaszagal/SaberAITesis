@@ -202,6 +202,7 @@ class AppAuditable:
     container: Container
     sql: SQL
     storage_dir: Path
+    evidencia_dir: Path
     evento_id: uuid.UUID
     arbitro_id: uuid.UUID
 
@@ -260,6 +261,7 @@ def crear_app(database_url, alembic_cfg, tmp_path):
         container = Container()
         container.config.database_url.from_value(database_url)
         container.config.storage_dir.from_value(str(tmp_path / "storage"))
+        container.config.evidence_dir.from_value(str(tmp_path / "evidencia"))
         container.config.min_frames.from_value(3)
         container.config.clip_upload_verdict_timeout_s.from_value(verdict_timeout_s)
         container.config.luz_timeout_s.from_value(2.0)
@@ -288,7 +290,9 @@ def crear_app(database_url, alembic_cfg, tmp_path):
         client_cm = TestClient(app, raise_server_exceptions=False)
         client = client_cm.__enter__()
         abiertos.append((client_cm, container))
-        return AppAuditable(client, container, sql, tmp_path / "storage", evento_id, arbitro_id)
+        return AppAuditable(
+            client, container, sql, tmp_path / "storage", tmp_path / "evidencia", evento_id, arbitro_id
+        )
 
     yield _crear
     for client_cm, container in abiertos:
