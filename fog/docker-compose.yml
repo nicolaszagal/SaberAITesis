@@ -26,11 +26,14 @@ services:
       # Volumen de archivos (clips y keypoints .npz por SHA-256); la base
       # solo guarda URI y hash.
       STORAGE_DIR: /data/storage
+      # Log de evidencia de la validación (una línea por revisión cerrada).
+      EVIDENCE_DIR: /data/evidencia
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - sabre_storage:/data/storage
+      - sabre_evidencia:/data/evidencia
       # Sibling de backend/ (dos niveles arriba de fog/), mismo layout que
       # la sección 1 de GUIA_EJECUCION.md. Solo lectura: el contenedor no
       # necesita escribir ahí.
@@ -71,3 +74,4 @@ services:
 volumes:
   sabre_pgdata:
   sabre_storage:
+  sabre_evidencia:

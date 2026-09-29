@@ -8,6 +8,7 @@ sugiere; el punto lo decide el árbitro (este caso de uso no asigna puntos).
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import asdict, dataclass, is_dataclass, replace
 from datetime import date, datetime
@@ -21,8 +22,12 @@ from fog.domain.errors import (
     VeredictoInvalido,
     VeredictoYaRegistrado,
 )
+from fog.domain.evidencia import construir_linea
 from fog.domain.models import CLASES_MODELO
+from fog.ports.registro_evidencia import RegistroEvidenciaPort
 from fog.ports.unidad_de_trabajo import UnidadDeTrabajoPort
+
+log = logging.getLogger("fog.application")
 
 DECISIONES = ("mantener", "cambiar", "anular")
 
@@ -82,8 +87,9 @@ def construir_snapshot(*, revision, tocado, clasificacion, veredicto, modelo) ->
 
 
 class RegistrarVeredicto:
-    def __init__(self, uow: UnidadDeTrabajoPort):
+    def __init__(self, uow: UnidadDeTrabajoPort, evidencia: RegistroEvidenciaPort | None = None):
         self._uow = uow
+        self._evidencia = evidencia
 
     async def execute(
         self,
@@ -139,6 +145,7 @@ class RegistrarVeredicto:
             tocado = await tx.tocados.obtener(revision.tocado_id)
             clasificacion = await tx.clasificaciones.obtener(revision.clasificacion_id)
             modelo = await tx.modelos.obtener(clasificacion.modelo_version_id)
+            combate = await tx.combates.obtener(tocado.combate_id)
 
             veredicto = await tx.veredictos.crear(
                 revision_id=revision.id,
@@ -158,9 +165,38 @@ class RegistrarVeredicto:
                     modelo=modelo,
                 ),
             )
+        log.info(
+            "[%s] veredicto registrado: decision=%s clase_final=%s",
+            revision.id, decision, clase_final,
+        )
+        self._registrar_evidencia(
+            evento_id=combate.evento_id,
+            revision=cerrada,
+            tocado=tocado,
+            clasificacion=clasificacion,
+            veredicto=veredicto,
+            modelo=modelo,
+            auditoria=auditoria,
+        )
         return VeredictoRegistrado(
             combate_id=tocado.combate_id,
             veredicto=veredicto,
             revision=cerrada,
             auditoria=auditoria,
         )
+
+    def _registrar_evidencia(self, *, evento_id, **registrado) -> None:
+        """Escribe la línea de evidencia con lo ya guardado en la base.
+
+        Se llama después de confirmar la transacción. Si la escritura falla,
+        el veredicto ya está registrado y auditado: solo se deja el error en
+        el log técnico.
+        """
+        if self._evidencia is None or evento_id is None:
+            return
+        try:
+            self._evidencia.registrar(construir_linea(evento_id=evento_id, **registrado))
+        except Exception:
+            log.exception(
+                "[%s] no se pudo escribir el log de evidencia", registrado["revision"].id
+            )

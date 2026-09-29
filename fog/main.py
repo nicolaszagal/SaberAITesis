@@ -40,11 +40,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fog.composition import Container
 from fog.infrastructure.api import routes
 from shared import config
+from shared.logging_config import configurar_logging_tecnico
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:%(name)s:%(message)s")
+configurar_logging_tecnico()
 log = logging.getLogger("fog")
 
-config.require_paths("FEATURE_STATS_PATH", "FEATURE_PREPROCESSING_PROFILE")
+config.require_paths("FEATURE_STATS_PATH", "FEATURE_PREPROCESSING_PROFILE", "EVIDENCE_DIR")
 
 container = Container()
 container.config.redis_url.from_value(config.REDIS_URL)
@@ -54,6 +55,7 @@ container.config.feature_preprocessing_profile.from_value(config.FEATURE_PREPROC
 container.config.feature_preprocessing_profiles_path.from_value(config.FEATURE_PREPROCESSING_PROFILES_PATH)
 container.config.database_url.from_value(config.DATABASE_URL)
 container.config.storage_dir.from_value(config.STORAGE_DIR)
+container.config.evidence_dir.from_value(config.EVIDENCE_DIR)
 container.config.min_frames.from_value(config.MIN_FRAMES)
 container.config.clip_max_mb.from_value(config.CLIP_MAX_MB)
 container.config.luz_timeout_s.from_value(config.FAVERO_LUZ_TIMEOUT_S)

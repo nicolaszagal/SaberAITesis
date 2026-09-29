@@ -523,6 +523,17 @@ toma como etiqueta siempre `veredicto.clase_final`, excluyendo `anular`, sin dep
 el árbitro mantuvo o cambió la acción; `clase_sugerida` es la de la clasificación. La
 concordancia sistema-árbitro es `clase_sugerida == clase_final`.
 
+Al cerrarse la revisión, Fog agrega una línea al log de evidencia
+`EVIDENCE_DIR/<evento_id>.jsonl` (logger `sabre.evidencia`, L01), armada con lo
+ya registrado en la base. Campos, en este orden: `ts` (`veredicto.registrado_en`),
+`evento_id`, `revision_id`, `validacion` (`V1` si `tocado.fuente = simulado`,
+`V2` si `favero`), `modelo`, `luz_A`, `luz_B`, `disponible`, `motivo`,
+`clase_sugerida`, `confianza`, `latencia_ms`, `decision`, `clase_final_arbitro`,
+`concordancia` (`clase_sugerida == clase_final_arbitro`; `null` si no disponible
+o anulada) y `hash_auditoria`. Las clases usan los nombres del modelo. Si la
+escritura falla, el veredicto ya registrado no se revierte; el error queda en el
+log técnico.
+
 ## 8. Notas y desviaciones respecto a los diagramas de arquitectura
 
 - **Modelo desplegado**: `dataset/lstm_6class/checkpoints/<run_id>/best_model.pt`

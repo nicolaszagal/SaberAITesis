@@ -31,6 +31,7 @@ from fog.application.listar_catalogos import ListarEventos, ListarUsuarios
 from fog.application.process_match import ProcessIncomingMatch
 from fog.application.registrar_clasificacion import RegistrarClasificacion
 from fog.application.registrar_veredicto import RegistrarVeredicto
+from fog.infrastructure.evidencia.registro_jsonl import RegistroEvidenciaJsonl
 from fog.infrastructure.features.new192_feature_extractor import New192FeatureExtractor
 from fog.infrastructure.features.preprocessing_profile import load_profile
 from fog.infrastructure.messaging.redis_feature_publisher import RedisFeaturePublisher
@@ -178,7 +179,13 @@ class Container(containers.DeclarativeContainer):
         RegistrarClasificacion, uow=unidad_de_trabajo, storage=file_storage
     )
 
-    registrar_veredicto = providers.Singleton(RegistrarVeredicto, uow=unidad_de_trabajo)
+    registro_evidencia = providers.Singleton(
+        RegistroEvidenciaJsonl, directorio=config.evidence_dir
+    )
+
+    registrar_veredicto = providers.Singleton(
+        RegistrarVeredicto, uow=unidad_de_trabajo, evidencia=registro_evidencia
+    )
 
     listar_eventos = providers.Singleton(ListarEventos, uow=unidad_de_trabajo)
 
