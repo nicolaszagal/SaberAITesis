@@ -64,3 +64,12 @@ def test_el_clip_ya_no_documenta_409():
 
     assert "409" not in respuestas
     assert "422" in respuestas
+
+
+def test_los_endpoints_de_lectura_estan_documentados_y_son_solo_get():
+    paths = _openapi()["paths"]
+
+    assert set(paths["/revisiones"]) == {"get"}
+    assert set(paths["/revisiones/{revision_id}"]) == {"get"}
+    for ruta in ("/auditoria/verificar", "/modelo/activo", "/health"):
+        assert set(paths[ruta]) == {"get"}

@@ -152,3 +152,53 @@ class Auditoria:
     hash_prev: str | None
     hash: str
     creado_en: datetime
+
+
+@dataclass(frozen=True)
+class ResumenRevision:
+    """Fila de la lista de revisiones (GET /revisiones). Los campos de
+    sugerencia y veredicto son None mientras no exista la fila que los
+    origina. `clase` está en el vocabulario del modelo."""
+
+    id: uuid.UUID
+    combate_id: uuid.UUID
+    abierta_en: datetime
+    cerrada_en: datetime | None
+    disponible: bool | None
+    clase: str | None
+    confianza: float | None
+    decision: str | None
+    clase_final: str | None
+
+
+@dataclass(frozen=True)
+class DetalleRevision:
+    """Revisión con su sugerencia, veredicto y sello de auditoría
+    (GET /revisiones/{id}). Clases y probabilidades en el vocabulario del
+    modelo."""
+
+    id: uuid.UUID
+    combate_id: uuid.UUID
+    abierta_en: datetime
+    cerrada_en: datetime | None
+    disponible: bool | None
+    motivo_no_disp: str | None
+    clase: str | None
+    tirador: str | None
+    confianza: float | None
+    probabilidades: dict | None
+    decision: str | None
+    clase_final: str | None
+    registrado_en: datetime | None
+    auditoria_seq: int | None
+    auditoria_hash: str | None
+
+
+@dataclass(frozen=True)
+class RegistroAlterado:
+    """Fila que devuelve `sabre.fn_verificar_auditoria()`: el hash guardado
+    no coincide con el recalculado (CU-12)."""
+
+    seq: int
+    esperado: str
+    guardado: str

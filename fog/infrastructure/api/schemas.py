@@ -266,3 +266,83 @@ class NoDisponibleMessage(BaseModel):
             "'timeout', 'sin_senal_favero'."
         ),
     )
+
+
+class RevisionResumenResponse(BaseModel):
+    """Fila de GET /revisiones. Los campos de sugerencia y veredicto son
+    null mientras no existan (clasificación pendiente, revisión abierta)."""
+
+    id: uuid.UUID
+    combate_id: uuid.UUID
+    abierta_en: datetime
+    cerrada_en: datetime | None = None
+    disponible: bool | None = Field(
+        None, description="Si la clasificación estuvo disponible; null si aún no hay clasificación."
+    )
+    clase: ClaseFinalLiteral | None = Field(None, description="Clase sugerida por el sistema.")
+    confianza: float | None = Field(None, description="Confianza de la sugerencia, 0–1.")
+    decision: Literal["mantener", "cambiar", "anular"] | None = None
+    clase_final: ClaseFinalLiteral | None = Field(
+        None, description="Decisión final del árbitro; null con 'anular' o sin veredicto."
+    )
+
+
+class SugerenciaResponse(BaseModel):
+    """Sugerencia del sistema (RNF-01: solo sugiere; la decisión es del árbitro)."""
+
+    disponible: bool
+    motivo_no_disp: str | None = Field(
+        None, description="Motivo de `clasificacion.motivo_no_disp` si no estuvo disponible."
+    )
+    clase: ClaseFinalLiteral | None = None
+    tirador: Literal["A", "B"] | None = None
+    confianza: float | None = Field(None, description="0–1.")
+
+
+class RevisionDetalleResponse(BaseModel):
+    """GET /revisiones/{id}: sugerencia, probabilidades, decisión del
+    árbitro y sello de auditoría de una revisión."""
+
+    id: uuid.UUID
+    combate_id: uuid.UUID
+    abierta_en: datetime
+    cerrada_en: datetime | None = None
+    sugerencia: SugerenciaResponse | None = Field(
+        None, description="null si la revisión aún no tiene clasificación registrada."
+    )
+    probabilidades: dict[str, float] | None = Field(
+        None, description="Softmax completo post filtro Favero, con los nombres del modelo."
+    )
+    decision: Literal["mantener", "cambiar", "anular"] | None = None
+    clase_final: ClaseFinalLiteral | None = None
+    registrado_en: datetime | None = Field(None, description="Instante del veredicto.")
+    auditoria_seq: int | None = None
+    auditoria_hash: str | None = None
+
+
+class RegistroAlteradoResponse(BaseModel):
+    seq: int
+    esperado: str
+    guardado: str
+
+
+class AuditoriaVerificarResponse(BaseModel):
+    """Resultado de `sabre.fn_verificar_auditoria()` (CU-12)."""
+
+    integra: bool = Field(..., description="True si la función no devolvió registros alterados.")
+    alteradas: list[RegistroAlteradoResponse]
+
+
+class ModeloActivoResponse(BaseModel):
+    """Versión de modelo activa y sus métricas registradas (null si no se registraron)."""
+
+    nombre: str
+    num_clases: int
+    f1_macro_test: float | None = None
+    kappa_piloto: float | None = None
+
+
+class HealthResponse(BaseModel):
+    fog: Literal["ok", "error"]
+    redis: Literal["ok", "error"]
+    postgres: Literal["ok", "error"]

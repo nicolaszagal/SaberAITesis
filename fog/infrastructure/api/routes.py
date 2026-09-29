@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
+from datetime import datetime, timezone
 from concurrent.futures import Executor
 
 from aiortc import RTCPeerConnection, RTCSessionDescription
@@ -28,6 +29,13 @@ from fastapi.responses import JSONResponse
 
 from fog.application.abrir_revision import AbrirRevisionVar, VideoGuardado
 from fog.application.configurar_combate import ConfigurarCombate, DatosTirador
+from fog.application.consultar_revisiones import (
+    ConsultarSalud,
+    ListarRevisiones,
+    ObtenerModeloActivo,
+    ObtenerRevision,
+    VerificarAuditoria,
+)
 from fog.application.forward_verdict import ForwardVerdictToClient
 from fog.application.listar_catalogos import ListarEventos, ListarUsuarios
 from fog.application.process_match import ProcessIncomingMatch
@@ -51,15 +59,22 @@ from fog.domain.models import (
     lado_de_brazo,
 )
 from fog.infrastructure.api.schemas import (
+    AuditoriaVerificarResponse,
     ClipUploadResponse,
     EventoResponse,
+    HealthResponse,
     LuzAck,
     LuzRequest,
     MatchConfigRequest,
     MatchConfigResponse,
+    ModeloActivoResponse,
     OfferRequest,
     OfferResponse,
+    RegistroAlteradoResponse,
+    RevisionDetalleResponse,
+    RevisionResumenResponse,
     RolLiteral,
+    SugerenciaResponse,
     UsuarioResponse,
     VeredictoRequest,
     VeredictoResponse,
@@ -559,6 +574,173 @@ async def registrar_veredicto(
         auditoria_seq=registrado.auditoria.seq,
         auditoria_hash=registrado.auditoria.hash,
     )
+
+
+def _con_zona_horaria(instante: datetime | None) -> datetime | None:
+    """Un instante sin zona horaria se interpreta como UTC."""
+    if instante is not None and instante.tzinfo is None:
+        return instante.replace(tzinfo=timezone.utc)
+    return instante
+
+
+@router.get(
+    "/revisiones",
+    response_model=list[RevisionResumenResponse],
+    tags=["revisiones"],
+    summary="Lista resumida de revisiones (solo lectura)",
+    description=(
+        "Revisiones de la más reciente a la más antigua. Filtros opcionales: "
+        "`evento_id` (evento del combate) y `desde`/`hasta` sobre "
+        "`revision_var.abierta_en`, ISO 8601 e inclusivos; un instante sin "
+        "zona horaria se interpreta como UTC. Sin filtros devuelve todas. "
+        "422 si `evento_id` no es uuid o una fecha no es ISO 8601."
+    ),
+    responses={422: {"description": "`evento_id`, `desde` o `hasta` inválidos."}},
+)
+@inject
+async def listar_revisiones(
+    evento_id: uuid.UUID | None = Query(None, description="Solo revisiones de combates de este evento."),
+    desde: datetime | None = Query(None, description="Abiertas en o después de este instante."),
+    hasta: datetime | None = Query(None, description="Abiertas en o antes de este instante."),
+    caso: ListarRevisiones = Depends(Provide[Container.listar_revisiones]),
+) -> list[RevisionResumenResponse]:
+    resumenes = await caso.execute(
+        evento_id=evento_id, desde=_con_zona_horaria(desde), hasta=_con_zona_horaria(hasta)
+    )
+    return [RevisionResumenResponse(**vars(r)) for r in resumenes]
+
+
+@router.get(
+    "/revisiones/{revision_id}",
+    response_model=RevisionDetalleResponse,
+    tags=["revisiones"],
+    summary="Detalle de una revisión (solo lectura)",
+    description=(
+        "Sugerencia del sistema, probabilidades, decisión del árbitro y hash "
+        "de auditoría. Los campos que aún no existen (clasificación pendiente, "
+        "sin veredicto, revisión no cerrada) son null. 404 si la revisión no "
+        "existe o `revision_id` no es uuid."
+    ),
+    responses={404: {"description": "La revisión no existe."}},
+)
+@inject
+async def obtener_revision(
+    revision_id: str,
+    caso: ObtenerRevision = Depends(Provide[Container.obtener_revision]),
+) -> RevisionDetalleResponse:
+    try:
+        revision_uuid = uuid.UUID(revision_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=404, detail=f"no existe: revisión {revision_id!r}"
+        ) from exc
+    try:
+        d = await caso.execute(revision_uuid)
+    except RecursoNoEncontrado as exc:
+        raise HTTPException(status_code=404, detail=f"no existe: {exc}") from exc
+    sugerencia = (
+        SugerenciaResponse(
+            disponible=d.disponible,
+            motivo_no_disp=d.motivo_no_disp,
+            clase=d.clase,
+            tirador=d.tirador,
+            confianza=d.confianza,
+        )
+        if d.disponible is not None
+        else None
+    )
+    return RevisionDetalleResponse(
+        id=d.id,
+        combate_id=d.combate_id,
+        abierta_en=d.abierta_en,
+        cerrada_en=d.cerrada_en,
+        sugerencia=sugerencia,
+        probabilidades=d.probabilidades,
+        decision=d.decision,
+        clase_final=d.clase_final,
+        registrado_en=d.registrado_en,
+        auditoria_seq=d.auditoria_seq,
+        auditoria_hash=d.auditoria_hash,
+    )
+
+
+@router.get(
+    "/auditoria/verificar",
+    response_model=AuditoriaVerificarResponse,
+    tags=["auditoría"],
+    summary="Verifica la cadena de hashes de la auditoría (solo lectura)",
+    description=(
+        "Resultado de `sabre.fn_verificar_auditoria()` sin filtrar: "
+        "`alteradas` lista los registros cuyo hash guardado no coincide con "
+        "el recalculado, e `integra` es true si no hay ninguno. Responde 200 "
+        "en ambos casos."
+    ),
+)
+@inject
+async def verificar_auditoria(
+    caso: VerificarAuditoria = Depends(Provide[Container.verificar_auditoria]),
+) -> AuditoriaVerificarResponse:
+    alterados = await caso.execute()
+    return AuditoriaVerificarResponse(
+        integra=not alterados,
+        alteradas=[RegistroAlteradoResponse(**vars(a)) for a in alterados],
+    )
+
+
+@router.get(
+    "/modelo/activo",
+    response_model=ModeloActivoResponse,
+    tags=["modelo"],
+    summary="Versión de modelo activa y sus métricas registradas (solo lectura)",
+    description=(
+        "Nombre, número de clases y métricas registradas en `modelo_version` "
+        "(`f1_macro_test`, `kappa_piloto`; null si no se registraron). 404 si "
+        "no hay versión activa (scripts/registrar_modelo.py)."
+    ),
+    responses={404: {"description": "No hay versión de modelo activa."}},
+)
+@inject
+async def modelo_activo(
+    caso: ObtenerModeloActivo = Depends(Provide[Container.obtener_modelo_activo]),
+) -> ModeloActivoResponse:
+    try:
+        modelo = await caso.execute()
+    except SinModeloActivo as exc:
+        raise HTTPException(status_code=404, detail="no hay una versión de modelo activa") from exc
+    return ModeloActivoResponse(
+        nombre=modelo.nombre,
+        num_clases=modelo.num_clases,
+        f1_macro_test=modelo.f1_macro_test,
+        kappa_piloto=modelo.kappa_piloto,
+    )
+
+
+@router.get(
+    "/health",
+    response_model=HealthResponse,
+    tags=["salud"],
+    summary="Estado de Fog, Redis y PostgreSQL",
+    description=(
+        "`ok` o `error` por componente. Fog es `ok` si responde. Redis "
+        "(PING) y PostgreSQL (SELECT 1) tienen 2 s de tiempo límite. 200 si "
+        "todo está `ok`; 503 con el mismo cuerpo si alguno falla."
+    ),
+    responses={503: {"model": HealthResponse, "description": "Redis o PostgreSQL no responden."}},
+)
+@inject
+async def health(
+    caso: ConsultarSalud = Depends(Provide[Container.consultar_salud]),
+) -> JSONResponse:
+    estado = await caso.execute()
+    cuerpo = {
+        nombre: "ok" if responde else "error"
+        for nombre, responde in (
+            ("fog", estado.fog),
+            ("redis", estado.redis),
+            ("postgres", estado.postgres),
+        )
+    }
+    return JSONResponse(cuerpo, status_code=200 if estado.ok else 503)
 
 
 @router.websocket("/ws/veredicto/{revision_id}")

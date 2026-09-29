@@ -19,6 +19,13 @@ from ultralytics import YOLO
 from fog.application.abrir_revision import AbrirRevisionVar
 from fog.application.configurar_combate import ConfigurarCombate
 from fog.application.forward_verdict import ForwardVerdictToClient
+from fog.application.consultar_revisiones import (
+    ConsultarSalud,
+    ListarRevisiones,
+    ObtenerModeloActivo,
+    ObtenerRevision,
+    VerificarAuditoria,
+)
 from fog.application.listar_catalogos import ListarEventos, ListarUsuarios
 from fog.application.process_match import ProcessIncomingMatch
 from fog.application.registrar_clasificacion import RegistrarClasificacion
@@ -26,6 +33,7 @@ from fog.application.registrar_veredicto import RegistrarVeredicto
 from fog.infrastructure.features.new192_feature_extractor import New192FeatureExtractor
 from fog.infrastructure.features.preprocessing_profile import load_profile
 from fog.infrastructure.messaging.redis_feature_publisher import RedisFeaturePublisher
+from fog.infrastructure.messaging.redis_sonda_salud import RedisSonda
 from fog.infrastructure.messaging.redis_verdict_subscriber import RedisVerdictSubscriber
 from fog.infrastructure.persistence.database import build_engine, build_session_factory
 from fog.infrastructure.persistence.in_memory_match_repository import (
@@ -43,6 +51,9 @@ from fog.infrastructure.persistence.postgres.clip_repository import (
 from fog.infrastructure.persistence.postgres.combate_repository import (
     PostgresCombateRepository,
 )
+from fog.infrastructure.persistence.postgres.consulta_revision_repository import (
+    PostgresConsultaRevisionRepository,
+)
 from fog.infrastructure.persistence.postgres.evento_repository import (
     PostgresEventoRepository,
 )
@@ -55,8 +66,12 @@ from fog.infrastructure.persistence.postgres.revision_repository import (
 from fog.infrastructure.persistence.postgres.tocado_repository import (
     PostgresTocadoRepository,
 )
+from fog.infrastructure.persistence.postgres.sonda_salud import PostgresSonda
 from fog.infrastructure.persistence.postgres.unidad_de_trabajo import (
     PostgresUnidadDeTrabajo,
+)
+from fog.infrastructure.persistence.postgres.verificador_auditoria import (
+    PostgresVerificadorAuditoria,
 )
 from fog.infrastructure.persistence.postgres.veredicto_repository import (
     PostgresVeredictoRepository,
@@ -167,6 +182,33 @@ class Container(containers.DeclarativeContainer):
     listar_eventos = providers.Singleton(ListarEventos, uow=unidad_de_trabajo)
 
     listar_usuarios = providers.Singleton(ListarUsuarios, uow=unidad_de_trabajo)
+
+    # Consultas de solo lectura para la interfaz (GET /revisiones, /auditoria,
+    # /modelo/activo, /health).
+    consulta_revision_repository = providers.Singleton(
+        PostgresConsultaRevisionRepository, session_factory=db_session_factory
+    )
+    verificador_auditoria = providers.Singleton(
+        PostgresVerificadorAuditoria, session_factory=db_session_factory
+    )
+    sonda_postgres = providers.Singleton(PostgresSonda, session_factory=db_session_factory)
+    sonda_redis = providers.Singleton(RedisSonda, client=redis_client)
+
+    listar_revisiones = providers.Singleton(
+        ListarRevisiones, consulta=consulta_revision_repository
+    )
+    obtener_revision = providers.Singleton(
+        ObtenerRevision, consulta=consulta_revision_repository
+    )
+    verificar_auditoria = providers.Singleton(
+        VerificarAuditoria, verificador=verificador_auditoria
+    )
+    obtener_modelo_activo = providers.Singleton(
+        ObtenerModeloActivo, modelos=modelo_version_repository
+    )
+    consultar_salud = providers.Singleton(
+        ConsultarSalud, redis=sonda_redis, postgres=sonda_postgres
+    )
 
     feature_publisher = providers.Singleton(RedisFeaturePublisher, client=redis_client)
 
