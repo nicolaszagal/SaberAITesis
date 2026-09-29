@@ -494,7 +494,7 @@ Body (JSON):
 
 | campo | descripción |
 |---|---|
-| `decision` | `"mantener"`, `"cambiar"` o `"anular"` (acción simultánea, FIE t.106). Describe la relación con la decisión original del árbitro en pista. |
+| `decision` | `"mantener"`, `"cambiar"` o `"anular"` (acción simultánea, FIE t.106). Describe la relación con la decisión original del árbitro en pista. Cualquier otro valor: 422. El frontend los muestra como "Mantiene", "Cambia" y "Anula" (Historial). Con `"mantener"` la interfaz envía la clase sugerida como `clase_final`; con `"cambiar"`, la clase que elige el árbitro entre las 6 |
 | `clase_final` | la decisión final declarada, siempre. **Obligatoria con `"mantener"` y `"cambiar"`** (también si la clasificación no estuvo disponible) y **prohibida con `"anular"`** (422 en ambos casos). Valores de la taxonomía del modelo: `AttackA`, `AttackB`, `ContrattackA`, `ContrattackB`, `RiposteA`, `RiposteB` (un nombre del esquema como `AtaqueA` es inválido) |
 | `arbitro_id` | usuario existente en `sabre.usuario` |
 
