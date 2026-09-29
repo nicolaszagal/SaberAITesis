@@ -104,6 +104,7 @@ from tests.fog.fakes import (  # noqa: E402
 
 VEREDICTO_DEFAULT = VerdictView(
     match_id="unused",
+    revision_id="unused",
     fencer="ROJ",
     action="AttackA",
     confidence=0.74,
@@ -228,10 +229,10 @@ class AppAuditable:
             data=datos,
         )
 
-    def veredicto(self, match_id: str, **cuerpo):
+    def veredicto(self, revision_id: str, **cuerpo):
         body = {"decision": "mantener", "arbitro_id": str(self.arbitro_id)}
         body.update(cuerpo)
-        return self.client.post(f"/matches/{match_id}/veredicto", json=body)
+        return self.client.post(f"/revisiones/{revision_id}/veredicto", json=body)
 
 
 @pytest.fixture

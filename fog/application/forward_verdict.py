@@ -20,12 +20,17 @@ class ForwardVerdictToClient:
         self._subscriber = subscriber
         self._sessions = sessions
 
-    async def execute(self, match_id: str) -> None:
-        resultado = await self._subscriber.wait_for_verdict(match_id)
+    async def execute(self, revision_id: str) -> None:
+        """Espera el resultado de Cloud para la revisión y lo entrega a su sesión.
 
-        session = self._sessions.get(match_id)
+        Args:
+            revision_id: revisión cuyo veredicto se espera.
+        """
+        resultado = await self._subscriber.wait_for_verdict(revision_id)
+
+        session = self._sessions.get(revision_id)
         if session is None:
-            log.warning("[%s] veredicto recibido pero la sesión ya no existe", match_id)
+            log.warning("[%s] veredicto recibido pero la sesión ya no existe", revision_id)
             return
 
         if isinstance(resultado, UnavailableResult):

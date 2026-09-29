@@ -22,17 +22,6 @@ class RevisionRepositoryPort(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def obtener_ultima_por_combate(
-        self, combate_id: uuid.UUID
-    ) -> Revision | None:
-        """Revisión más reciente (por `abierta_en`) de los tocados del combate.
-
-        Returns:
-            La revisión, o None si el combate no tiene ninguna.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
     async def asignar_clasificacion(
         self, revision_id: uuid.UUID, clasificacion_id: uuid.UUID
     ) -> None:

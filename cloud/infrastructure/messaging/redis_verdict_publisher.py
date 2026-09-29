@@ -1,5 +1,5 @@
 """RedisVerdictPublisher — implementación de VerdictPublisherPort,
-publicando en `cloud:verdicts:{match_id}` (ver CONTRATO_API.md sección 6).
+publicando en `cloud:verdicts:{revision_id}` (ver CONTRATO_API.md sección 6).
 """
 
 from __future__ import annotations
@@ -20,10 +20,12 @@ class RedisVerdictPublisher(VerdictPublisherPort):
 
     async def publish(self, verdict: Verdict) -> None:
         fields = {
-            "match_id": verdict.match_id,
+            "revision_id": verdict.revision_id,
             "disponible": "true" if verdict.disponible else "false",
             "ts": datetime.now(timezone.utc).isoformat(),
         }
+        if verdict.match_id is not None:
+            fields["match_id"] = verdict.match_id
         if verdict.disponible:
             fields.update({
                 "action_class": verdict.action_class.value,
@@ -36,9 +38,9 @@ class RedisVerdictPublisher(VerdictPublisherPort):
         else:
             fields["motivo_no_disp"] = verdict.motivo_no_disp
 
-        stream_key = f"{config.VERDICT_STREAM_PREFIX}{verdict.match_id}"
+        stream_key = f"{config.VERDICT_STREAM_PREFIX}{verdict.revision_id}"
         await self._client.xadd(stream_key, fields)
-        # DEF-16: sin EXPIRE, un match_id sin consumidor (Fog caído, o
-        # nadie llamó a GET /ws/veredicto/{match_id}) deja el stream en
+        # DEF-16: sin EXPIRE, una revisión sin consumidor (Fog caído, o
+        # nadie llamó a GET /ws/veredicto/{revision_id}) deja el stream en
         # Redis para siempre.
         await self._client.expire(stream_key, config.VERDICT_STREAM_TTL_S)

@@ -10,6 +10,7 @@ class FeatureStreamPublisherPort(ABC):
     async def publish(
         self,
         match_id: str,
+        revision_id: str,
         features: ExtractedFeatures,
         luz: LuzSignal,
         weapon_side_a: WeaponSide,

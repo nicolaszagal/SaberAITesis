@@ -36,7 +36,8 @@ log = logging.getLogger("cloud.infrastructure")
 _EXPECTED_FEATURE_DIM = 192
 _EXPECTED_DTYPE = "float32"
 _REQUIRED_FIELDS = (
-    b"match_id", b"shape", b"dtype", b"features", b"weapon_side_A", b"weapon_side_B",
+    b"match_id", b"revision_id", b"shape", b"dtype", b"features",
+    b"weapon_side_A", b"weapon_side_B",
 )
 
 
@@ -126,6 +127,7 @@ class RedisFeatureConsumer(FeatureStreamConsumerPort):
         )
         return FeatureSequence(
             match_id=fields[b"match_id"].decode(errors="replace"),
+            revision_id=fields[b"revision_id"].decode(errors="replace"),
             sequence=sequence,
             luz=luz,
             weapon_side_a=fields[b"weapon_side_A"].decode(errors="replace"),
@@ -151,14 +153,16 @@ class RedisFeatureConsumer(FeatureStreamConsumerPort):
         except InvalidMessageError as e:
             match_id_raw = fields.get(b"match_id")
             match_id = match_id_raw.decode(errors="replace") if match_id_raw else None
+            revision_raw = fields.get(b"revision_id")
+            revision_id = revision_raw.decode(errors="replace") if revision_raw else None
             log.error(
-                "[%s] mensaje inválido en '%s' (%s): %s",
-                match_id or "?", config.STREAM_FEATURES, entry_id, e,
+                "[%s/%s] mensaje inválido en '%s' (%s): %s",
+                match_id or "?", revision_id or "?", config.STREAM_FEATURES, entry_id, e,
             )
             motivo = MotivoNoDisponible.MENSAJE_INVALIDO
             await self._dead_letter(entry_id, fields, motivo.value)
             return entry_id, InvalidFeatureMessage(
-                match_id=match_id, motivo=motivo, detalle=str(e),
+                match_id=match_id, revision_id=revision_id, motivo=motivo, detalle=str(e),
             )
 
     async def consume(

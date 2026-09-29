@@ -33,7 +33,7 @@ class _HangingVerdictSubscriber(VerdictStreamSubscriberPort):
     """Nunca resuelve: simula que Cloud no responde, para ejercitar la
     rama de timeout de POST /matches/{match_id}/clip (DEF-16)."""
 
-    async def wait_for_verdict(self, match_id: str) -> VerdictView:
+    async def wait_for_verdict(self, revision_id: str) -> VerdictView:
         await asyncio.Event().wait()
 
 
@@ -108,7 +108,7 @@ def test_upload_clip_has_luz_fields_take_precedence_over_legacy_alias(crear_app)
     assert body["has_luz_A"] is True
     assert body["has_luz_B"] is False
 
-    assert app.container.sessions().get(match_id).t_tocado_ms == 1234
+    assert app.container.sessions().get(body["revision_id"]).t_tocado_ms == 1234
     tocado = app.sql.filas("SELECT * FROM sabre.tocado WHERE combate_id = :i", i=match_id)[0]
     assert (tocado["luz_a"], tocado["luz_b"], tocado["t_tocado_ms"]) == (True, False, 1234)
 
@@ -168,22 +168,71 @@ def test_upload_clip_marks_session_closed_when_cloud_times_out(crear_app):
     assert body["disponible"] is False
     assert body["motivo"] == "timeout"
 
-    session = app.container.sessions().get(match_id)
+    session = app.container.sessions().get(body["revision_id"])
     assert session is not None
     assert session.closed_at is not None
     assert session.unavailable is not None
     assert session.unavailable.motivo.value == "timeout"
 
 
-def test_websocket_tardio_recibe_el_veredicto_del_combate_persistido(crear_app):
+def test_websocket_tardio_recibe_el_veredicto_de_la_revision(crear_app):
     app = crear_app(subscriber=FakeVerdictSubscriber(
-        VerdictView(match_id="x", fencer="ROJ", action="AttackA", confidence=0.9)
+        VerdictView(match_id="x", revision_id="x", fencer="ROJ", action="AttackA", confidence=0.9)
     ))
     match_id = app.configurar()
-    assert app.subir_clip(match_id).status_code == 200
+    resp = app.subir_clip(match_id)
+    assert resp.status_code == 200
+    revision_id = resp.json()["revision_id"]
 
-    with app.client.websocket_connect(f"/ws/veredicto/{match_id}") as ws:
+    with app.client.websocket_connect(f"/ws/veredicto/{revision_id}") as ws:
         mensaje = ws.receive_json()
 
     assert mensaje["type"] == "veredicto"
     assert mensaje["action"] == "AttackA"
+    assert mensaje["revision_id"] == revision_id
+
+
+class _SubscriberPorRevision(VerdictStreamSubscriberPort):
+    """Cloud doblado: responde según el `revision_id` que recibe."""
+
+    def __init__(self, veredictos: list[dict]):
+        self._pendientes = list(veredictos)
+
+    async def wait_for_verdict(self, revision_id: str) -> VerdictView:
+        return VerdictView(match_id="m", revision_id=revision_id, **self._pendientes.pop(0))
+
+
+def test_dos_clips_del_mismo_combate_tienen_websocket_y_veredicto_independientes(crear_app):
+    app = crear_app(subscriber=_SubscriberPorRevision([
+        dict(fencer="ROJ", action="AttackA", confidence=0.9),
+        dict(fencer="VER", action="RiposteB", confidence=0.6),
+    ]))
+    match_id = app.configurar()
+
+    primero = app.subir_clip(match_id)
+    segundo = app.subir_clip(match_id)
+
+    assert primero.status_code == segundo.status_code == 200
+    rev_1, rev_2 = primero.json()["revision_id"], segundo.json()["revision_id"]
+    assert rev_1 != rev_2
+    assert (primero.json()["action"], segundo.json()["action"]) == ("AttackA", "RiposteB")
+    with app.client.websocket_connect(f"/ws/veredicto/{rev_2}") as ws:
+        mensaje_2 = ws.receive_json()
+    with app.client.websocket_connect(f"/ws/veredicto/{rev_1}") as ws:
+        mensaje_1 = ws.receive_json()
+    assert (mensaje_1["revision_id"], mensaje_1["action"]) == (rev_1, "AttackA")
+    assert (mensaje_2["revision_id"], mensaje_2["action"]) == (rev_2, "RiposteB")
+
+
+def test_publica_en_redis_con_el_revision_id_de_cada_clip(crear_app):
+    app = crear_app()
+    match_id = app.configurar()
+
+    primero = app.subir_clip(match_id).json()
+    segundo = app.subir_clip(match_id).json()
+
+    publicados = app.container.feature_publisher().published
+    assert [(p[0], p[1]) for p in publicados] == [
+        (match_id, primero["revision_id"]),
+        (match_id, segundo["revision_id"]),
+    ]

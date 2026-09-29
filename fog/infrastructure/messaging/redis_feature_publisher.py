@@ -21,6 +21,7 @@ class RedisFeaturePublisher(FeatureStreamPublisherPort):
     async def publish(
         self,
         match_id: str,
+        revision_id: str,
         features: ExtractedFeatures,
         luz: LuzSignal,
         weapon_side_a: WeaponSide,
@@ -34,6 +35,7 @@ class RedisFeaturePublisher(FeatureStreamPublisherPort):
             config.STREAM_FEATURES,
             {
                 "match_id": match_id,
+                "revision_id": revision_id,
                 "shape": f"{seq.shape[0]},{seq.shape[1]}",
                 "dtype": str(seq.dtype),
                 "features": seq.tobytes(),

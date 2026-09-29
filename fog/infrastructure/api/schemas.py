@@ -47,6 +47,13 @@ class OfferResponse(BaseModel):
     sdp: str = Field(..., description="SDP de la respuesta generada por Fog.")
     type: str = Field(..., description="Tipo de mensaje SDP, normalmente 'answer'.")
     match_id: str = Field(..., description="ID del combate, generado por Fog si no se envió uno.")
+    revision_id: str = Field(
+        ...,
+        description=(
+            "Identifica la sesión: es el que se usa en GET /ws/veredicto/{revision_id}. "
+            "Este flujo no abre `revision_var`, así que no es una fila de la base."
+        ),
+    )
 
 
 class LuzRequest(BaseModel):
@@ -63,9 +70,9 @@ class LuzAck(BaseModel):
 class MatchConfigRequest(BaseModel):
     """CU-01 (F-039, RF-07): configura el combate. Crea los dos tiradores y
     el combate en la base y devuelve el `match_id` (= id del combate) que
-    Edge reutiliza en /webrtc/offer, /matches/{match_id}/clip,
-    /webrtc/{match_id}/luz, /ws/veredicto/{match_id} y
-    /matches/{match_id}/veredicto."""
+    Edge reutiliza en /webrtc/offer, /matches/{match_id}/clip y
+    /webrtc/{match_id}/luz. El veredicto y el WebSocket usan el
+    `revision_id` de cada clip."""
 
     evento_id: uuid.UUID = Field(..., description="Evento existente (`sabre.evento`) al que pertenece el combate.")
     pista: str = Field(..., min_length=1, description="Pista asignada al combate.")
@@ -110,8 +117,8 @@ class MatchConfigResponse(BaseModel):
 
 
 class VeredictoRequest(BaseModel):
-    """CU-10 (F-033, RF-20): decisión final del árbitro sobre la revisión
-    vigente del combate. El sistema solo sugiere (RNF-01)."""
+    """CU-10 (F-033, RF-20): decisión final del árbitro sobre una revisión
+    (POST /revisiones/{revision_id}/veredicto). El sistema solo sugiere (RNF-01)."""
 
     decision: Literal["mantener", "cambiar", "anular"] = Field(
         ..., description="'mantener' la acción sugerida, 'cambiar' la acción o 'anular' (acción simultánea, t.106)."
@@ -158,6 +165,13 @@ class ClipUploadResponse(BaseModel):
     `timed_out=True` y `motivo="timeout"`."""
 
     match_id: str
+    revision_id: str = Field(
+        ...,
+        description=(
+            "Revisión abierta por este clip. Es el identificador de "
+            "POST /revisiones/{revision_id}/veredicto y de GET /ws/veredicto/{revision_id}."
+        ),
+    )
     has_luz_A: bool = Field(..., description="True si se recibió la luz Favero del tirador A (`has_luz_A` o, como alias obsoleto, `luz_frame_a`).")
     has_luz_B: bool = Field(..., description="True si se recibió la luz Favero del tirador B (`has_luz_B` o, como alias obsoleto, `luz_frame_b`).")
     timed_out: bool = Field(
@@ -186,11 +200,12 @@ class ClipUploadResponse(BaseModel):
 
 class VerdictMessage(BaseModel):
     """Forma del mensaje que Fog envía por el WebSocket
-    GET /ws/veredicto/{match_id}. No es un endpoint REST — se documenta
+    GET /ws/veredicto/{revision_id}. No es un endpoint REST — se documenta
     aquí solo como referencia de contrato para Swagger/lectores del código."""
 
     type: str = Field("veredicto", description="Siempre 'veredicto'.")
     match_id: str
+    revision_id: str
     fencer: str = Field(..., description="'ROJ' o 'VER', ver shared.config.FENCER_COLOR.")
     action: str = Field(
         ...,
@@ -204,12 +219,13 @@ class VerdictMessage(BaseModel):
 
 class NoDisponibleMessage(BaseModel):
     """Forma del mensaje que Fog envía por el WebSocket
-    GET /ws/veredicto/{match_id} cuando la clasificación no está
+    GET /ws/veredicto/{revision_id} cuando la clasificación no está
     disponible (DEF-08). No es un endpoint REST — se documenta aquí solo
     como referencia de contrato para Swagger/lectores del código."""
 
     type: str = Field("no_disponible", description="Siempre 'no_disponible'.")
     match_id: str
+    revision_id: str
     motivo: str = Field(
         ...,
         description=(

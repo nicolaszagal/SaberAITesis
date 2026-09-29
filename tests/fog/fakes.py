@@ -3,6 +3,8 @@ tocar ultralytics, redis ni aiortc."""
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 
 from fog.domain.models import ExtractedFeatures, LuzSignal, TrackedSequence, VerdictView, WeaponSide
@@ -57,16 +59,18 @@ class FakeFeaturePublisher(FeatureStreamPublisherPort):
     def __init__(self):
         self.published: list[tuple] = []
 
-    async def publish(self, match_id, features, luz, weapon_side_a, weapon_side_b) -> None:
-        self.published.append((match_id, features, luz, weapon_side_a, weapon_side_b))
+    async def publish(self, match_id, revision_id, features, luz, weapon_side_a, weapon_side_b) -> None:
+        self.published.append((match_id, revision_id, features, luz, weapon_side_a, weapon_side_b))
 
 
 class FakeVerdictSubscriber(VerdictStreamSubscriberPort):
     def __init__(self, verdict: VerdictView):
         self._verdict = verdict
 
-    async def wait_for_verdict(self, match_id: str) -> VerdictView:
-        return self._verdict
+    async def wait_for_verdict(self, revision_id: str) -> VerdictView:
+        # Igual que RedisVerdictSubscriber: el resultado lleva el revision_id
+        # del stream del que se leyó.
+        return replace(self._verdict, revision_id=revision_id)
 
 
 class InlineExecutor:

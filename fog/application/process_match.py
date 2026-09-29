@@ -14,8 +14,9 @@ FeatureExtractorPort, que ya operaba sobre TrackedSequence.
 
 Si la extracción falla (DEF-08), este caso de uso entrega un
 UnavailableResult directo a la sesión (SessionRegistry) en vez de
-publicar en Redis — Cloud nunca se entera del match y no hay veredicto
-que esperar. Sigue el mismo patrón que ForwardVerdictToClient (también en
+publicar en Redis — Cloud nunca se entera de la revisión y no hay
+veredicto que esperar. Cada revisión (un clip) tiene su propia sesión,
+identificada por `revision_id`. Sigue el mismo patrón que ForwardVerdictToClient (también en
 application/, también depende de SessionRegistry para poder empujar el
 mensaje por WebSocket apenas está disponible).
 """
@@ -62,6 +63,7 @@ class ProcessIncomingMatch:
     async def execute(
         self,
         match_id: str,
+        revision_id: str,
         tracked: TrackedSequence,
         weapon_side_a: WeaponSide,
         weapon_side_b: WeaponSide,
@@ -76,23 +78,27 @@ class ProcessIncomingMatch:
         )
 
         if features.sequence is None:
-            log.warning("[%s] extracción no disponible: %s", match_id, features.stats.get("error"))
+            log.warning("[%s] extracción no disponible: %s", revision_id, features.stats.get("error"))
             # Los dos únicos errores que devuelve FeatureExtractorPort hoy
             # ("tracking no pudo asignar IDs A/B" y "secuencia muy corta")
             # mapean a pose_incompleta (único motivo que Fog puede
             # determinar; ver MotivoNoDisponible).
-            result = UnavailableResult(match_id=match_id, motivo=MotivoNoDisponible.POSE_INCOMPLETA)
-            session = self._sessions.get(match_id)
+            result = UnavailableResult(
+                match_id=match_id, revision_id=revision_id, motivo=MotivoNoDisponible.POSE_INCOMPLETA
+            )
+            session = self._sessions.get(revision_id)
             if session is not None:
                 await session.set_unavailable(result)
                 if session.ws is not None:
                     await session.ws.send_json(result.to_ws_message())
             return result
 
-        log.info("[%s] features extraídas: %s", match_id, features.stats.get("seq_shape"))
+        log.info("[%s] features extraídas: %s", revision_id, features.stats.get("seq_shape"))
 
         effective_luz = luz if luz is not None else LuzSignal.none()
-        await self._publisher.publish(match_id, features, effective_luz, weapon_side_a, weapon_side_b)
+        await self._publisher.publish(
+            match_id, revision_id, features, effective_luz, weapon_side_a, weapon_side_b
+        )
         await self._repository.save(Match(
             match_id=match_id,
             weapon_side_a=weapon_side_a,

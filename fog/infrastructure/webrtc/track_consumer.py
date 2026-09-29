@@ -57,7 +57,7 @@ async def consume_track(
     executor: Executor,
     luz_timeout_s: float,
 ) -> None:
-    log.info("[%s] recibiendo pista de video", session.match_id)
+    log.info("[%s] recibiendo pista de video", session.revision_id)
     loop = asyncio.get_running_loop()
     pose_session = pose_estimator.start_session()
     queue: asyncio.Queue = asyncio.Queue(maxsize=_QUEUE_MAXSIZE)
@@ -82,7 +82,7 @@ async def consume_track(
         return n
 
     _, n_frames = await asyncio.gather(producer(), consumer())
-    log.info("[%s] pista finalizada, %d frames procesados", session.match_id, n_frames)
+    log.info("[%s] pista finalizada, %d frames procesados", session.revision_id, n_frames)
 
     tracked = await loop.run_in_executor(executor, pose_session.finish)
 
@@ -90,10 +90,11 @@ async def consume_track(
         try:
             await asyncio.wait_for(session.luz_event.wait(), timeout=luz_timeout_s)
         except asyncio.TimeoutError:
-            log.info("[%s] timeout esperando luz Favero, se procesa sin luz", session.match_id)
+            log.info("[%s] timeout esperando luz Favero, se procesa sin luz", session.revision_id)
 
     await process_match.execute(
         session.match_id,
+        session.revision_id,
         tracked,
         session.weapon_side_a,
         session.weapon_side_b,

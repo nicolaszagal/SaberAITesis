@@ -31,6 +31,7 @@ DECISIONES = ("mantener", "cambiar", "anular")
 
 @dataclass(frozen=True)
 class VeredictoRegistrado:
+    combate_id: uuid.UUID
     veredicto: Veredicto
     revision: Revision
     auditoria: Auditoria
@@ -86,16 +87,16 @@ class RegistrarVeredicto:
     async def execute(
         self,
         *,
-        combate_id: uuid.UUID,
+        revision_id: uuid.UUID,
         decision: str,
         clase_final: str | None,
         arbitro_id: uuid.UUID,
     ) -> VeredictoRegistrado:
-        """Registra el veredicto de la revisión vigente del combate (la más
-        reciente) y la cierra con su registro de auditoría.
+        """Registra el veredicto de una revisión y la cierra con su registro
+        de auditoría.
 
         Args:
-            combate_id: combate (el `match_id` de la API).
+            revision_id: revisión que se decide (un combate admite N).
             decision: `mantener`, `cambiar` o `anular`.
             clase_final: obligatoria con `cambiar`; prohibida con `anular`.
             arbitro_id: usuario que decide.
@@ -106,7 +107,7 @@ class RegistrarVeredicto:
         Raises:
             VeredictoInvalido: `cambiar` sin clase_final, `anular` con
                 clase_final, o valores fuera de los dominios del esquema.
-            RecursoNoEncontrado: combate, árbitro o revisión inexistentes.
+            RecursoNoEncontrado: árbitro o revisión inexistentes.
             VeredictoYaRegistrado: la revisión ya tiene veredicto (409).
             ClasificacionPendiente: la revisión no tiene clasificación.
         """
@@ -120,13 +121,11 @@ class RegistrarVeredicto:
             raise VeredictoInvalido(f"clase_final desconocida: {clase_final!r}")
 
         async with self._uow.transaccion() as tx:
-            if await tx.combates.obtener(combate_id) is None:
-                raise RecursoNoEncontrado(f"combate {combate_id}")
             if await tx.usuarios.obtener(arbitro_id) is None:
                 raise RecursoNoEncontrado(f"usuario (árbitro) {arbitro_id}")
-            revision = await tx.revisiones.obtener_ultima_por_combate(combate_id)
+            revision = await tx.revisiones.obtener(revision_id)
             if revision is None:
-                raise RecursoNoEncontrado(f"revisión del combate {combate_id}")
+                raise RecursoNoEncontrado(f"revisión {revision_id}")
             if await tx.veredictos.obtener_por_revision(revision.id) is not None:
                 raise VeredictoYaRegistrado(str(revision.id))
             if revision.clasificacion_id is None:
@@ -154,4 +153,9 @@ class RegistrarVeredicto:
                     modelo=modelo,
                 ),
             )
-        return VeredictoRegistrado(veredicto=veredicto, revision=cerrada, auditoria=auditoria)
+        return VeredictoRegistrado(
+            combate_id=tocado.combate_id,
+            veredicto=veredicto,
+            revision=cerrada,
+            auditoria=auditoria,
+        )

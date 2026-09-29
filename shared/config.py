@@ -37,7 +37,7 @@ STREAM_FEATURES_DEAD = "fog:features:dead"
 # (worker anterior que murió entre XREADGROUP y XACK). Ver DEF-09.
 CLAIM_MIN_IDLE_S = float(os.environ.get("CLAIM_MIN_IDLE_S", "60.0"))
 
-# Cloud -> Fog (un stream por match_id)
+# Cloud -> Fog (un stream por revision_id)
 VERDICT_STREAM_PREFIX = "cloud:verdicts:"
 
 # Modelo de pose (YOLOv8x-pose, igual que dataset/05_extract_features.py --model x)
