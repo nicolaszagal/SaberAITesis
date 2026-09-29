@@ -84,7 +84,8 @@ app = FastAPI(
     description=(
         "Gateway WebRTC + extracción de features biomecánicas para el "
         "sistema de video-arbitraje IA de esgrima sable (pipeline "
-        "lstm_4class: 192 features, 4 clases, luz Favero como input). "
+        "lstm_6class: 192 features, 6 clases, luz Favero como filtro y, "
+        "según el checkpoint, también como input del modelo). "
         "Ver CONTRATO_API.md y PLAN_ARQUITECTURA_DDD.md para el contrato "
         "completo con Edge y Cloud."
     ),

@@ -15,10 +15,16 @@ import numpy as np
 
 
 class ActionClass(str, Enum):
+    """6 clases del checkpoint desplegado (dataset/lstm_6class, D-06):
+    orden idéntico a `classes` en run_config.json. El tirador se deriva
+    del sufijo de cada valor (A/B), ver shared.config.FENCER_COLOR."""
+
     ATTACK_A = "AttackA"
     ATTACK_B = "AttackB"
-    RESPONSE_A = "ResponseA"
-    RESPONSE_B = "ResponseB"
+    CONTRATTACK_A = "ContrattackA"
+    CONTRATTACK_B = "ContrattackB"
+    RIPOSTE_A = "RiposteA"
+    RIPOSTE_B = "RiposteB"
 
 
 CLASSES: list[str] = [c.value for c in ActionClass]
@@ -101,5 +107,5 @@ class Verdict:
     fencer: str | None = None  # "ROJ" o "VER", ver shared.config.FENCER_COLOR
     probs: dict[str, float] | None = None  # softmax post filtro Favero, por clase
     latencia_inferencia_ms: int | None = None
-    modelo: str | None = None  # shared.config.MODEL_VERSION_NAME
+    modelo: str | None = None  # "lstm_6class/<run_id>/<archivo>", ver LSTM6ClassAdapter
     motivo_no_disp: str | None = None  # uno de MotivoNoDisponible, si disponible=False

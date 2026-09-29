@@ -13,22 +13,23 @@
   arrancar con `RuntimeError: Faltan variables de entorno requeridas: ...`
   si no están seteadas:
   - `FEATURE_STATS_PATH` (Fog) — ruta al `.npz` con mean/std de las 192
-    features (ver `dataset/lstm_4class/compute_stats.py`, ubicación
-    histórica).
+    features del checkpoint desplegado (`dataset/lstm_6class/feature_stats.npz`).
   - `FEATURE_PREPROCESSING_PROFILE` (Fog) — nombre de la versión de modelo
-    cuyo recorte (±kσ) y ablación se aplican tras estandarizar (p. ej.
-    `lstm_6class`). Se define en
+    cuyo recorte (±kσ) y ablación se aplican tras estandarizar: `lstm_6class`
+    para el checkpoint vigente. Se define en
     `fog/infrastructure/features/preprocessing_profiles.json` o en el archivo
     que indique `FEATURE_PREPROCESSING_PROFILES_PATH` (opcional); debe
     corresponder al `.npz` de `FEATURE_STATS_PATH`.
-  - `LSTM_CHECKPOINT_PATH` (Cloud) — ruta al checkpoint del LSTM desplegado
-    (`best_model.pt`, ubicación histórica en
-    `dataset/lstm_4class/checkpoints/`).
+  - `MODEL_RUN_DIR` (Cloud) — directorio de la corrida del LSTM desplegado
+    (`dataset/lstm_6class/checkpoints/<run_id>/`), con `run_config.json` y
+    `best_model.pt` adentro. El `run_id` vigente puede cambiar tras un
+    diagnóstico en curso — ver docs_claude/contexto_sabre.md sección 8.
 
-  Fijar ambas con la ubicación vigente del modelo antes de arrancar, p.ej.:
+  Fijar las tres con la ubicación vigente del modelo antes de arrancar, p.ej.:
   ```bash
-  export FEATURE_STATS_PATH=/ruta/a/feature_stats.npz
-  export LSTM_CHECKPOINT_PATH=/ruta/a/best_model.pt
+  export FEATURE_STATS_PATH=/ruta/a/dataset/lstm_6class/feature_stats.npz
+  export FEATURE_PREPROCESSING_PROFILE=lstm_6class
+  export MODEL_RUN_DIR=/ruta/a/dataset/lstm_6class/checkpoints/20260928_141021
   ```
 
 ## 2. Instalación
@@ -56,7 +57,7 @@ acoplar el requirements.txt de desarrollo a una plataforma), pero
 `constraints.txt` fija la versión verificada junto con torch/torchvision
 en este entorno (`python -c "from torchvision.ops import nms; import
 ultralytics"` sin error). Si ya tenés una versión fijada para
-`dataset/lstm_4class/05_extract_features.py`, usar esa misma para evitar
+`dataset/05_extract_features.py`, usar esa misma para evitar
 divergencias de comportamiento entre tracking de entrenamiento y
 producción, y actualizar `constraints.txt` en consecuencia.
 
@@ -76,7 +77,7 @@ sobre `numpy==2.3.4` en `requirements.txt` para un caso concreto ya resuelto.
 |-------------------------|-------------------------------------------------|-----|
 | `REDIS_URL`             | `redis://localhost:6379/0`                      | conexión Fog y Cloud |
 | `YOLO_POSE_MODEL_PATH`  | `dataset/yolov8x-pose.pt`                       | modelo de pose (Fog) |
-| `LSTM_CHECKPOINT_PATH`  | `dataset/lstm_4class/checkpoints/best_model.pt` | checkpoint LSTM (Cloud) |
+| `MODEL_RUN_DIR`         | — (obligatoria, DEF-15)                         | directorio `checkpoints/<run_id>/` del LSTM desplegado (Cloud) |
 | `FEATURE_STATS_PATH`    | — (obligatoria, DEF-15)                         | mean/std de estandarización (Fog) |
 | `FEATURE_PREPROCESSING_PROFILE` | — (obligatoria)                         | perfil de recorte/ablación por versión de modelo (Fog) |
 | `FEATURE_PREPROCESSING_PROFILES_PATH` | JSON junto a `preprocessing_profile.py` | archivo de perfiles alternativo (Fog) |
@@ -123,12 +124,14 @@ cd backend
 python3 -m pytest tests/ -v
 ```
 
-28 tests, todos con fakes (sin Redis, sin modelos reales, sin
-`ultralytics` instalado) — cubren `application/` de Fog y Cloud,
-`InMemoryMatchRepository`, `New192FeatureExtractor`, `try_lock_ids` y
-`FaveroHardMaskPolicy`. `LSTM4ClassAdapter` se prueba con un checkpoint
-sintético (misma arquitectura, pesos aleatorios) para no depender del
-checkpoint real de producción en un test unitario.
+95 tests (4 marcados `slow`, deseleccionados por default), la mayoría con
+fakes (sin Redis, sin modelos reales, sin `ultralytics` instalado) —
+cubren `application/` de Fog y Cloud, `InMemoryMatchRepository`,
+`New192FeatureExtractor`, `try_lock_ids` y `NullArbitrationPolicy`.
+`LSTM6ClassAdapter` se prueba con un run sintético (misma arquitectura,
+pesos aleatorios) para no depender del checkpoint real de producción en
+un test unitario; `tests/cloud/test_lstm6class_smoke.py` (`slow`) sí usa
+el checkpoint real y 6 clips reales, uno por clase.
 
 No cubierto por estos tests (pendiente, ver tarea "Smoke test end-to-end"):
 `YoloV8PoseAdapter` (requiere `ultralytics` + modelo real) y el flujo
@@ -216,15 +219,16 @@ sin esto.
 
 ### 6.2 Cloud, Render
 
-Antes de desplegar, confirmar que el checkpoint está comiteado y pusheado:
+Antes de desplegar, confirmar que el run del checkpoint vigente está
+comiteado y pusheado (`run_id` — ver docs_claude/contexto_sabre.md sección 8):
 
 ```bash
-git status backend/dataset/lstm_4class/checkpoints/best_model.pt
+git status backend/dataset/lstm_6class/checkpoints/20260928_141021/
 ```
 
 Render solo ve lo que está en el repo de GitHub, no tu filesystem local —
-a diferencia de `dataset/yolov8x-pose.pt` (133 MB, de Fog), este checkpoint
-(556 KB) sí está pensado para vivir en el repo de `backend/`.
+a diferencia de `dataset/yolov8x-pose.pt` (133 MB, de Fog), este run (unos
+cientos de KB) sí está pensado para vivir en el repo de `backend/`.
 
 En Render: **New > Background Worker** (no *Web Service* — Cloud no expone
 HTTP, y un Web Service espera que algún puerto responda al health check).
@@ -236,8 +240,11 @@ Conectar el repo de GitHub y configurar:
   dashboard de Render**, esto no se propaga solo)
 - **Root Directory**: vacío — el build sigue necesitando la raíz de
   `backend/` como contexto (`cloud/Dockerfile` hace `COPY shared/ shared/`
-  y `COPY dataset/lstm_4class/checkpoints/...`, ambos fuera de `cloud/`),
-  no cambia aunque el Dockerfile ahora viva dentro de `cloud/`
+  y `COPY dataset/lstm_6class/checkpoints/${RUN_ID}/...`, ambos fuera de
+  `cloud/`), no cambia aunque el Dockerfile ahora viva dentro de `cloud/`
+- **Docker Build Args**: `RUN_ID=<run_id vigente>` si es distinto del
+  default fijado en `cloud/Dockerfile` (`ARG RUN_ID=...`) — el checkpoint
+  activo puede cambiar tras un diagnóstico en curso, sin tocar el Dockerfile
 - Variable de entorno `REDIS_URL`: la misma URL de Upstash que usa Fog
   (sección 6.3)
 

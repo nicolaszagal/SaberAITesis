@@ -1,0 +1,29 @@
+{
+  "run_id": "20260928_141021",
+  "seed": null,
+  "epochs_trained": 59,
+  "best_val_loss": 1.4710513651371002,
+  "best_val_acc": 0.48484848484848486,
+  "best_loss_epoch": 9,
+  "best_acc_epoch": 12,
+  "hidden_size": 64,
+  "num_layers": 1,
+  "dropout": 0.4,
+  "lr": 0.0008,
+  "batch_size": 32,
+  "weight_decay": 0.0005,
+  "label_smoothing": 0.1,
+  "luz_size": 0,
+  "use_attention": true,
+  "early_stop_patience": 50,
+  "max_epochs": 150,
+  "n_classes": 6,
+  "classes": [
+    "AttackA",
+    "AttackB",
+    "ContrattackA",
+    "ContrattackB",
+    "RiposteA",
+    "RiposteB"
+  ]
+}

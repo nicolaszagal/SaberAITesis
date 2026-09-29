@@ -26,7 +26,8 @@ def _verdict(match_id: str = "m1") -> Verdict:
         action_class=ActionClass.ATTACK_A,
         confidence=0.9,
         fencer="ROJ",
-        probs={"AttackA": 0.9, "AttackB": 0.05, "ResponseA": 0.03, "ResponseB": 0.02},
+        probs={"AttackA": 0.9, "AttackB": 0.05, "ContrattackA": 0.03, "ContrattackB": 0.01,
+               "RiposteA": 0.005, "RiposteB": 0.005},
         latencia_inferencia_ms=10,
         modelo="test-model",
     )
