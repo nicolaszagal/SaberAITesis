@@ -87,7 +87,11 @@ def construir_snapshot(*, revision, tocado, clasificacion, veredicto, modelo) ->
 
 
 class RegistrarVeredicto:
-    def __init__(self, uow: UnidadDeTrabajoPort, evidencia: RegistroEvidenciaPort | None = None):
+    def __init__(
+        self,
+        uow: UnidadDeTrabajoPort,
+        evidencia: RegistroEvidenciaPort | None = None,
+    ):
         self._uow = uow
         self._evidencia = evidencia
 
@@ -195,8 +199,10 @@ class RegistrarVeredicto:
         if self._evidencia is None or evento_id is None:
             return
         try:
-            self._evidencia.registrar(construir_linea(evento_id=evento_id, **registrado))
+            linea = construir_linea(evento_id=evento_id, **registrado)
+            self._evidencia.registrar(linea)
         except Exception:
             log.exception(
-                "[%s] no se pudo escribir el log de evidencia", registrado["revision"].id
+                "[%s] no se pudo escribir el log de evidencia",
+                registrado["revision"].id,
             )

@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
+from typing import Any
 from datetime import datetime, timezone
 from concurrent.futures import Executor
 
@@ -42,6 +43,7 @@ from fog.application.listar_catalogos import ListarEventos, ListarUsuarios
 from fog.application.process_match import ProcessIncomingMatch
 from fog.application.registrar_clasificacion import RegistrarClasificacion
 from fog.application.registrar_veredicto import RegistrarVeredicto
+from fog.application.resumir_validacion import ResumirValidacion
 from fog.composition import Container
 from fog.domain.audit_models import Combate
 from fog.domain.errors import (
@@ -725,6 +727,31 @@ async def verificar_auditoria(
         integra=not alterados,
         alteradas=[RegistroAlteradoResponse(**vars(a)) for a in alterados],
     )
+
+
+@router.get(
+    "/validaciones/{evento_id}/resumen",
+    response_model=dict[str, Any],
+    tags=["validación"],
+    summary="Resumen de la sesión de validación de un evento (solo lectura)",
+    description=(
+        "Mismo contenido que `resumen.json` de scripts/exportar_evidencia.py "
+        "(L02): métricas separadas en V1 y V2, conciliación con el JSONL de "
+        "L01, integridad de la auditoría y evidencia del modelo. Se calcula "
+        "desde PostgreSQL. Sin autenticación (RF-26 está pendiente). 404 si "
+        "el evento no existe."
+    ),
+    responses={404: {"description": "El evento no existe."}},
+)
+@inject
+async def resumen_validacion(
+    evento_id: uuid.UUID,
+    caso: ResumirValidacion = Depends(Provide[Container.resumir_validacion]),
+) -> dict[str, Any]:
+    try:
+        return (await caso.execute(evento_id)).resumen
+    except RecursoNoEncontrado as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get(
