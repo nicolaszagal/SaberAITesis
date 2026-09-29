@@ -13,12 +13,23 @@ from concurrent.futures import Executor
 
 from aiortc import RTCPeerConnection, RTCSessionDescription
 from dependency_injector.wiring import Provide, inject
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import JSONResponse
 
 from fog.application.abrir_revision import AbrirRevisionVar, VideoGuardado
 from fog.application.configurar_combate import ConfigurarCombate, DatosTirador
 from fog.application.forward_verdict import ForwardVerdictToClient
+from fog.application.listar_catalogos import ListarEventos, ListarUsuarios
 from fog.application.process_match import ProcessIncomingMatch
 from fog.application.registrar_clasificacion import RegistrarClasificacion
 from fog.application.registrar_veredicto import RegistrarVeredicto
@@ -41,12 +52,15 @@ from fog.domain.models import (
 )
 from fog.infrastructure.api.schemas import (
     ClipUploadResponse,
+    EventoResponse,
     LuzAck,
     LuzRequest,
     MatchConfigRequest,
     MatchConfigResponse,
     OfferRequest,
     OfferResponse,
+    RolLiteral,
+    UsuarioResponse,
     VeredictoRequest,
     VeredictoResponse,
 )
@@ -80,6 +94,55 @@ def _combate_no_creado(match_id: str) -> HTTPException:
         status_code=404,
         detail=f"el combate {match_id!r} no fue creado (POST /matches/config)",
     )
+
+
+@router.get(
+    "/eventos",
+    response_model=list[EventoResponse],
+    tags=["configuración"],
+    summary="Lista los eventos (solo lectura)",
+    description=(
+        "Eventos de `sabre.evento`, del más reciente al más antiguo, para que "
+        "la pantalla de configuración elija el `evento_id` de POST "
+        "/matches/config. No crea ni modifica nada: los eventos se siembran "
+        "con scripts/crear_sesion_validacion.py."
+    ),
+)
+@inject
+async def listar_eventos(
+    caso: ListarEventos = Depends(Provide[Container.listar_eventos]),
+) -> list[EventoResponse]:
+    eventos = await caso.execute()
+    return [
+        EventoResponse(id=e.id, nombre=e.nombre, fecha=e.fecha, lugar=e.lugar, tipo=e.tipo)
+        for e in eventos
+    ]
+
+
+@router.get(
+    "/usuarios",
+    response_model=list[UsuarioResponse],
+    tags=["configuración"],
+    summary="Lista los usuarios, opcionalmente por rol (solo lectura)",
+    description=(
+        "Usuarios de `sabre.usuario` ordenados por nombre. Con "
+        "`?rol=arbitro` devuelve solo los árbitros, para elegir el "
+        "`arbitro_id` de POST /matches/config; `rol` admite `arbitro`, "
+        "`operador` o `administrador` (422 con otro valor). Incluye `activo`. "
+        "No crea ni modifica nada: los usuarios se siembran con "
+        "scripts/crear_sesion_validacion.py (no hay login, RF-26 es COULD)."
+    ),
+    responses={422: {"description": "`rol` no es un rol del esquema."}},
+)
+@inject
+async def listar_usuarios(
+    rol: RolLiteral | None = Query(None, description="Filtra por rol."),
+    caso: ListarUsuarios = Depends(Provide[Container.listar_usuarios]),
+) -> list[UsuarioResponse]:
+    usuarios = await caso.execute(rol)
+    return [
+        UsuarioResponse(id=u.id, nombre=u.nombre, rol=u.rol, activo=u.activo) for u in usuarios
+    ]
 
 
 @router.post(

@@ -12,6 +12,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 WeaponSideLiteral = Literal["right", "left"]
+RolLiteral = Literal["arbitro", "operador", "administrador"]
 # Taxonomía única de la API: los nombres del modelo (D-06). Coincide con
 # fog.domain.models.CLASES_MODELO; la traducción al esquema vive en los
 # adaptadores de persistencia.
@@ -111,6 +112,25 @@ class MatchConfigRequest(BaseModel):
             if firmado and getattr(self, f"es_menor_{lado}") and not getattr(self, f"firmante_{lado}"):
                 raise ValueError(f"firmante_{lado} es obligatorio si el tirador {lado} es menor y firmó")
         return self
+
+
+class EventoResponse(BaseModel):
+    """Evento de `sabre.evento`, para elegir a cuál pertenece el combate."""
+
+    id: uuid.UUID = Field(..., description="Se envía como `evento_id` en POST /matches/config.")
+    nombre: str
+    fecha: date
+    lugar: str | None = None
+    tipo: Literal["piloto", "formativo", "oficial"]
+
+
+class UsuarioResponse(BaseModel):
+    """Usuario de `sabre.usuario`, para elegir árbitro en la configuración."""
+
+    id: uuid.UUID = Field(..., description="Se envía como `arbitro_id` en POST /matches/config.")
+    nombre: str
+    rol: RolLiteral
+    activo: bool
 
 
 class MatchConfigResponse(BaseModel):
