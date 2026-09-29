@@ -23,7 +23,36 @@ from fog.infrastructure.features.preprocessing_profile import load_profile
 from fog.infrastructure.messaging.redis_feature_publisher import RedisFeaturePublisher
 from fog.infrastructure.messaging.redis_verdict_subscriber import RedisVerdictSubscriber
 from fog.infrastructure.persistence.database import build_engine, build_session_factory
-from fog.infrastructure.persistence.in_memory_match_repository import InMemoryMatchRepository
+from fog.infrastructure.persistence.in_memory_match_repository import (
+    InMemoryMatchRepository,
+)
+from fog.infrastructure.persistence.postgres.auditoria_repository import (
+    PostgresAuditoriaRepository,
+)
+from fog.infrastructure.persistence.postgres.clasificacion_repository import (
+    PostgresClasificacionRepository,
+)
+from fog.infrastructure.persistence.postgres.clip_repository import (
+    PostgresClipRepository,
+)
+from fog.infrastructure.persistence.postgres.combate_repository import (
+    PostgresCombateRepository,
+)
+from fog.infrastructure.persistence.postgres.evento_repository import (
+    PostgresEventoRepository,
+)
+from fog.infrastructure.persistence.postgres.modelo_version_repository import (
+    PostgresModeloVersionRepository,
+)
+from fog.infrastructure.persistence.postgres.revision_repository import (
+    PostgresRevisionRepository,
+)
+from fog.infrastructure.persistence.postgres.tocado_repository import (
+    PostgresTocadoRepository,
+)
+from fog.infrastructure.persistence.postgres.veredicto_repository import (
+    PostgresVeredictoRepository,
+)
 from fog.infrastructure.pose.yolo_pose_adapter import YoloV8PoseAdapter
 from fog.infrastructure.storage.local_file_storage import LocalFileStorage
 from fog.infrastructure.webrtc.session_registry import SessionRegistry
@@ -56,7 +85,9 @@ class Container(containers.DeclarativeContainer):
 
     redis_client = providers.Singleton(_build_redis_client, redis_url=config.redis_url)
 
-    yolo_model = providers.Singleton(_load_yolo_model, model_path=config.yolo_pose_model_path)
+    yolo_model = providers.Singleton(
+        _load_yolo_model, model_path=config.yolo_pose_model_path
+    )
 
     pose_estimator = providers.Singleton(YoloV8PoseAdapter, model=yolo_model)
 
@@ -67,17 +98,54 @@ class Container(containers.DeclarativeContainer):
         profiles_path=config.feature_preprocessing_profiles_path,
     )
 
+    # Match (agregado runtime de una sesión WebRTC/clip: weapon_side_a/b, luz,
+    # verdict) no tiene tabla propia y no lleva evento_id/tirador/arbitro_id
+    # de `sabre.combate` — D02 lo deja como está a propósito. D03 decide, al
+    # implementar CU-01, cómo se relaciona con CombateRepositoryPort (abajo).
     match_repository = providers.Singleton(InMemoryMatchRepository)
 
     db_engine = providers.Singleton(build_engine, database_url=config.database_url)
 
     db_session_factory = providers.Singleton(build_session_factory, engine=db_engine)
 
+    # Adaptadores del esquema de auditoría (D02, docs_claude/sabre_ai_schema.sql).
+    # Sin consumidor todavía en infrastructure/api/routes.py: D03 los conecta
+    # al implementar el flujo auditable de la revisión VAR.
+    evento_repository = providers.Singleton(
+        PostgresEventoRepository, session_factory=db_session_factory
+    )
+    combate_repository = providers.Singleton(
+        PostgresCombateRepository, session_factory=db_session_factory
+    )
+    clip_repository = providers.Singleton(
+        PostgresClipRepository, session_factory=db_session_factory
+    )
+    tocado_repository = providers.Singleton(
+        PostgresTocadoRepository, session_factory=db_session_factory
+    )
+    modelo_version_repository = providers.Singleton(
+        PostgresModeloVersionRepository, session_factory=db_session_factory
+    )
+    clasificacion_repository = providers.Singleton(
+        PostgresClasificacionRepository, session_factory=db_session_factory
+    )
+    revision_repository = providers.Singleton(
+        PostgresRevisionRepository, session_factory=db_session_factory
+    )
+    veredicto_repository = providers.Singleton(
+        PostgresVeredictoRepository, session_factory=db_session_factory
+    )
+    auditoria_repository = providers.Singleton(
+        PostgresAuditoriaRepository, session_factory=db_session_factory
+    )
+
     file_storage = providers.Singleton(LocalFileStorage, root=config.storage_dir)
 
     feature_publisher = providers.Singleton(RedisFeaturePublisher, client=redis_client)
 
-    verdict_subscriber = providers.Singleton(RedisVerdictSubscriber, client=redis_client)
+    verdict_subscriber = providers.Singleton(
+        RedisVerdictSubscriber, client=redis_client
+    )
 
     sessions = providers.Singleton(SessionRegistry)
 

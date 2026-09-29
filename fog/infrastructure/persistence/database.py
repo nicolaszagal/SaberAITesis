@@ -8,14 +8,15 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import NullPool
 
-# El esquema `sabre` (y la extensión pgcrypto, instalada dentro de él) no está
-# en el search_path por defecto; las funciones y triggers del esquema
-# referencian tablas y digest() sin calificar, así que cada conexión lo fija.
-SEARCH_PATH = "sabre,public"
-
 
 def build_engine(database_url: str | None, *, pooled: bool = True) -> AsyncEngine:
-    """Crea el engine async con el search_path del esquema `sabre`.
+    """Crea el engine async de la base `sabre`.
+
+    No fija `search_path` en la conexión (migración 0002): las funciones y
+    triggers del esquema fijan su propio `search_path = sabre, pg_temp`
+    (`ALTER FUNCTION ... SET search_path`), y el resto del código (Core,
+    adaptadores SQLAlchemy) califica `sabre.<tabla>` explícitamente en vez
+    de depender del search_path de la sesión.
 
     Args:
         database_url: URL `postgresql+asyncpg://...`.
@@ -33,11 +34,7 @@ def build_engine(database_url: str | None, *, pooled: bool = True) -> AsyncEngin
             "(postgresql+asyncpg://usuario:clave@host:5432/base)."
         )
     options = {"poolclass": NullPool} if not pooled else {"pool_pre_ping": True}
-    return create_async_engine(
-        database_url,
-        connect_args={"server_settings": {"search_path": SEARCH_PATH}},
-        **options,
-    )
+    return create_async_engine(database_url, **options)
 
 
 def build_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
