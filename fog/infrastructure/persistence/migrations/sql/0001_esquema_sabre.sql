@@ -276,13 +276,14 @@ CREATE TABLE lote_revision (
     PRIMARY KEY (lote_id, revision_id)
 );
 
--- Vista de muestras etiquetadas: la etiqueta es la decisión del árbitro
+-- Vista de muestras etiquetadas: la etiqueta es la decisión final declarada
+-- por el árbitro (`veredicto.clase_final`, obligatoria con mantener y cambiar).
+-- "mantener"/"cambiar" describen la relación con la decisión original en pista.
 CREATE VIEW v_muestras_confirmadas AS
 SELECT r.id AS revision_id,
        c.keypoints_uri, c.keypoints_sha256,
        c.clase AS clase_sugerida,
-       CASE v.decision WHEN 'mantener' THEN c.clase
-                       WHEN 'cambiar'  THEN v.clase_final END AS etiqueta,
+       v.clase_final AS etiqueta,
        v.decision, m.nombre AS modelo, v.registrado_en
 FROM revision_var r
 JOIN veredicto v      ON v.revision_id = r.id

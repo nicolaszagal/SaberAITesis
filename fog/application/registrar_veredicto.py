@@ -21,16 +21,15 @@ from fog.domain.errors import (
     VeredictoInvalido,
     VeredictoYaRegistrado,
 )
+from fog.domain.models import CLASES_MODELO
 from fog.ports.unidad_de_trabajo import UnidadDeTrabajoPort
 
-CLASES = (
-    "AtaqueA", "AtaqueB", "ContraataqueA", "ContraataqueB", "RiposteA", "RiposteB",
-)
 DECISIONES = ("mantener", "cambiar", "anular")
 
 
 @dataclass(frozen=True)
 class VeredictoRegistrado:
+    combate_id: uuid.UUID
     veredicto: Veredicto
     revision: Revision
     auditoria: Auditoria
@@ -86,47 +85,49 @@ class RegistrarVeredicto:
     async def execute(
         self,
         *,
-        combate_id: uuid.UUID,
+        revision_id: uuid.UUID,
         decision: str,
         clase_final: str | None,
         arbitro_id: uuid.UUID,
     ) -> VeredictoRegistrado:
-        """Registra el veredicto de la revisión vigente del combate (la más
-        reciente) y la cierra con su registro de auditoría.
+        """Registra el veredicto de una revisión y la cierra con su registro
+        de auditoría.
 
         Args:
-            combate_id: combate (el `match_id` de la API).
-            decision: `mantener`, `cambiar` o `anular`.
-            clase_final: obligatoria con `cambiar`; prohibida con `anular`.
+            revision_id: revisión que se decide (un combate admite N).
+            decision: `mantener`, `cambiar` o `anular`; describe la relación
+                con la decisión original del árbitro en pista.
+            clase_final: decisión final declarada. Obligatoria con `mantener`
+                y `cambiar` (aunque la clasificación no estuviera
+                disponible); prohibida con `anular`. Usa los nombres del
+                modelo (`AttackA`, ...).
             arbitro_id: usuario que decide.
 
         Returns:
             Veredicto, revisión cerrada y registro de auditoría.
 
         Raises:
-            VeredictoInvalido: `cambiar` sin clase_final, `anular` con
-                clase_final, o valores fuera de los dominios del esquema.
-            RecursoNoEncontrado: combate, árbitro o revisión inexistentes.
+            VeredictoInvalido: `mantener` o `cambiar` sin clase_final,
+                `anular` con clase_final, o valores fuera de los dominios.
+            RecursoNoEncontrado: árbitro o revisión inexistentes.
             VeredictoYaRegistrado: la revisión ya tiene veredicto (409).
             ClasificacionPendiente: la revisión no tiene clasificación.
         """
         if decision not in DECISIONES:
             raise VeredictoInvalido(f"decision desconocida: {decision!r}")
-        if decision == "cambiar" and clase_final is None:
-            raise VeredictoInvalido("decision='cambiar' requiere clase_final")
+        if decision in ("mantener", "cambiar") and clase_final is None:
+            raise VeredictoInvalido(f"decision={decision!r} requiere clase_final")
         if decision == "anular" and clase_final is not None:
             raise VeredictoInvalido("decision='anular' no admite clase_final")
-        if clase_final is not None and clase_final not in CLASES:
+        if clase_final is not None and clase_final not in CLASES_MODELO:
             raise VeredictoInvalido(f"clase_final desconocida: {clase_final!r}")
 
         async with self._uow.transaccion() as tx:
-            if await tx.combates.obtener(combate_id) is None:
-                raise RecursoNoEncontrado(f"combate {combate_id}")
             if await tx.usuarios.obtener(arbitro_id) is None:
                 raise RecursoNoEncontrado(f"usuario (árbitro) {arbitro_id}")
-            revision = await tx.revisiones.obtener_ultima_por_combate(combate_id)
+            revision = await tx.revisiones.obtener(revision_id)
             if revision is None:
-                raise RecursoNoEncontrado(f"revisión del combate {combate_id}")
+                raise RecursoNoEncontrado(f"revisión {revision_id}")
             if await tx.veredictos.obtener_por_revision(revision.id) is not None:
                 raise VeredictoYaRegistrado(str(revision.id))
             if revision.clasificacion_id is None:
@@ -154,4 +155,9 @@ class RegistrarVeredicto:
                     modelo=modelo,
                 ),
             )
-        return VeredictoRegistrado(veredicto=veredicto, revision=cerrada, auditoria=auditoria)
+        return VeredictoRegistrado(
+            combate_id=tocado.combate_id,
+            veredicto=veredicto,
+            revision=cerrada,
+            auditoria=auditoria,
+        )

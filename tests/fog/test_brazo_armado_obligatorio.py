@@ -69,7 +69,7 @@ def test_clip_con_match_id_que_no_es_uuid_responde_404(crear_app):
     assert app.subir_clip("m-inventado").status_code == 404
 
 
-def test_luz_sin_combate_configurado_responde_404(crear_app):
+def test_luz_sin_sesion_webrtc_responde_404(crear_app):
     app = crear_app()
 
     resp = app.client.post(
@@ -79,7 +79,7 @@ def test_luz_sin_combate_configurado_responde_404(crear_app):
     assert resp.status_code == 404
 
 
-def test_websocket_sin_combate_configurado_responde_404(crear_app):
+def test_websocket_de_revision_sin_sesion_responde_404(crear_app):
     app = crear_app()
 
     with pytest.raises(WebSocketDenialResponse) as exc:
@@ -89,28 +89,30 @@ def test_websocket_sin_combate_configurado_responde_404(crear_app):
     assert exc.value.status_code == 404
 
 
-def test_luz_y_websocket_funcionan_con_combate_configurado(crear_app):
+def test_luz_y_websocket_funcionan_con_la_sesion_de_un_clip(crear_app):
     app = crear_app()
     match_id = app.configurar()
+    revision_id = app.subir_clip(match_id).json()["revision_id"]
 
     resp = app.client.post(f"/webrtc/{match_id}/luz", json={"has_luz_A": True, "has_luz_B": False})
+    with app.client.websocket_connect(f"/ws/veredicto/{revision_id}") as ws:
+        mensaje = ws.receive_json()
 
     assert resp.status_code == 200
     assert resp.json()["has_luz_A"] is True
+    assert mensaje["revision_id"] == revision_id
 
 
-def test_sesion_liberada_se_reconstruye_desde_el_combate_guardado(crear_app):
-    """El combate vive en la base: si la sesión en memoria ya se liberó (TTL
-    o reinicio de Fog), luz y clip siguen funcionando con el brazo armado
-    guardado, sin caer en ningún valor por defecto."""
+def test_la_sesion_de_cada_clip_toma_el_brazo_armado_del_combate_guardado(crear_app):
+    """El combate vive en la base: cada clip crea su sesión con el brazo
+    armado guardado, sin caer en ningún valor por defecto."""
     app = crear_app()
     match_id = app.configurar(weapon_side_A="left", weapon_side_B="right")
-    app.container.sessions().remove(match_id)
 
     resp = app.subir_clip(match_id)
 
     assert resp.status_code == 200, resp.text
-    sesion = app.container.sessions().get(match_id)
+    sesion = app.container.sessions().get(resp.json()["revision_id"])
     assert (sesion.weapon_side_a.value, sesion.weapon_side_b.value) == ("left", "right")
     extractor = app.container.feature_extractor()
     _tracked, lado_a, lado_b, _min = extractor.calls[0]

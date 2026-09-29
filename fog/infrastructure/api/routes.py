@@ -13,12 +13,23 @@ from concurrent.futures import Executor
 
 from aiortc import RTCPeerConnection, RTCSessionDescription
 from dependency_injector.wiring import Provide, inject
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import JSONResponse
 
 from fog.application.abrir_revision import AbrirRevisionVar, VideoGuardado
 from fog.application.configurar_combate import ConfigurarCombate, DatosTirador
 from fog.application.forward_verdict import ForwardVerdictToClient
+from fog.application.listar_catalogos import ListarEventos, ListarUsuarios
 from fog.application.process_match import ProcessIncomingMatch
 from fog.application.registrar_clasificacion import RegistrarClasificacion
 from fog.application.registrar_veredicto import RegistrarVeredicto
@@ -41,21 +52,25 @@ from fog.domain.models import (
 )
 from fog.infrastructure.api.schemas import (
     ClipUploadResponse,
+    EventoResponse,
     LuzAck,
     LuzRequest,
     MatchConfigRequest,
     MatchConfigResponse,
     OfferRequest,
     OfferResponse,
+    RolLiteral,
+    UsuarioResponse,
     VeredictoRequest,
     VeredictoResponse,
 )
 from fog.infrastructure.clips.clip_file_reader import (
     ClipTooLargeError,
     InvalidClipError,
+    TocadoFueraDelClipError,
     process_uploaded_clip,
 )
-from fog.infrastructure.webrtc.session_registry import MatchSession, SessionRegistry
+from fog.infrastructure.webrtc.session_registry import SessionRegistry
 from fog.infrastructure.webrtc.track_consumer import consume_track
 from fog.ports.file_storage import FileStoragePort
 from fog.ports.pose_estimator import PoseEstimatorPort
@@ -74,35 +89,60 @@ async def _combate_o_none(match_id: str, uow: UnidadDeTrabajoPort) -> Combate | 
         return await tx.combates.obtener(combate_id)
 
 
-def _sesion_de_combate(sessions: SessionRegistry, combate: Combate) -> MatchSession:
-    """Sesión en memoria del combate; la recrea (con el brazo armado guardado)
-    si ya se liberó o Fog se reinició."""
-    match_id = str(combate.id)
-    session = sessions.get(match_id)
-    if session is None:
-        session = sessions.create(
-            match_id, lado_de_brazo(combate.brazo_a), lado_de_brazo(combate.brazo_b)
-        )
-    return session
-
-
-async def _sesion_o_none(
-    match_id: str, sessions: SessionRegistry, uow: UnidadDeTrabajoPort
-) -> MatchSession | None:
-    """Sesión del combate, o None si el combate no fue creado (ni por POST
-    /matches/config ni por POST /webrtc/offer)."""
-    session = sessions.get(match_id)
-    if session is not None:
-        return session
-    combate = await _combate_o_none(match_id, uow)
-    return _sesion_de_combate(sessions, combate) if combate is not None else None
-
-
 def _combate_no_creado(match_id: str) -> HTTPException:
     return HTTPException(
         status_code=404,
         detail=f"el combate {match_id!r} no fue creado (POST /matches/config)",
     )
+
+
+@router.get(
+    "/eventos",
+    response_model=list[EventoResponse],
+    tags=["configuración"],
+    summary="Lista los eventos (solo lectura)",
+    description=(
+        "Eventos de `sabre.evento`, del más reciente al más antiguo, para que "
+        "la pantalla de configuración elija el `evento_id` de POST "
+        "/matches/config. No crea ni modifica nada: los eventos se siembran "
+        "con scripts/crear_sesion_validacion.py."
+    ),
+)
+@inject
+async def listar_eventos(
+    caso: ListarEventos = Depends(Provide[Container.listar_eventos]),
+) -> list[EventoResponse]:
+    eventos = await caso.execute()
+    return [
+        EventoResponse(id=e.id, nombre=e.nombre, fecha=e.fecha, lugar=e.lugar, tipo=e.tipo)
+        for e in eventos
+    ]
+
+
+@router.get(
+    "/usuarios",
+    response_model=list[UsuarioResponse],
+    tags=["configuración"],
+    summary="Lista los usuarios, opcionalmente por rol (solo lectura)",
+    description=(
+        "Usuarios de `sabre.usuario` ordenados por nombre. Con "
+        "`?rol=arbitro` devuelve solo los árbitros, para elegir el "
+        "`arbitro_id` de POST /matches/config; `rol` admite `arbitro`, "
+        "`operador` o `administrador` (422 con otro valor). Incluye `activo`. "
+        "No crea ni modifica nada: los usuarios se siembran con "
+        "scripts/crear_sesion_validacion.py (no hay login, RF-26 es COULD)."
+    ),
+    responses={422: {"description": "`rol` no es un rol del esquema."}},
+)
+@inject
+async def listar_usuarios(
+    rol: RolLiteral | None = Query(None, description="Filtra por rol."),
+    caso: ListarUsuarios = Depends(Provide[Container.listar_usuarios]),
+) -> list[UsuarioResponse]:
+    usuarios = await caso.execute(rol)
+    return [
+        UsuarioResponse(id=u.id, nombre=u.nombre, rol=u.rol, activo=u.activo) for u in usuarios
+    ]
 
 
 @router.post(
@@ -116,15 +156,15 @@ def _combate_no_creado(match_id: str) -> HTTPException:
         "El brazo armado es obligatorio, sin valor por defecto (RF-07): sin "
         "él responde 422 y no crea nada. `evento_id` y `arbitro_id` deben "
         "existir (404 si no). El `match_id` devuelto es el id del combate y "
-        "es el que exigen /matches/{match_id}/clip, /webrtc/{match_id}/luz, "
-        "/ws/veredicto/{match_id} y /matches/{match_id}/veredicto."
+        "es el que exigen /matches/{match_id}/clip y /webrtc/{match_id}/luz. "
+        "Un combate admite N revisiones (una por clip): el veredicto y el "
+        "WebSocket se identifican por el `revision_id` que devuelve cada clip."
     ),
     responses={404: {"description": "El evento o el árbitro no existen."}},
 )
 @inject
 async def configure_match(
     body: MatchConfigRequest,
-    sessions: SessionRegistry = Depends(Provide[Container.sessions]),
     configurar_combate: ConfigurarCombate = Depends(Provide[Container.configurar_combate]),
 ) -> MatchConfigResponse:
     try:
@@ -151,10 +191,8 @@ async def configure_match(
         )
     except RecursoNoEncontrado as exc:
         raise HTTPException(status_code=404, detail=f"no existe: {exc}") from exc
-    match_id = str(combate.id)
-    sessions.create(match_id, WeaponSide(body.weapon_side_A), WeaponSide(body.weapon_side_B))
     return MatchConfigResponse(
-        match_id=match_id,
+        match_id=str(combate.id),
         weapon_side_A=body.weapon_side_A,
         weapon_side_B=body.weapon_side_B,
     )
@@ -168,10 +206,11 @@ async def configure_match(
     description=(
         "Recibe la oferta SDP de Edge, crea la sesión del combate (con "
         "weapon_side_A/B obligatorios, sin valor por defecto), arma la "
-        "RTCPeerConnection y devuelve la respuesta SDP. Tras esto, Fog "
-        "consume la pista de video, extrae features (192-dim, lstm_4class) "
-        "y las publica en Redis para Cloud. El veredicto llega luego por "
-        "GET /ws/veredicto/{match_id}."
+        "RTCPeerConnection y devuelve la respuesta SDP junto con el "
+        "`revision_id` de la sesión (un `uuid` que este flujo genera y no "
+        "persiste en la base). Tras esto, Fog consume la pista de video, "
+        "extrae features (192-dim) y las publica en Redis para Cloud. El "
+        "veredicto llega luego por GET /ws/veredicto/{revision_id}."
     ),
 )
 @inject
@@ -182,19 +221,22 @@ async def webrtc_offer(
     process_match: ProcessIncomingMatch = Depends(Provide[Container.process_match]),
     forward_verdict: ForwardVerdictToClient = Depends(Provide[Container.forward_verdict]),
     executor: Executor = Depends(Provide[Container.executor]),
+    uow: UnidadDeTrabajoPort = Depends(Provide[Container.unidad_de_trabajo]),
     luz_timeout_s: float = Depends(Provide[Container.config.luz_timeout_s]),
 ) -> OfferResponse:
     match_id = body.match_id or str(uuid.uuid4())
-    # Si match_id ya fue configurado vía POST /matches/config, se reutiliza
-    # esa sesión (con su brazo armado ya fijado) en vez de pisarla con los
-    # campos de este body; si no, este body crea la sesión.
-    session = sessions.get(match_id)
-    if session is None:
-        session = sessions.create(
-            match_id,
-            WeaponSide(body.weapon_side_A),
-            WeaponSide(body.weapon_side_B),
-        )
+    # Si match_id ya fue configurado vía POST /matches/config, se usa el
+    # brazo armado guardado en el combate en vez de los campos de este body;
+    # si no, este body fija el brazo armado de la sesión.
+    combate = await _combate_o_none(match_id, uow)
+    if combate is not None:
+        weapon_side_a, weapon_side_b = lado_de_brazo(combate.brazo_a), lado_de_brazo(combate.brazo_b)
+    else:
+        weapon_side_a, weapon_side_b = WeaponSide(body.weapon_side_A), WeaponSide(body.weapon_side_B)
+    # Este flujo no abre `revision_var`: el revision_id solo identifica la
+    # sesión (stream de veredicto y WebSocket).
+    revision_id = str(uuid.uuid4())
+    session = sessions.create(match_id, revision_id, weapon_side_a, weapon_side_b)
 
     pc = RTCPeerConnection()
     session.pc = pc
@@ -212,12 +254,13 @@ async def webrtc_offer(
     answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
 
-    asyncio.ensure_future(forward_verdict.execute(match_id))
+    asyncio.ensure_future(forward_verdict.execute(revision_id))
 
     return OfferResponse(
         sdp=pc.localDescription.sdp,
         type=pc.localDescription.type,
         match_id=match_id,
+        revision_id=revision_id,
     )
 
 
@@ -230,31 +273,35 @@ async def webrtc_offer(
         "Edge envía este endpoint cuando detecta el cierre de circuito RJ11 "
         "de alguna de las luces Favero. Si no llega antes de que termine el "
         "clip, Fog procesa con luz 'apagada' en ambos lados tras un timeout "
-        "(ver shared.config.FAVERO_LUZ_TIMEOUT_S). 404 si el combate no fue "
-        "creado."
+        "(ver shared.config.FAVERO_LUZ_TIMEOUT_S). Aplica a la sesión "
+        "WebRTC más reciente del combate (POST /webrtc/offer); 404 si el "
+        "combate no tiene ninguna."
     ),
-    responses={404: {"description": "El combate no fue creado."}},
+    responses={404: {"description": "El combate no tiene una sesión WebRTC en curso."}},
 )
 @inject
 async def webrtc_luz(
     match_id: str,
     body: LuzRequest,
     sessions: SessionRegistry = Depends(Provide[Container.sessions]),
-    uow: UnidadDeTrabajoPort = Depends(Provide[Container.unidad_de_trabajo]),
 ) -> LuzAck:
-    session = await _sesion_o_none(match_id, sessions, uow)
+    session = sessions.latest_for_match(match_id)
     if session is None:
-        raise _combate_no_creado(match_id)
+        raise HTTPException(
+            status_code=404,
+            detail=f"el combate {match_id!r} no tiene una sesión WebRTC en curso (POST /webrtc/offer)",
+        )
     session.set_luz(LuzSignal(has_luz_a=body.has_luz_A, has_luz_b=body.has_luz_B))
     return LuzAck(match_id=match_id, has_luz_A=body.has_luz_A, has_luz_B=body.has_luz_B)
 
 
 def _respuesta_clip(
-    match_id: str, luz: LuzSignal, resultado: VerdictView | UnavailableResult
+    match_id: str, revision_id: str, luz: LuzSignal, resultado: VerdictView | UnavailableResult
 ) -> ClipUploadResponse:
     if isinstance(resultado, VerdictView):
         return ClipUploadResponse(
             match_id=match_id,
+            revision_id=revision_id,
             has_luz_A=luz.has_luz_a,
             has_luz_B=luz.has_luz_b,
             timed_out=False,
@@ -266,6 +313,7 @@ def _respuesta_clip(
         )
     return ClipUploadResponse(
         match_id=match_id,
+        revision_id=revision_id,
         has_luz_A=luz.has_luz_a,
         has_luz_B=luz.has_luz_b,
         timed_out=resultado.motivo == MotivoNoDisponible.TIMEOUT,
@@ -283,15 +331,17 @@ def _respuesta_clip(
         "Alternativa a POST /webrtc/offer para subir un clip ya grabado. "
         "Exige un combate creado con POST /matches/config (404 si no), "
         "`t_tocado_ms` y al menos una luz encendida (422 si falta alguna, "
-        "CU-03 flujo 2a). Registra `clip` (archivo por SHA-256, fps, ancho, "
+        "CU-03 flujo 2a). `t_tocado_ms` debe estar entre 0 y la duración del "
+        "clip, ambos incluidos (422 si no). Registra `clip` (archivo por SHA-256, fps, ancho, "
         "alto, duración), `tocado` (fuente='simulado') y `revision_var` "
         "(aceptada); no registra qué tirador pidió la revisión (D-04). "
         "Corre pose+tracking, extracción de 192 features y publicación en "
         "Redis hacia Cloud, espera (síncrona, con timeout) el veredicto, y "
         "registra la `clasificacion` (o el \"no disponible\" con su motivo) "
         "contra el modelo activo, con los keypoints crudos en .npz y la "
-        "latencia desde la recepción del clip. Un combate admite un solo "
-        "clip en v1 (409 si ya tiene revisión). 400 si el archivo no abre "
+        "latencia desde la recepción del clip. Un combate admite N clips: "
+        "cada uno abre su propia revisión y devuelve su `revision_id`, con "
+        "el que se registra el veredicto y se abre el WebSocket. 400 si el archivo no abre "
         "como video o tiene menos de MIN_FRAMES frames; 413 si supera "
         "CLIP_MAX_MB (DEF-13); 503 si no hay versión de modelo activa. Con "
         "pose incompleta (DEF-08) responde de inmediato con "
@@ -299,8 +349,12 @@ def _respuesta_clip(
     ),
     responses={
         404: {"description": "El combate no fue creado."},
-        409: {"description": "El combate ya tiene un clip/revisión."},
-        422: {"description": "Falta t_tocado_ms o no hay ninguna luz encendida."},
+        422: {
+            "description": (
+                "Falta t_tocado_ms, está fuera de [0, duración del clip] o no hay "
+                "ninguna luz encendida."
+            )
+        },
         503: {"description": "No hay versión de modelo activa."},
     },
 )
@@ -309,7 +363,10 @@ async def upload_clip(
     match_id: str,
     file: UploadFile = File(..., description="Clip de video del combate (MP4/MOV)."),
     t_tocado_ms: int = Form(
-        ..., ge=0, description="Instante del tocado simulado en ms desde el inicio del clip (RF-02). Obligatorio."
+        ..., ge=0, description=(
+            "Instante del tocado simulado en ms desde el inicio del clip (RF-02). Obligatorio; "
+            "entre 0 y la duración del clip."
+        )
     ),
     has_luz_A: bool | None = Form(
         None, description="True si se encendió la luz Favero del tirador A."
@@ -351,7 +408,6 @@ async def upload_clip(
     combate = await _combate_o_none(match_id, uow)
     if combate is None:
         raise _combate_no_creado(match_id)
-    session = _sesion_de_combate(sessions, combate)
 
     # has_luz_A/has_luz_B (bool) es la forma vigente (DEF-14); luz_frame_a/b
     # (índice de frame, reducido a booleano) queda como alias obsoleto para
@@ -366,11 +422,6 @@ async def upload_clip(
             detail="el tocado simulado requiere al menos una luz encendida (has_luz_A o has_luz_B)",
         )
 
-    async with uow.transaccion() as tx:
-        if await tx.revisiones.obtener_ultima_por_combate(combate.id) is not None:
-            raise HTTPException(
-                status_code=409, detail="el combate ya tiene un clip cargado (v1: un clip por combate)"
-            )
     try:
         await registrar_clasificacion.verificar_modelo_activo()
     except SinModeloActivo as exc:
@@ -381,15 +432,14 @@ async def upload_clip(
     try:
         clip = await process_uploaded_clip(
             file, pose_estimator, executor, file_storage,
-            clip_max_mb=clip_max_mb, min_frames=min_frames,
+            clip_max_mb=clip_max_mb, min_frames=min_frames, t_tocado_ms=t_tocado_ms,
         )
     except ClipTooLargeError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     except InvalidClipError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    session.set_luz(luz)
-    session.t_tocado_ms = t_tocado_ms
+    except TocadoFueraDelClipError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     revision = await abrir_revision.execute(
         combate=combate,
@@ -404,24 +454,34 @@ async def upload_clip(
         luz=luz,
         t_tocado_ms=t_tocado_ms,
     )
+    revision_id = str(revision.revision.id)
+    session = sessions.create(
+        match_id, revision_id, lado_de_brazo(combate.brazo_a), lado_de_brazo(combate.brazo_b)
+    )
+    session.set_luz(luz)
+    session.t_tocado_ms = t_tocado_ms
 
     resultado: VerdictView | UnavailableResult | None = await process_match.execute(
-        match_id, clip.tracked, session.weapon_side_a, session.weapon_side_b, luz
+        match_id, revision_id, clip.tracked, session.weapon_side_a, session.weapon_side_b, luz
     )
     # Si la extracción falló (pose incompleta) no se publicó nada en Redis:
     # no tiene sentido esperar a Cloud (DEF-08).
     if resultado is None:
         try:
-            await asyncio.wait_for(forward_verdict.execute(match_id), timeout=verdict_timeout_s)
+            await asyncio.wait_for(forward_verdict.execute(revision_id), timeout=verdict_timeout_s)
         except asyncio.TimeoutError:
             # DEF-16: sin esto, esta sesión nunca queda "cerrada" (closed_at
             # sigue None) y sweep_expired no la libera jamás.
-            resultado = UnavailableResult(match_id=match_id, motivo=MotivoNoDisponible.TIMEOUT)
+            resultado = UnavailableResult(
+                match_id=match_id, revision_id=revision_id, motivo=MotivoNoDisponible.TIMEOUT
+            )
             await session.set_unavailable(resultado)
         else:
             resultado = session.verdict or session.unavailable
             if resultado is None:
-                resultado = UnavailableResult(match_id=match_id, motivo=MotivoNoDisponible.TIMEOUT)
+                resultado = UnavailableResult(
+                    match_id=match_id, revision_id=revision_id, motivo=MotivoNoDisponible.TIMEOUT
+                )
 
     await registrar_clasificacion.execute(
         tocado_id=revision.tocado.id,
@@ -430,43 +490,48 @@ async def upload_clip(
         resultado=resultado,
         latencia_ms=int((time.monotonic() - recibido) * 1000),
     )
-    return _respuesta_clip(match_id, luz, resultado)
+    return _respuesta_clip(match_id, revision_id, luz, resultado)
 
 
 @router.post(
-    "/matches/{match_id}/veredicto",
+    "/revisiones/{revision_id}/veredicto",
     response_model=VeredictoResponse,
-    tags=["matches"],
+    tags=["revisiones"],
     summary="Registra el veredicto final del árbitro y cierra la revisión (CU-10, CU-11)",
     description=(
-        "Sobre la revisión vigente del combate (la más reciente), en una "
-        "sola transacción: inserta el `veredicto`, cierra la `revision_var` "
+        "Sobre la revisión indicada (un combate admite N; cada clip devuelve "
+        "su `revision_id`), en una sola transacción: inserta el `veredicto`, cierra la `revision_var` "
         "(`cerrada_en`) e inserta el `registro_auditoria` con el snapshot "
         "(revisión, tocado, clasificación, veredicto, modelo y reglamento). "
         "Sin veredicto la revisión no se cierra (RF-21); el sistema solo "
-        "sugiere, nunca asigna el punto (RNF-01). `clase_final` es "
-        "obligatoria con 'cambiar' (422) y no se admite con 'anular'. 409 si "
-        "la revisión ya tiene veredicto o aún no tiene clasificación."
+        "sugiere, nunca asigna el punto (RNF-01). `decision` describe la "
+        "relación con la decisión original del árbitro en pista y "
+        "`clase_final` es siempre la decisión final declarada: obligatoria "
+        "con 'mantener' y 'cambiar' (422 si falta, aunque la clasificación "
+        "no estuviera disponible) y prohibida con 'anular' (422 si viene). "
+        "409 si la revisión ya tiene veredicto o aún no tiene clasificación."
     ),
     responses={
-        404: {"description": "El combate, el árbitro o la revisión no existen."},
+        404: {"description": "La revisión o el árbitro no existen."},
         409: {"description": "La revisión ya tiene veredicto, o no tiene clasificación registrada."},
-        422: {"description": "decision='cambiar' sin clase_final, o combinación no admitida."},
+        422: {"description": "'mantener' o 'cambiar' sin clase_final, 'anular' con clase_final, o clase fuera de dominio."},
     },
 )
 @inject
 async def registrar_veredicto(
-    match_id: str,
+    revision_id: str,
     body: VeredictoRequest,
     caso: RegistrarVeredicto = Depends(Provide[Container.registrar_veredicto]),
 ) -> VeredictoResponse:
     try:
-        combate_id = uuid.UUID(match_id)
+        revision_uuid = uuid.UUID(revision_id)
     except ValueError as exc:
-        raise _combate_no_creado(match_id) from exc
+        raise HTTPException(
+            status_code=404, detail=f"no existe: revisión {revision_id!r}"
+        ) from exc
     try:
         registrado = await caso.execute(
-            combate_id=combate_id,
+            revision_id=revision_uuid,
             decision=body.decision,
             clase_final=body.clase_final,
             arbitro_id=body.arbitro_id,
@@ -483,7 +548,7 @@ async def registrar_veredicto(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     v = registrado.veredicto
     return VeredictoResponse(
-        match_id=match_id,
+        match_id=str(registrado.combate_id),
         revision_id=registrado.revision.id,
         veredicto_id=v.id,
         decision=v.decision,
@@ -496,24 +561,27 @@ async def registrar_veredicto(
     )
 
 
-@router.websocket("/ws/veredicto/{match_id}")
+@router.websocket("/ws/veredicto/{revision_id}")
 @inject
 async def ws_veredicto(
     websocket: WebSocket,
-    match_id: str,
+    revision_id: str,
     sessions: SessionRegistry = Depends(Provide[Container.sessions]),
-    uow: UnidadDeTrabajoPort = Depends(Provide[Container.unidad_de_trabajo]),
 ):
     """No aparece en Swagger (las rutas WebSocket no son parte de OpenAPI),
     documentado en CONTRATO_API.md y en VerdictMessage/NoDisponibleMessage
     (schemas.py). Envía un único mensaje JSON —veredicto o no_disponible—
-    en cuanto el resultado está disponible (DEF-08). Si el combate no fue
-    creado, rechaza el handshake con 404."""
-    session = await _sesion_o_none(match_id, sessions, uow)
+    en cuanto el resultado está disponible (DEF-08). Se identifica por
+    `revision_id`; si la revisión no tiene una sesión activa en Fog,
+    rechaza el handshake con 404."""
+    session = sessions.get(revision_id)
     if session is None:
         if "websocket.http.response" in websocket.scope.get("extensions", {}):
             await websocket.send_denial_response(
-                JSONResponse(status_code=404, content={"detail": _combate_no_creado(match_id).detail})
+                JSONResponse(
+                    status_code=404,
+                    content={"detail": f"la revisión {revision_id!r} no tiene una sesión activa"},
+                )
             )
         else:
             # El servidor no soporta respuestas HTTP de rechazo: se cierra con

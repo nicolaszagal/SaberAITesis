@@ -33,18 +33,22 @@ class FakePeerConnection:
         self.closed = True
 
 
-def _verdict(match_id: str) -> VerdictView:
-    return VerdictView(match_id=match_id, fencer="ROJ", action="AttackA", confidence=0.9)
+def _verdict(revision_id: str) -> VerdictView:
+    return VerdictView(
+        match_id="m", revision_id=revision_id, fencer="ROJ", action="AttackA", confidence=0.9
+    )
 
 
-def _unavailable(match_id: str) -> UnavailableResult:
-    return UnavailableResult(match_id=match_id, motivo=MotivoNoDisponible.POSE_INCOMPLETA)
+def _unavailable(revision_id: str) -> UnavailableResult:
+    return UnavailableResult(
+        match_id="m", revision_id=revision_id, motivo=MotivoNoDisponible.POSE_INCOMPLETA
+    )
 
 
 async def test_set_verdict_closes_pc_and_marks_closed_at():
     clock = FakeClock(t=100.0)
     sessions = SessionRegistry(clock=clock)
-    session = sessions.create("m1", WeaponSide.RIGHT, WeaponSide.RIGHT)
+    session = sessions.create("m", "m1", WeaponSide.RIGHT, WeaponSide.RIGHT)
     pc = FakePeerConnection()
     session.pc = pc
 
@@ -57,7 +61,7 @@ async def test_set_verdict_closes_pc_and_marks_closed_at():
 async def test_set_unavailable_closes_pc_and_marks_closed_at():
     clock = FakeClock(t=50.0)
     sessions = SessionRegistry(clock=clock)
-    session = sessions.create("m2", WeaponSide.RIGHT, WeaponSide.RIGHT)
+    session = sessions.create("m", "m2", WeaponSide.RIGHT, WeaponSide.RIGHT)
     pc = FakePeerConnection()
     session.pc = pc
 
@@ -71,7 +75,7 @@ async def test_set_verdict_without_pc_still_marks_closed_at():
     """El flujo de subida de clip (sin WebRTC) nunca asigna session.pc."""
     clock = FakeClock(t=10.0)
     sessions = SessionRegistry(clock=clock)
-    session = sessions.create("m3", WeaponSide.RIGHT, WeaponSide.RIGHT)
+    session = sessions.create("m", "m3", WeaponSide.RIGHT, WeaponSide.RIGHT)
 
     await session.set_verdict(_verdict("m3"))
 
@@ -82,7 +86,7 @@ async def test_set_verdict_without_pc_still_marks_closed_at():
 async def test_sweep_expired_removes_sessions_past_ttl():
     clock = FakeClock(t=0.0)
     sessions = SessionRegistry(clock=clock)
-    session = sessions.create("old", WeaponSide.RIGHT, WeaponSide.RIGHT)
+    session = sessions.create("m", "old", WeaponSide.RIGHT, WeaponSide.RIGHT)
     await session.set_verdict(_verdict("old"))
 
     clock.advance(120.0)  # == SESSION_TTL_S por defecto
@@ -96,7 +100,7 @@ async def test_sweep_expired_removes_sessions_past_ttl():
 async def test_sweep_expired_keeps_sessions_within_ttl():
     clock = FakeClock(t=0.0)
     sessions = SessionRegistry(clock=clock)
-    session = sessions.create("recent", WeaponSide.RIGHT, WeaponSide.RIGHT)
+    session = sessions.create("m", "recent", WeaponSide.RIGHT, WeaponSide.RIGHT)
     await session.set_verdict(_verdict("recent"))
 
     clock.advance(119.0)  # todavía dentro de la ventana de conexión tardía
@@ -113,7 +117,7 @@ async def test_sweep_expired_never_removes_sessions_still_in_progress():
     una revisión en curso."""
     clock = FakeClock(t=0.0)
     sessions = SessionRegistry(clock=clock)
-    sessions.create("in-progress", WeaponSide.RIGHT, WeaponSide.RIGHT)
+    sessions.create("m", "in-progress", WeaponSide.RIGHT, WeaponSide.RIGHT)
 
     clock.advance(10_000.0)
 
@@ -126,7 +130,7 @@ async def test_sweep_expired_never_removes_sessions_still_in_progress():
 async def test_sweep_forever_runs_sweep_periodically():
     clock = FakeClock(t=0.0)
     sessions = SessionRegistry(clock=clock)
-    session = sessions.create("m-loop", WeaponSide.RIGHT, WeaponSide.RIGHT)
+    session = sessions.create("m", "m-loop", WeaponSide.RIGHT, WeaponSide.RIGHT)
     await session.set_verdict(_verdict("m-loop"))
     clock.advance(999.0)  # ya pasó el TTL antes de que arranque el barrido
 
@@ -139,3 +143,25 @@ async def test_sweep_forever_runs_sweep_periodically():
         pass
 
     assert sessions.get("m-loop") is None
+
+
+def test_create_indexa_por_revision_y_permite_varias_del_mismo_combate():
+    sessions = SessionRegistry()
+
+    primera = sessions.create("combate", "rev-1", WeaponSide.RIGHT, WeaponSide.LEFT)
+    segunda = sessions.create("combate", "rev-2", WeaponSide.RIGHT, WeaponSide.LEFT)
+
+    assert sessions.get("rev-1") is primera
+    assert sessions.get("rev-2") is segunda
+    assert (primera.match_id, primera.revision_id) == ("combate", "rev-1")
+    assert sessions.get("combate") is None  # el combate ya no es clave de sesión
+
+
+def test_latest_for_match_devuelve_la_sesion_mas_reciente_del_combate():
+    sessions = SessionRegistry()
+    sessions.create("combate", "rev-1", WeaponSide.RIGHT, WeaponSide.LEFT)
+    ultima = sessions.create("combate", "rev-2", WeaponSide.RIGHT, WeaponSide.LEFT)
+    sessions.create("otro", "rev-3", WeaponSide.RIGHT, WeaponSide.LEFT)
+
+    assert sessions.latest_for_match("combate") is ultima
+    assert sessions.latest_for_match("inexistente") is None

@@ -77,7 +77,7 @@ async def test_migracion_aplica_sobre_base_limpia(alembic_cfg, engine):
         version = (
             await conn.execute(text("SELECT version_num FROM public.alembic_version"))
         ).scalar_one()
-        assert version == "0002"
+        assert version == "0003"
 
 
 async def test_downgrade_y_reaplicacion(alembic_cfg, engine):
@@ -90,3 +90,28 @@ async def test_downgrade_y_reaplicacion(alembic_cfg, engine):
         esquemas = (await conn.execute(consulta)).scalar_one()
         assert esquemas == 0
     await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
+
+
+async def test_0003_redefine_la_etiqueta_de_la_vista_y_es_reversible(alembic_cfg, engine):
+    """0003: la etiqueta pasa de derivarse de la clase sugerida (CASE sobre
+    la decisión) a ser `veredicto.clase_final`; la bajada restaura la vista
+    anterior y volver a subir la deja como en el esquema documentado."""
+    import asyncio
+
+    consulta = text("SELECT pg_get_viewdef('sabre.v_muestras_confirmadas'::regclass)")
+
+    async def definicion() -> str:
+        async with engine.connect() as conn:
+            return (await conn.execute(consulta)).scalar_one()
+
+    await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
+    vigente = await definicion()
+    assert "v.clase_final AS etiqueta" in vigente
+    assert "CASE" not in vigente
+
+    await asyncio.to_thread(command.downgrade, alembic_cfg, "0002")
+    anterior = await definicion()
+    assert "CASE" in anterior
+
+    await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
+    assert await definicion() == vigente

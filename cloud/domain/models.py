@@ -46,6 +46,7 @@ class FeatureSequence:
     por el stream `fog:features`."""
 
     match_id: str
+    revision_id: str  # identifica la revisión: cloud:verdicts:{revision_id}
     sequence: np.ndarray  # (T, 192) float32
     luz: LuzSignal
     weapon_side_a: str
@@ -81,10 +82,13 @@ class MotivoNoDisponible(str, Enum):
 @dataclass(frozen=True)
 class InvalidFeatureMessage:
     """Entrada de `fog:features` que RedisFeatureConsumer no pudo parsear
-    (DEF-09). `match_id` es None si ni ese campo estaba presente/decodificable
-    — en ese caso no hay dónde publicar el veredicto "no disponible"."""
+    (DEF-09). `revision_id` es None si ese campo no estaba presente o no
+    era decodificable — sin él no hay stream donde publicar el veredicto
+    "no disponible" (`cloud:verdicts:{revision_id}`). `match_id` es solo
+    informativo."""
 
     match_id: str | None
+    revision_id: str | None
     motivo: MotivoNoDisponible
     detalle: str
 
@@ -92,15 +96,17 @@ class InvalidFeatureMessage:
 @dataclass
 class Verdict:
     """Veredicto final, después de aplicar ArbitrationPolicyPort. Es lo
-    que se publica en `cloud:verdicts:{match_id}` para Fog.
+    que se publica en `cloud:verdicts:{revision_id}` para Fog.
 
     Dos formas, igual que `clasificacion` en sabre_ai_schema.sql:
     - disponible=True: `action_class`, `confidence`, `fencer`, `probs`,
       `latencia_inferencia_ms` y `modelo` van completos; `motivo_no_disp` es None.
-    - disponible=False: solo `match_id` y `motivo_no_disp`; el resto queda None.
+    - disponible=False: solo `revision_id`, `match_id` (si se conoce) y
+      `motivo_no_disp`; el resto queda None.
     """
 
-    match_id: str
+    match_id: str | None
+    revision_id: str
     disponible: bool
     action_class: ActionClass | None = None
     confidence: float | None = None

@@ -1,6 +1,10 @@
 """Adaptador SQLAlchemy de ClasificacionRepositoryPort sobre
 `sabre.clasificacion`. Sin update/delete (ver el puerto): el adaptador no
 los implementa.
+
+El puerto habla con los nombres del modelo (`AttackA`, ...); este adaptador
+los traduce a los del esquema (`AtaqueA`, ...) al escribir y de vuelta al
+leer (ver `vocabulario.py`).
 """
 
 import uuid
@@ -13,6 +17,12 @@ from fog.domain.audit_models import Clasificacion
 from fog.infrastructure.persistence.postgres.tables import (
     clasificacion as clasificacion_tabla,
 )
+from fog.infrastructure.persistence.postgres.vocabulario import (
+    clase_a_esquema,
+    clase_a_modelo,
+    probabilidades_a_esquema,
+    probabilidades_a_modelo,
+)
 from fog.ports.clasificacion_repository import ClasificacionRepositoryPort
 
 
@@ -23,10 +33,10 @@ def _fila_a_clasificacion(fila: Row) -> Clasificacion:
         modelo_version_id=fila.modelo_version_id,
         disponible=fila.disponible,
         motivo_no_disp=fila.motivo_no_disp,
-        clase=fila.clase,
+        clase=clase_a_modelo(fila.clase),
         tirador=fila.tirador,
         confianza=float(fila.confianza) if fila.confianza is not None else None,
-        probabilidades=fila.probabilidades,
+        probabilidades=probabilidades_a_modelo(fila.probabilidades),
         keypoints_uri=fila.keypoints_uri,
         keypoints_sha256=fila.keypoints_sha256,
         features_uri=fila.features_uri,
@@ -65,10 +75,10 @@ class PostgresClasificacionRepository(ClasificacionRepositoryPort):
                         modelo_version_id=modelo_version_id,
                         disponible=disponible,
                         motivo_no_disp=motivo_no_disp,
-                        clase=clase,
+                        clase=clase_a_esquema(clase),
                         tirador=tirador,
                         confianza=confianza,
-                        probabilidades=probabilidades,
+                        probabilidades=probabilidades_a_esquema(probabilidades),
                         keypoints_uri=keypoints_uri,
                         keypoints_sha256=keypoints_sha256,
                         features_uri=features_uri,

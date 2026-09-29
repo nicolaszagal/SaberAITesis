@@ -81,7 +81,8 @@ sobre `numpy==2.3.4` en `requirements.txt` para un caso concreto ya resuelto.
 | `FEATURE_STATS_PATH`    | — (obligatoria, DEF-15)                         | mean/std de estandarización (Fog) |
 | `FEATURE_PREPROCESSING_PROFILE` | — (obligatoria)                         | perfil de recorte/ablación por versión de modelo (Fog) |
 | `FEATURE_PREPROCESSING_PROFILES_PATH` | JSON junto a `preprocessing_profile.py` | archivo de perfiles alternativo (Fog) |
-| `DATABASE_URL`          | — (sin default; credenciales)                   | PostgreSQL 16, `postgresql+asyncpg://usuario:clave@host:5432/base` (Fog) |
+| `DATABASE_URL`          | — (sin default; credenciales)                   | PostgreSQL 16, `postgresql+asyncpg://usuario:clave@host:puerto/base` (Fog); con el compose, puerto `POSTGRES_HOST_PORT` (5433) |
+| `POSTGRES_HOST_PORT`    | `5433`                                          | puerto del host donde `fog/docker-compose.yml` publica PostgreSQL (solo loopback) |
 | `STORAGE_DIR`           | — (sin default)                                 | raíz del almacenamiento local de clips y keypoints `.npz` por SHA-256 (Fog); en Docker, `/data/storage` |
 | `FAVERO_LUZ_TIMEOUT_S`  | `2.0`                                           | espera máxima de la luz Favero antes de clasificar sin ella |
 | `CLOUD_CONSUMER_NAME`   | `cloud-worker-1`                                | nombre de consumidor en el grupo `cloud_workers` (relevante si se levanta más de una instancia de Cloud) |
@@ -106,9 +107,9 @@ es porque Redis no está corriendo — confirmar el prerequisito de la sección 
 
 Swagger UI de Fog: `http://localhost:8001/docs` (generado automáticamente por
 FastAPI a partir de `fog/infrastructure/api/routes.py` y
-`fog/infrastructure/api/schemas.py`). El WebSocket (`/ws/veredicto/{match_id}`)
+`fog/infrastructure/api/schemas.py`). El WebSocket (`/ws/veredicto/{revision_id}`)
 no aparece ahí porque OpenAPI no documenta WebSockets — el contrato de sus
-mensajes está en `CONTRATO_API.md` sección 6.
+mensajes está en `CONTRATO_API.md` sección 7.
 
 Cloud no expone HTTP; es un loop de consumo de Redis (`python -m cloud.main`)
 sin servidor.
@@ -184,14 +185,41 @@ docker compose up fog
 
 **Base PostgreSQL.** `fog/docker-compose.yml` también levanta `postgres`
 (`postgres:16-alpine`, volumen `sabre_pgdata`; los clips y keypoints van en el
-volumen `sabre_storage`). Agregar a `fog/.env` `POSTGRES_PASSWORD` y
-`DATABASE_URL=postgresql+asyncpg://sabre:<POSTGRES_PASSWORD>@localhost:5432/sabre`.
-El esquema `sabre` lo crea Alembic (migración `0001`, que ejecuta
-`docs_claude/sabre_ai_schema.sql` tal cual). Desde `backend/`, con el venv y
-`DATABASE_URL` exportada, o dentro del contenedor (`docker compose exec fog alembic upgrade head`):
+volumen `sabre_storage`). Agregar a `fog/.env`:
 
 ```bash
+POSTGRES_PASSWORD=<clave>
+POSTGRES_HOST_PORT=5433        # opcional; puerto del host, 5433 por defecto
+DATABASE_URL=postgresql+asyncpg://sabre:<POSTGRES_PASSWORD>@localhost:<POSTGRES_HOST_PORT>/sabre
+```
+
+`POSTGRES_HOST_PORT` es el puerto del host donde se publica PostgreSQL (solo en
+loopback, `127.0.0.1`); por defecto **5433**, para no chocar con un PostgreSQL
+local (p. ej. el de Homebrew) que ocupe el 5432. Si lo cambias, usa el mismo
+puerto en `DATABASE_URL`. Dentro de la red de Docker el contenedor sigue
+escuchando en el 5432.
+
+Levantar solo la base (sin Fog) y aplicar el esquema:
+
+```bash
+cd backend
+docker compose -f fog/docker-compose.yml up -d postgres
+set -a; source fog/.env; set +a        # exporta DATABASE_URL (y las demás)
 alembic upgrade head
+```
+
+El esquema `sabre` lo crea Alembic (migraciones `0001` a `0003`; la `0001`
+ejecuta `docs_claude/sabre_ai_schema.sql` tal cual). Si Fog corre en Docker,
+también sirve `docker compose exec fog alembic upgrade head`.
+
+Con la base migrada hay que registrar el modelo activo y crear la sesión de
+validación (evento piloto, árbitro y operador; idempotente por nombre; imprime
+los ids que usa la pantalla de configuración):
+
+```bash
+python scripts/registrar_modelo.py 20260928_141021
+python scripts/crear_sesion_validacion.py --evento "<nombre>" --fecha YYYY-MM-DD \
+    --arbitro "<nombre>" --operador "<nombre>"
 ```
 
 Las pruebas de la migración usan `TEST_DATABASE_URL` (base vacía, p. ej. el

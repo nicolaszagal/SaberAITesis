@@ -39,6 +39,7 @@ async def test_execute_publishes_and_saves_match_on_success():
 
     result = await use_case.execute(
         match_id="m1",
+        revision_id="r1",
         tracked=tracked,
         weapon_side_a=WeaponSide.RIGHT,
         weapon_side_b=WeaponSide.LEFT,
@@ -47,8 +48,8 @@ async def test_execute_publishes_and_saves_match_on_success():
 
     assert result is None
     assert len(publisher.published) == 1
-    match_id, features, luz, side_a, side_b = publisher.published[0]
-    assert match_id == "m1"
+    match_id, revision_id, features, luz, side_a, side_b = publisher.published[0]
+    assert (match_id, revision_id) == ("m1", "r1")
     assert luz.has_luz_a is True and luz.has_luz_b is False
     assert side_a is WeaponSide.RIGHT and side_b is WeaponSide.LEFT
 
@@ -68,9 +69,9 @@ async def test_execute_defaults_to_no_luz_when_none():
         repository=repository, sessions=SessionRegistry(), executor=InlineExecutor(),
     )
 
-    await use_case.execute("m2", tracked, WeaponSide.RIGHT, WeaponSide.RIGHT, luz=None)
+    await use_case.execute("m2", "r2", tracked, WeaponSide.RIGHT, WeaponSide.RIGHT, luz=None)
 
-    _, _, luz, _, _ = publisher.published[0]
+    _, _, _, luz, _, _ = publisher.published[0]
     assert luz == LuzSignal.none()
 
 
@@ -87,12 +88,12 @@ async def test_execute_does_not_publish_when_extraction_fails():
         repository=repository, sessions=SessionRegistry(), executor=InlineExecutor(),
     )
 
-    result = await use_case.execute("m3", tracked, WeaponSide.RIGHT, WeaponSide.RIGHT, luz=None)
+    result = await use_case.execute("m3", "r3", tracked, WeaponSide.RIGHT, WeaponSide.RIGHT, luz=None)
 
     assert publisher.published == []
     assert await repository.get("m3") is None
     assert result is not None
-    assert result.match_id == "m3"
+    assert (result.match_id, result.revision_id) == ("m3", "r3")
     assert result.motivo is MotivoNoDisponible.POSE_INCOMPLETA
 
 
@@ -108,7 +109,7 @@ async def test_execute_sets_unavailable_on_session_and_sends_ws_when_connected()
     publisher = FakeFeaturePublisher()
     repository = InMemoryMatchRepository()
     sessions = SessionRegistry()
-    session = sessions.create("m4", WeaponSide.RIGHT, WeaponSide.RIGHT)
+    session = sessions.create("m4", "r4", WeaponSide.RIGHT, WeaponSide.RIGHT)
     session.ws = FakeWebSocket()
 
     use_case = ProcessIncomingMatch(
@@ -116,13 +117,13 @@ async def test_execute_sets_unavailable_on_session_and_sends_ws_when_connected()
         repository=repository, sessions=sessions, executor=InlineExecutor(),
     )
 
-    result = await use_case.execute("m4", tracked, WeaponSide.RIGHT, WeaponSide.RIGHT, luz=None)
+    result = await use_case.execute("m4", "r4", tracked, WeaponSide.RIGHT, WeaponSide.RIGHT, luz=None)
 
     assert result.motivo is MotivoNoDisponible.POSE_INCOMPLETA
     assert session.unavailable == result
     assert session.unavailable_event.is_set()
     assert session.ws.sent == [
-        {"type": "no_disponible", "match_id": "m4", "motivo": "pose_incompleta"}
+        {"type": "no_disponible", "match_id": "m4", "revision_id": "r4", "motivo": "pose_incompleta"}
     ]
     # DEF-16: tras entregar el "no disponible", la sesión queda marcada
     # como cerrada para que SessionRegistry.sweep_expired la libere pasado
@@ -140,6 +141,6 @@ async def test_execute_unavailable_no_op_when_session_missing():
         repository=InMemoryMatchRepository(), sessions=SessionRegistry(), executor=InlineExecutor(),
     )
 
-    result = await use_case.execute("m404", tracked, WeaponSide.RIGHT, WeaponSide.RIGHT, luz=None)
+    result = await use_case.execute("m404", "r404", tracked, WeaponSide.RIGHT, WeaponSide.RIGHT, luz=None)
 
     assert result.motivo is MotivoNoDisponible.POSE_INCOMPLETA

@@ -1,5 +1,8 @@
 """Adaptador SQLAlchemy de VeredictoRepositoryPort sobre `sabre.veredicto`.
 Sin update/delete (ver el puerto): el adaptador no los implementa.
+
+`clase_final` entra y sale con los nombres del modelo (`AttackA`, ...); el
+adaptador la traduce a los del esquema al escribir (ver `vocabulario.py`).
 """
 
 import uuid
@@ -12,6 +15,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from fog.domain.audit_models import Veredicto
 from fog.domain.errors import VeredictoYaRegistrado
 from fog.infrastructure.persistence.postgres.tables import veredicto as veredicto_tabla
+from fog.infrastructure.persistence.postgres.vocabulario import (
+    clase_a_esquema,
+    clase_a_modelo,
+)
 from fog.ports.veredicto_repository import VeredictoRepositoryPort
 
 
@@ -20,7 +27,7 @@ def _fila_a_veredicto(fila: Row) -> Veredicto:
         id=fila.id,
         revision_id=fila.revision_id,
         decision=fila.decision,
-        clase_final=fila.clase_final,
+        clase_final=clase_a_modelo(fila.clase_final),
         arbitro_id=fila.arbitro_id,
         registrado_en=fila.registrado_en,
     )
@@ -47,7 +54,7 @@ class PostgresVeredictoRepository(VeredictoRepositoryPort):
                             id=uuid.uuid4(),
                             revision_id=revision_id,
                             decision=decision,
-                            clase_final=clase_final,
+                            clase_final=clase_a_esquema(clase_final),
                             arbitro_id=arbitro_id,
                         )
                         .returning(veredicto_tabla)

@@ -10,7 +10,10 @@ detiene el loop; solo se pierde el veredicto de esa entrada, que queda
 registrado en el log. Una entrada que el consumer no pudo parsear llega
 como `InvalidFeatureMessage`: ya fue movida a dead-letter y ACKeada por el
 adaptador (ver RedisFeatureConsumer), así que acá solo se publica el
-veredicto "no disponible".
+veredicto "no disponible" (si trae `revision_id`; sin él no hay stream).
+
+El veredicto se publica por revisión (`cloud:verdicts:{revision_id}`): un
+combate admite N revisiones y cada una tiene su propio stream.
 """
 
 from __future__ import annotations
@@ -48,17 +51,18 @@ class ClassifyAndPublish:
             try:
                 await self._handle(entry_id, item)
             except Exception:
-                match_id = getattr(item, "match_id", None) or "?"
+                revision_id = getattr(item, "revision_id", None) or "?"
                 log.exception(
                     "[%s] fallo procesando entrada '%s', se continúa con la siguiente",
-                    match_id, entry_id,
+                    revision_id, entry_id,
                 )
 
     async def _handle(self, entry_id: str, item) -> None:
         if isinstance(item, InvalidFeatureMessage):
-            if item.match_id is not None:
+            if item.revision_id is not None:
                 await self._publisher.publish(Verdict(
                     match_id=item.match_id,
+                    revision_id=item.revision_id,
                     disponible=False,
                     motivo_no_disp=item.motivo.value,
                 ))
@@ -75,11 +79,12 @@ class ClassifyAndPublish:
 
         log.info(
             "[%s] veredicto: %s (%s) conf=%.3f",
-            features.match_id, resolved.action_class.value, fencer, resolved.confidence,
+            features.revision_id, resolved.action_class.value, fencer, resolved.confidence,
         )
 
         await self._publisher.publish(Verdict(
             match_id=features.match_id,
+            revision_id=features.revision_id,
             disponible=True,
             action_class=resolved.action_class,
             confidence=resolved.confidence,

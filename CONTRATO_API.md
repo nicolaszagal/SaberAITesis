@@ -1,7 +1,7 @@
 # Contrato de integración — Edge (front) ↔ Fog ↔ Cloud
 
-Versión v1 (carga manual de un solo clip de acción). Sigue `arquitectura_diagramas.html`
-con dos adaptaciones documentadas en la sección final.
+Versión v1 (carga manual de clips de acción; un combate admite N revisiones). Sigue
+`arquitectura_diagramas.html` con dos adaptaciones documentadas en la sección final.
 
 ## 1. Flujo
 
@@ -9,18 +9,30 @@ con dos adaptaciones documentadas en la sección final.
 Front (Edge)  --WebRTC (oferta SDP + config combate)-->  Fog (API Gateway)
 Front (Edge)  <--WebSocket (veredicto)--------------------  Fog
 Fog           --Redis Stream "fog:features"-------------->  Cloud
-Cloud         --Redis Stream "cloud:verdicts"------------->  Fog
+Cloud         --Redis Stream "cloud:verdicts:{revision_id}"-->  Fog
 ```
 
-Un "combate" en v1 = un clip de una sola acción, subido manualmente desde el front.
-No hay streaming en vivo ni múltiples acciones por sesión. Por eso
-`POST /matches/{match_id}/clip` responde 409 si el combate ya tiene un clip.
+**Revisiones por clip.** Un combate admite N revisiones: cada clip subido con
+`POST /matches/{match_id}/clip` abre su propia `revision_var` (con su `tocado`, su `clip`,
+su clasificación y su veredicto) y devuelve su **`revision_id`**. No hay límite de clips por
+combate (ya no existe el 409 por segundo clip). El `revision_id` es la clave de todo lo que
+sigue al clip: el campo de `fog:features`, el stream de veredicto de Cloud
+(`cloud:verdicts:{revision_id}`), `GET /ws/veredicto/{revision_id}` y
+`POST /revisiones/{revision_id}/veredicto`. Dos clips del mismo combate tienen
+clasificaciones y veredictos independientes. No hay streaming en vivo.
 
-El `match_id` de toda la API es el **id del combate** (`sabre.combate.id`, uuid) creado
-en la sección 1.1. Un `match_id` de un combate que no fue creado responde **404** en
-`POST /matches/{match_id}/clip`, `POST /webrtc/{match_id}/luz` y `GET /ws/veredicto/{match_id}`
-(sin combate por defecto; `SessionRegistry.get_or_create_default` fue eliminado). Para
-`/webrtc/offer`, el combate "existe" al crear su sesión con el `weapon_side_A/B` del body.
+El `match_id` de la API es el **id del combate** (`sabre.combate.id`, uuid) creado en la
+sección 1.1. Un `match_id` de un combate que no fue creado responde **404** en
+`POST /matches/{match_id}/clip` (sin combate por defecto). Para `/webrtc/offer`, el combate
+"existe" al crear su sesión con el `weapon_side_A/B` del body, salvo que el `match_id` ya sea
+un combate configurado: entonces se usa su brazo armado guardado.
+
+**Vocabulario de clases.** La API usa siempre los nombres del modelo: `AttackA`, `AttackB`,
+`ContrattackA`, `ContrattackB`, `RiposteA`, `RiposteB` (D-06), tanto en las respuestas
+(`action`) como en `clase_final`. Los nombres del esquema (`AtaqueA`, `ContraataqueA`, …)
+existen solo en la base: la traducción ocurre únicamente en los adaptadores de persistencia
+(`fog/infrastructure/persistence/postgres/vocabulario.py`). Un nombre del esquema en la API
+es un valor inválido (422).
 
 ## 1.1 Configurar combate (CU-01, F-039, RF-07)
 
@@ -62,6 +74,28 @@ Cada configuración crea sus dos tiradores nuevos (el alias no es único en el e
 
 Respuesta (JSON): `{ "match_id": "<id del combate>", "weapon_side_A": "right", "weapon_side_B": "left" }`
 
+## 1.2 Catálogos para la pantalla de configuración (solo lectura)
+
+`GET /eventos` — eventos de `sabre.evento`, del más reciente al más antiguo (fecha y nombre):
+```json
+[ { "id": "uuid", "nombre": "Piloto 1", "fecha": "2026-10-05", "lugar": null, "tipo": "piloto" } ]
+```
+`tipo` es `piloto`, `formativo` u `oficial`. El `id` se envía como `evento_id` de la sección 1.1.
+
+`GET /usuarios?rol=arbitro` — usuarios de `sabre.usuario` ordenados por nombre:
+```json
+[ { "id": "uuid", "nombre": "Nombre Árbitro", "rol": "arbitro", "activo": true } ]
+```
+`rol` es opcional y admite `arbitro`, `operador` o `administrador` (**422** con otro valor); sin
+`rol` devuelve todos. El `id` de un árbitro se envía como `arbitro_id` de la sección 1.1.
+
+Ninguno de los dos crea ni modifica nada (`POST`/`PUT`/`DELETE` responden 404/405). Los datos se
+siembran fuera de la API con `scripts/crear_sesion_validacion.py --evento "<nombre>" --fecha
+YYYY-MM-DD --arbitro "<nombre>" --operador "<nombre>"`: crea el evento (tipo `piloto`) y los
+usuarios árbitro y operador (roles del esquema), y muestra sus ids. Es idempotente por nombre
+(reutiliza lo que ya existe) y responde con código 1 si el evento existe con un tipo distinto de
+`piloto`.
+
 ## 2. Edge → Fog: señalización WebRTC
 
 `POST /webrtc/offer`
@@ -84,14 +118,18 @@ Body (JSON):
   (DEF-13): cualquier otro valor también responde `422` antes de llegar al dominio. Si
   `match_id` ya fue configurado con `POST /matches/config`, se reutiliza esa sesión y su
   brazo armado guardado.
-- `match_id`: identificador que el front debe reutilizar al conectar el WebSocket de
-  veredicto (sección 7) y al reportar la luz Favero (sección 3). Si no se envía, Fog
-  genera uno y lo devuelve en la respuesta. Este flujo WebRTC no persiste en la base.
+- `match_id`: identificador que el front debe reutilizar al reportar la luz Favero
+  (sección 3). Si no se envía, Fog genera uno y lo devuelve en la respuesta. Este flujo
+  WebRTC no persiste en la base.
 
 Respuesta (JSON):
 ```json
-{ "sdp": "<SDP answer>", "type": "answer", "match_id": "..." }
+{ "sdp": "<SDP answer>", "type": "answer", "match_id": "...", "revision_id": "..." }
 ```
+
+`revision_id` identifica la sesión: es el que se usa para conectar el WebSocket de veredicto
+(sección 7). Este flujo no abre `revision_var`, así que ese `revision_id` es un uuid generado
+por Fog para esta oferta, sin fila en la base ni veredicto registrable.
 
 El front debe abrir un `RTCPeerConnection`, agregar **una sola pista de video** (el clip
 subido, vía `captureStream()` de un `<video>` o equivalente en RN), generar la oferta,
@@ -125,10 +163,11 @@ Body (JSON):
 
 Respuesta (JSON):
 ```json
-{ "match_id": "...", "received": true }
+{ "match_id": "...", "has_luz_A": true, "has_luz_B": false }
 ```
 
-`404` si el combate no fue creado (sección 1.1).
+Aplica a la sesión WebRTC más reciente del combate (`POST /webrtc/offer`). `404` si el
+combate no tiene ninguna sesión en curso.
 
 ## 4. Edge → Fog: carga de clip sin WebRTC (CU-02, CU-03, CU-05, CU-06)
 
@@ -138,14 +177,15 @@ Alternativa a `POST /webrtc/offer` + sección 3: sube un clip ya grabado
 en un solo request, junto con la señal de luz Favero simulada (D-12). A diferencia del
 flujo WebRTC, la respuesta es **síncrona**: corre pose+tracking+features,
 publica en Redis y espera el veredicto de Cloud (con timeout,
-`CLIP_UPLOAD_VERDICT_TIMEOUT_S`, 30 s por defecto) antes de responder.
+`CLIP_UPLOAD_VERDICT_TIMEOUT_S`, 30 s por defecto) antes de responder. Cada llamada abre
+una revisión nueva del combate y devuelve su `revision_id`.
 
 Campos del form (multipart):
 
 | campo | tipo | descripción |
 |---|---|---|
 | `file` | file | clip de video (MP4/MOV) |
-| `t_tocado_ms` | int (≥ 0) | **obligatorio.** Instante del tocado simulado en ms desde el inicio del clip (RF-02). No se usa para recortar el clip |
+| `t_tocado_ms` | int | **obligatorio.** Instante del tocado simulado en ms desde el inicio del clip (RF-02), entre 0 y la duración del clip, ambos incluidos (**422** si no). No se usa para recortar el clip |
 | `has_luz_A` | bool | `true` si se encendió la luz Favero de A |
 | `has_luz_B` | bool | idem para B. **Al menos una de las dos luces debe estar encendida** (CU-03 flujo 2a; `tocado` lo exige con `CHECK (luz_a OR luz_b)`) |
 | `luz_frame_a` | int | **[OBSOLETO]** alias de `has_luz_A`: índice de frame (0-based) en que se prendió la luz de A. Solo se usa si `has_luz_A` y `has_luz_B` vienen ambos ausentes |
@@ -162,9 +202,10 @@ romper clientes viejos.
 | código | causa |
 |---|---|
 | `404` | el combate no fue creado (sección 1.1) o `match_id` no es un uuid |
-| `409` | el combate ya tiene un clip/revisión (v1: un clip por combate) |
-| `422` | falta `t_tocado_ms`, o ninguna luz encendida |
+| `422` | falta `t_tocado_ms`, ninguna luz encendida, o `t_tocado_ms` fuera de `[0, duración del clip]` |
 | `503` | no hay versión de modelo activa (`scripts/registrar_modelo.py`) |
+
+Un combate admite N clips: ya no hay `409` por segundo clip.
 
 **Validación del archivo (DEF-13):**
 
@@ -172,6 +213,9 @@ romper clientes viejos.
   menos de `MIN_FRAMES` frames (3 por defecto): `400` con `detail`.
 - Si el archivo pesa más de `CLIP_MAX_MB` (200 MB por defecto,
   configurable por entorno): `413` con `detail`.
+- Si `t_tocado_ms` es negativo o mayor que la duración del clip
+  (`round(frames/fps·1000)`): `422` con `detail`. La comprobación ocurre antes de guardar el
+  clip y de abrir la revisión, así que no queda clip, tocado ni mensaje en Redis.
 
 **Persistencia (D03, `docs_claude/sabre_ai_schema.sql`):**
 
@@ -187,15 +231,18 @@ romper clientes viejos.
    `TrackedSequence` en `.npz` (`keypoints_uri` + `keypoints_sha256`; por tirador
    `{a,b}_xy`, `_conf`, `_box`, `_detected`, más `frame_w/h`, `locked`, `lock_frame`) y
    `latencia_ms` desde la recepción del clip hasta la sugerencia (o hasta el "no disponible").
-   La clase se guarda con los nombres del esquema (`AttackA` → `AtaqueA`, `ContrattackA` →
-   `ContraataqueA`, `RiposteA` → `RiposteA`; igual en las llaves de `probabilidades`).
-   Respeta `UNIQUE (tocado_id, modelo_version_id)`. La revisión queda abierta
+   La API y el dominio usan los nombres del modelo; solo el adaptador de persistencia los
+   traduce a los del esquema al guardar (`AttackA` → `AtaqueA`, `ContrattackA` →
+   `ContraataqueA`, `RiposteA` → `RiposteA`; igual en las llaves de `probabilidades`) y de
+   vuelta al leer. Respeta `UNIQUE (tocado_id, modelo_version_id)` (un tocado por clip, así
+   que cada revisión tiene su propia clasificación). La revisión queda abierta
    (`cerrada_en` nulo) hasta el veredicto de la sección 7.1.
 
 Respuesta (JSON):
 ```json
 {
   "match_id": "...",
+  "revision_id": "...",
   "has_luz_A": true,
   "has_luz_B": false,
   "timed_out": false,
@@ -222,11 +269,12 @@ Respuesta (JSON):
 
 ## 5. Fog → Cloud: `fog:features` (Redis Stream)
 
-Cada clip procesado por Fog genera **una sola entrada** en el stream:
+Cada clip procesado por Fog (cada revisión) genera **una sola entrada** en el stream:
 
 | campo           | tipo  | descripción                                                                         |
 |-----------------|-------|-------------------------------------------------------------------------------------|
-| `match_id`      | str   | igual que el de la oferta                                                           |
+| `match_id`      | str   | id del combate                                                                      |
+| `revision_id`   | str   | id de la revisión que origina el clip. **Obligatorio.** Cloud responde en `cloud:verdicts:{revision_id}` |
 | `shape`         | str   | `"T,192"` (T = frames reales del clip)                                              |
 | `dtype`         | str   |  `"float32"`                                                                        |
 | `features`      | bytes | `array.tobytes()` — array `(T,192)` ya en el orden A(96)+B(96), estandarizado con `feature_stats.npz`, con el recorte y la ablación del perfil `FEATURE_PREPROCESSING_PROFILE` de la versión de modelo (igual que en entrenamiento) y con cm_vel_x/y y body_speed relativos al rival (`0.5·(abs_A − abs_B)`, DEF-27)                                                                                           |
@@ -240,15 +288,15 @@ Cloud consume con un grupo de consumidores `cloud_workers` (1 worker por pista, 
 diagrama). Reconstrucción: `np.frombuffer(features, dtype=dtype).reshape(shape)`.
 
 **Validación y tolerancia a fallos (DEF-09).** `RedisFeatureConsumer` valida cada entrada
-antes de reconstruir el array: campos obligatorios presentes (`match_id`, `shape`,
-`dtype`, `features`, `weapon_side_A`, `weapon_side_B`), `dtype == "float32"`,
+antes de reconstruir el array: campos obligatorios presentes (`match_id`, `revision_id`,
+`shape`, `dtype`, `features`, `weapon_side_A`, `weapon_side_B`), `dtype == "float32"`,
 `shape == "T,192"` con `T >= 1`, y `len(features) == T * 192 * 4` bytes. Una entrada que
 no cumple el contrato:
 
 1. Se loguea (una línea, con el motivo).
-2. Se publica un veredicto `disponible=false` en `cloud:verdicts:{match_id}` con
-   `motivo_no_disp="mensaje_invalido"` (si el propio `match_id` no era legible, no hay
-   veredicto que publicar).
+2. Se publica un veredicto `disponible=false` en `cloud:verdicts:{revision_id}` con
+   `motivo_no_disp="mensaje_invalido"` (si el propio `revision_id` no era legible, no hay
+   stream donde publicar y no se publica veredicto).
 3. Se mueve a `fog:features:dead` (mismos campos + `motivo` + `entry_id_original`) y se
    hace `XACK` sobre `fog:features` — sin esto, la entrada queda pendiente para siempre y
    `XREADGROUP ">"` nunca vuelve a entregarla tras un reinicio.
@@ -262,16 +310,18 @@ worker anterior que murió entre `XREADGROUP` y el `XACK` (idle mínimo configur
 `CLAIM_MIN_IDLE_S`, 60 s por defecto) y las reprocesa con la misma validación antes de
 entrar al loop de lectura bloqueante.
 
-## 6. Cloud → Fog: `cloud:verdicts:{match_id}` (Redis Stream)
+## 6. Cloud → Fog: `cloud:verdicts:{revision_id}` (Redis Stream)
 
-Una entrada por veredicto. `disponible` distingue dos formas (igual que
+Un stream por revisión y una entrada por veredicto; dos clips del mismo combate usan streams
+distintos. `disponible` distingue dos formas (igual que
 `clasificacion.disponible` en `sabre_ai_schema.sql`):
 
 **`disponible=true`:**
 
 | campo | tipo | descripción |
 |---|---|---|
-| `match_id` | str | |
+| `revision_id` | str | la revisión del stream (misma clave que `fog:features`) |
+| `match_id` | str | id del combate, tal como llegó en `fog:features` |
 | `disponible` | str | `"true"` |
 | `action_class` | str | una de `AttackA, AttackB, ContrattackA, ContrattackB, RiposteA, RiposteB` |
 | `confidence` | str | probabilidad softmax de la clase ganadora (post filtro de luz), `"0.0"`-`"1.0"` |
@@ -285,7 +335,8 @@ Una entrada por veredicto. `disponible` distingue dos formas (igual que
 
 | campo | tipo | descripción |
 |---|---|---|
-| `match_id` | str | |
+| `revision_id` | str | la revisión del stream |
+| `match_id` | str | id del combate; se omite si el mensaje inválido no lo traía |
 | `disponible` | str | `"false"` |
 | `motivo_no_disp` | str | uno de `clasificacion.motivo_no_disp` (`sabre_ai_schema.sql`); hoy solo `"mensaje_invalido"` |
 | `ts` | str | timestamp ISO |
@@ -303,21 +354,24 @@ con `motivo_no_disp` (se reenvía por el WebSocket de la sección 7 y se registr
 `clasificacion`); con `"true"` conserva además `probs`, `latencia_inferencia_ms` y `modelo`
 para la auditoría (campos opcionales: si faltan, se guardan sin ellos).
 
-Fog mantiene una tarea de fondo por `match_id` activo que hace `XREAD` bloqueante sobre
-este stream y reenvía el resultado por WebSocket en cuanto llega.
+Fog mantiene una tarea de fondo por revisión activa (`revision_id`) que hace `XREAD`
+bloqueante sobre este stream y reenvía el resultado por WebSocket en cuanto llega.
 
 ## 7. Fog → Front: WebSocket de veredicto
 
-`GET /ws/veredicto/{match_id}` (el front se conecta antes o inmediatamente después de
-enviar la oferta WebRTC, usando el mismo `match_id`). Si el combate no fue creado, el
-handshake se rechaza con **404** (si el servidor no soporta respuestas de rechazo, se cierra
-con código 1008 antes de aceptar).
+`GET /ws/veredicto/{revision_id}`: el WebSocket se identifica por revisión, con el
+`revision_id` que devuelven `POST /matches/{match_id}/clip` o `POST /webrtc/offer`. Si la
+revisión no tiene una sesión activa en Fog (nunca existió, o ya se liberó pasado
+`SESSION_TTL_S` desde que se entregó su resultado), el handshake se rechaza con **404** (si el
+servidor no soporta respuestas de rechazo, se cierra con código 1008 antes de aceptar). Dos
+revisiones del mismo combate tienen WebSockets independientes.
 
 Mensaje que Fog envía cuando el veredicto está listo:
 ```json
 {
   "type": "veredicto",
   "match_id": "...",
+  "revision_id": "...",
   "fencer": "ROJ",
   "action": "AttackA",
   "confidence": 0.74
@@ -332,6 +386,7 @@ este mismo WebSocket:
 {
   "type": "no_disponible",
   "match_id": "...",
+  "revision_id": "...",
   "motivo": "pose_incompleta"
 }
 ```
@@ -345,7 +400,7 @@ producir `pose_incompleta` (los dos únicos errores que devuelve
 `clase_fuera_mvp` son responsabilidad de Cloud y no están implementados
 todavía (el umbral de confianza no está documentado). `mensaje_invalido`
 (DEF-09) lo produce Cloud cuando una entrada de `fog:features` no respeta
-el contrato — llega a Fog vía `cloud:verdicts:{match_id}` (sección 6) y se reenvía
+el contrato — llega a Fog vía `cloud:verdicts:{revision_id}` (sección 6) y se reenvía
 por este WebSocket como `no_disponible`.
 
 Carlos debe traducir `action` (taxonomía interna en inglés, 6 clases) a las etiquetas en
@@ -370,39 +425,47 @@ muestra el dato real disponible (lado + color) en vez de inventar uno.
 
 ## 7.1 Registrar veredicto final (CU-10, CU-11, F-033, F-034, RF-20, RF-21, RF-22)
 
-`POST /matches/{match_id}/veredicto`
+`POST /revisiones/{revision_id}/veredicto`
 
-Registra la decisión del árbitro sobre la **revisión vigente del combate** (la más
-reciente; en v1 hay una por combate). El sistema solo sugiere: nunca asigna el punto ni
-cierra la revisión sin esta decisión (RNF-01, RF-21).
+Registra la decisión del árbitro sobre **una revisión** (la que devolvió su clip; un combate
+admite N y cada una tiene su veredicto). No existe veredicto por combate ni la regla de "la
+revisión más reciente": `POST /matches/{match_id}/veredicto` fue eliminado. El sistema solo
+sugiere: nunca asigna el punto ni cierra la revisión sin esta decisión (RNF-01, RF-21).
 
 Body (JSON):
 ```json
-{ "decision": "cambiar", "clase_final": "ContraataqueB", "arbitro_id": "uuid" }
+{ "decision": "cambiar", "clase_final": "ContrattackB", "arbitro_id": "uuid" }
 ```
 
 | campo | descripción |
 |---|---|
-| `decision` | `"mantener"`, `"cambiar"` o `"anular"` (acción simultánea, FIE t.106) |
-| `clase_final` | obligatoria con `"cambiar"`; no se admite con `"anular"`. Valores del esquema: `AtaqueA`, `AtaqueB`, `ContraataqueA`, `ContraataqueB`, `RiposteA`, `RiposteB` (no la taxonomía `AttackA…` del pipeline) |
+| `decision` | `"mantener"`, `"cambiar"` o `"anular"` (acción simultánea, FIE t.106). Describe la relación con la decisión original del árbitro en pista |
+| `clase_final` | la decisión final declarada, siempre. **Obligatoria con `"mantener"` y `"cambiar"`** (también si la clasificación no estuvo disponible) y **prohibida con `"anular"`** (422 en ambos casos). Valores de la taxonomía del modelo: `AttackA`, `AttackB`, `ContrattackA`, `ContrattackB`, `RiposteA`, `RiposteB` (un nombre del esquema como `AtaqueA` es inválido) |
 | `arbitro_id` | usuario existente en `sabre.usuario` |
 
 En **una sola transacción**: inserta `veredicto`, cierra `revision_var` (`cerrada_en` =
 `veredicto.registrado_en`) e inserta `registro_auditoria` con el snapshot JSON
 `{revision, tocado, clasificacion, veredicto, modelo, reglamento}` (`reglamento` = el de la
-versión de modelo, `FIE 2026`). Si cualquier paso falla no queda nada. El hash y el
-encadenamiento los calcula la base; `sabre.fn_verificar_auditoria()` devuelve las filas
-alteradas (ninguna si la cadena es íntegra). Veredicto y auditoría son de solo adición
-(RNF-05): un `UPDATE`/`DELETE` falla con "Los registros de auditoría no pueden modificarse".
+versión de modelo, `FIE 2026`; las clases del snapshot llevan los nombres del modelo). Si
+cualquier paso falla no queda nada. El hash y el encadenamiento los calcula la base;
+`sabre.fn_verificar_auditoria()` devuelve las filas alteradas (ninguna si la cadena es
+íntegra). Veredicto y auditoría son de solo adición (RNF-05): un `UPDATE`/`DELETE` falla con
+"Los registros de auditoría no pueden modificarse".
 
-Respuesta (JSON): `match_id`, `revision_id`, `veredicto_id`, `decision`, `clase_final`,
-`arbitro_id`, `registrado_en`, `cerrada_en`, `auditoria_seq`, `auditoria_hash`.
+Respuesta (JSON): `match_id` (el combate de la revisión), `revision_id`, `veredicto_id`,
+`decision`, `clase_final`, `arbitro_id`, `registrado_en`, `cerrada_en`, `auditoria_seq`,
+`auditoria_hash`.
 
 | código | causa |
 |---|---|
-| `404` | el combate, el árbitro o la revisión no existen |
+| `404` | la revisión (o un `revision_id` que no es uuid) o el árbitro no existen |
 | `409` | la revisión ya tiene veredicto; o aún no tiene clasificación registrada (sin ella el registro no podría guardar la versión de modelo, RF-22) |
-| `422` | `decision="cambiar"` sin `clase_final`; `"anular"` con `clase_final`; valores fuera de dominio |
+| `422` | `"mantener"` o `"cambiar"` sin `clase_final`; `"anular"` con `clase_final`; `clase_final` fuera de la taxonomía del modelo |
+
+**Etiqueta de reentrenamiento.** La vista `sabre.v_muestras_confirmadas` (migración `0003`)
+toma como etiqueta siempre `veredicto.clase_final`, excluyendo `anular`, sin depender de si
+el árbitro mantuvo o cambió la acción; `clase_sugerida` es la de la clasificación. La
+concordancia sistema-árbitro es `clase_sugerida == clase_final`.
 
 ## 8. Notas y desviaciones respecto a los diagramas de arquitectura
 
@@ -438,8 +501,10 @@ Respuesta (JSON): `match_id`, `revision_id`, `veredicto_id`, `decision`, `clase_
 - **Mapeo A/B ↔ ROJ/VER**: fijo (`A=ROJ`, `B=VER`) para v1, confirmado por Nicolas. No
   configurable por combate todavía.
 - **Persistencia (D03)**: requiere `DATABASE_URL`, `STORAGE_DIR`, filas de `usuario` y
-  `evento` sembradas fuera de la API (no hay login, RF-26 es COULD) y una versión de modelo
-  activa (`scripts/registrar_modelo.py`). `tocado.registrado_por` queda nulo (no hay
+  `evento` sembradas fuera de la API con `scripts/crear_sesion_validacion.py` (no hay login,
+  RF-26 es COULD; sección 1.2) y una versión de modelo activa
+  (`scripts/registrar_modelo.py`). La base del compose publica el puerto
+  `POSTGRES_HOST_PORT` (5433 por defecto, solo loopback; ver `GUIA_EJECUCION.md`). `tocado.registrado_por` queda nulo (no hay
   operador identificado). La transacción única del veredicto usa
   `fog/ports/unidad_de_trabajo.py`.
 
@@ -450,10 +515,13 @@ Carlos necesita agregar en `var-esg`:
    `RTCPeerConnection` (oferta SDP) hacia `POST /webrtc/offer`.
 2. Envío de `weapon_side_A/B` **siempre** (UI obligatoria para configurarlos; no hay valor
    por defecto) y del resto de campos de `POST /matches/config` (sección 1.1: `evento_id`,
-   `pista`, `arbitro_id`, alias y `es_menor` de cada tirador); llamada a
-   `POST /matches/{match_id}/veredicto` (sección 7.1) desde los botones de veredicto.
+   `pista`, `arbitro_id`, alias y `es_menor` de cada tirador; las opciones de `evento_id` y
+   `arbitro_id` salen de `GET /eventos` y `GET /usuarios?rol=arbitro`, sección 1.2); llamada a
+   `POST /revisiones/{revision_id}/veredicto` (sección 7.1), con el `revision_id` de la
+   respuesta del clip, desde los botones de veredicto (`clase_final` obligatoria con
+   mantener y cambiar).
 3. Captura/reporte de la luz Favero vía `POST /webrtc/{match_id}/luz` antes de que
    expire `FAVERO_LUZ_TIMEOUT_S` (sección 3).
-4. Cliente WebSocket a `/ws/veredicto/{match_id}` y mapeo de `action`/`fencer`/
+4. Cliente WebSocket a `/ws/veredicto/{revision_id}` y mapeo de `action`/`fencer`/
    `confidence` a los componentes existentes (`ActionPanel`, `HistorialPanel`, etc.),
    reemplazando los datos de `mock.ts`.

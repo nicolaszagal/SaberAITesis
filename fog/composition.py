@@ -19,6 +19,7 @@ from ultralytics import YOLO
 from fog.application.abrir_revision import AbrirRevisionVar
 from fog.application.configurar_combate import ConfigurarCombate
 from fog.application.forward_verdict import ForwardVerdictToClient
+from fog.application.listar_catalogos import ListarEventos, ListarUsuarios
 from fog.application.process_match import ProcessIncomingMatch
 from fog.application.registrar_clasificacion import RegistrarClasificacion
 from fog.application.registrar_veredicto import RegistrarVeredicto
@@ -162,6 +163,10 @@ class Container(containers.DeclarativeContainer):
     )
 
     registrar_veredicto = providers.Singleton(RegistrarVeredicto, uow=unidad_de_trabajo)
+
+    listar_eventos = providers.Singleton(ListarEventos, uow=unidad_de_trabajo)
+
+    listar_usuarios = providers.Singleton(ListarUsuarios, uow=unidad_de_trabajo)
 
     feature_publisher = providers.Singleton(RedisFeaturePublisher, client=redis_client)
 

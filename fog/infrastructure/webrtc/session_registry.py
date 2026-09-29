@@ -1,9 +1,13 @@
-"""SessionRegistry — estado de runtime por match_id (RTCPeerConnection,
+"""SessionRegistry — estado de runtime por revisión (RTCPeerConnection,
 websocket del front, señal de luz, evento de veredicto). No es el
 dominio: `Match` (fog/domain/models.py) es la entidad persistible; esto es
 infraestructura de sesión en memoria del proceso de Fog mientras dura el
 clip, equivalente al dict global `MATCHES` del fog/main.py anterior pero
 encapsulado para que composition.py controle su ciclo de vida.
+
+Un combate admite N revisiones (un clip cada una): la sesión se identifica
+por `revision_id`, no por `match_id`, para que dos clips del mismo combate
+tengan veredictos y WebSockets independientes.
 
 Ya no buffer-ea los frames recibidos (antes `self.frames: list[np.ndarray]`)
 — track_consumer.py los procesa frame a frame contra un
@@ -16,7 +20,7 @@ su `pc` y se marca `closed_at` en cuanto se entrega el veredicto o el "no
 disponible" (`set_verdict`/`set_unavailable`), y `sweep_expired`/
 `sweep_forever` liberan las sesiones cerradas hace más de SESSION_TTL_S —
 la demora entre "cerrada" y "liberada" es la ventana para que una
-conexión tardía de GET /ws/veredicto/{match_id} todavía encuentre el
+conexión tardía de GET /ws/veredicto/{revision_id} todavía encuentre el
 resultado.
 """
 
@@ -35,15 +39,17 @@ class MatchSession:
     def __init__(
         self,
         match_id: str,
+        revision_id: str,
         weapon_side_a: WeaponSide,
         weapon_side_b: WeaponSide,
         clock: Callable[[], float] = time.monotonic,
     ):
         self.match_id = match_id
+        self.revision_id = revision_id
         self.weapon_side_a = weapon_side_a
         self.weapon_side_b = weapon_side_b
         self.pc: RTCPeerConnection | None = None
-        self.ws = None  # fastapi.WebSocket, asignado por GET /ws/veredicto/{match_id}
+        self.ws = None  # fastapi.WebSocket, asignado por GET /ws/veredicto/{revision_id}
         self.luz: LuzSignal | None = None
         self.luz_event = asyncio.Event()
         # Instante del tocado en ms (RF-02, DEF-14). Se persiste en `tocado`
@@ -84,18 +90,50 @@ class SessionRegistry:
         self._sessions: dict[str, MatchSession] = {}
         self._clock = clock
 
-    def create(self, match_id: str, weapon_side_a: WeaponSide, weapon_side_b: WeaponSide) -> MatchSession:
+    def create(
+        self,
+        match_id: str,
+        revision_id: str,
+        weapon_side_a: WeaponSide,
+        weapon_side_b: WeaponSide,
+    ) -> MatchSession:
+        """Crea la sesión de una revisión.
+
+        Args:
+            match_id: combate al que pertenece la revisión.
+            revision_id: revisión (clave de la sesión).
+            weapon_side_a: brazo armado del tirador A.
+            weapon_side_b: brazo armado del tirador B.
+
+        Returns:
+            La sesión creada y registrada.
+        """
         session = MatchSession(
-            match_id, weapon_side_a, weapon_side_b, clock=self._clock
+            match_id, revision_id, weapon_side_a, weapon_side_b, clock=self._clock
         )
-        self._sessions[match_id] = session
+        self._sessions[revision_id] = session
         return session
 
-    def get(self, match_id: str) -> MatchSession | None:
-        return self._sessions.get(match_id)
+    def get(self, revision_id: str) -> MatchSession | None:
+        return self._sessions.get(revision_id)
 
-    def remove(self, match_id: str) -> None:
-        self._sessions.pop(match_id, None)
+    def latest_for_match(self, match_id: str) -> MatchSession | None:
+        """Sesión más reciente del combate.
+
+        Solo la usa `POST /webrtc/{match_id}/luz`: el flujo WebRTC no
+        persiste revisiones y su señal de luz llega por combate. No se
+        usa para dirigir veredictos (van por `revision_id`).
+
+        Returns:
+            La última sesión creada para `match_id`, o None si no hay.
+        """
+        for session in reversed(list(self._sessions.values())):
+            if session.match_id == match_id:
+                return session
+        return None
+
+    def remove(self, revision_id: str) -> None:
+        self._sessions.pop(revision_id, None)
 
     def sweep_expired(self, ttl_s: float) -> list[str]:
         """Libera las sesiones cerradas (con veredicto o "no disponible"
@@ -103,16 +141,16 @@ class SessionRegistry:
         (closed_at is None) nunca se tocan aquí, sin importar su edad.
 
         Returns:
-            match_id de cada sesión liberada en esta pasada.
+            revision_id de cada sesión liberada en esta pasada.
         """
         now = self._clock()
         expired = [
-            match_id
-            for match_id, session in self._sessions.items()
+            revision_id
+            for revision_id, session in self._sessions.items()
             if session.closed_at is not None and (now - session.closed_at) >= ttl_s
         ]
-        for match_id in expired:
-            self._sessions.pop(match_id, None)
+        for revision_id in expired:
+            self._sessions.pop(revision_id, None)
         return expired
 
     async def sweep_forever(self, ttl_s: float, interval_s: float) -> None:

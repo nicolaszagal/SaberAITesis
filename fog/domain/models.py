@@ -16,6 +16,13 @@ from enum import Enum
 import numpy as np
 
 
+# Taxonomía única de la API y del dominio (D-06): los nombres del modelo. La
+# traducción a los del esquema vive solo en los adaptadores de persistencia.
+CLASES_MODELO = (
+    "AttackA", "AttackB", "ContrattackA", "ContrattackB", "RiposteA", "RiposteB",
+)
+
+
 class WeaponSide(str, Enum):
     RIGHT = "right"
     LEFT = "left"
@@ -144,15 +151,18 @@ class UnavailableResult:
     pudo extraer features válidas y no llega a publicar en Redis. A
     diferencia de VerdictView, nunca sale de Fog vía Redis — se entrega
     directo a la sesión (WebSocket o respuesta síncrona de
-    POST /matches/{match_id}/clip)."""
+    POST /matches/{match_id}/clip). Se identifica por `revision_id`: un
+    combate admite N revisiones."""
 
     match_id: str
+    revision_id: str
     motivo: MotivoNoDisponible
 
     def to_ws_message(self) -> dict:
         return {
             "type": "no_disponible",
             "match_id": self.match_id,
+            "revision_id": self.revision_id,
             "motivo": self.motivo.value,
         }
 
@@ -164,6 +174,7 @@ class VerdictView:
     contexts separados) — solo modela los campos que Fog necesita reenviar."""
 
     match_id: str
+    revision_id: str
     fencer: str
     action: str
     confidence: float
@@ -177,6 +188,7 @@ class VerdictView:
         return {
             "type": "veredicto",
             "match_id": self.match_id,
+            "revision_id": self.revision_id,
             "fencer": self.fencer,
             "action": self.action,
             "confidence": self.confidence,

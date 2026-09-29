@@ -11,7 +11,6 @@ from fog.domain.audit_models import Revision
 from fog.infrastructure.persistence.postgres.tables import (
     revision_var as revision_tabla,
 )
-from fog.infrastructure.persistence.postgres.tables import tocado as tocado_tabla
 from fog.ports.revision_repository import RevisionRepositoryPort
 
 
@@ -54,21 +53,6 @@ class PostgresRevisionRepository(RevisionRepositoryPort):
             fila = (
                 await session.execute(
                     select(revision_tabla).where(revision_tabla.c.id == revision_id)
-                )
-            ).one_or_none()
-        return _fila_a_revision(fila) if fila else None
-
-    async def obtener_ultima_por_combate(
-        self, combate_id: uuid.UUID
-    ) -> Revision | None:
-        async with self._session_factory() as session:
-            fila = (
-                await session.execute(
-                    select(revision_tabla)
-                    .join(tocado_tabla, tocado_tabla.c.id == revision_tabla.c.tocado_id)
-                    .where(tocado_tabla.c.combate_id == combate_id)
-                    .order_by(revision_tabla.c.abierta_en.desc())
-                    .limit(1)
                 )
             ).one_or_none()
         return _fila_a_revision(fila) if fila else None

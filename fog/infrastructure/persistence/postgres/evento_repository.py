@@ -50,3 +50,22 @@ class PostgresEventoRepository(EventoRepositoryPort):
             consulta = select(evento_tabla).where(evento_tabla.c.id == evento_id)
             fila = (await session.execute(consulta)).one_or_none()
         return _fila_a_evento(fila) if fila else None
+
+    async def obtener_por_nombre(self, nombre: str) -> Evento | None:
+        async with self._session_factory() as session:
+            consulta = (
+                select(evento_tabla)
+                .where(evento_tabla.c.nombre == nombre)
+                .order_by(evento_tabla.c.fecha, evento_tabla.c.id)
+                .limit(1)
+            )
+            fila = (await session.execute(consulta)).one_or_none()
+        return _fila_a_evento(fila) if fila else None
+
+    async def listar(self) -> list[Evento]:
+        async with self._session_factory() as session:
+            consulta = select(evento_tabla).order_by(
+                evento_tabla.c.fecha.desc(), evento_tabla.c.nombre, evento_tabla.c.id
+            )
+            filas = (await session.execute(consulta)).all()
+        return [_fila_a_evento(f) for f in filas]

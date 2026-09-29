@@ -2,21 +2,24 @@
 Fog — API Gateway (FastAPI) + WebRTC (aiortc) + cliente Redis Streams.
 
 Responsabilidades (ver ../CONTRATO_API.md):
-  1. POST /matches/config — paso previo opcional: genera match_id y fija
-     weapon_side_A/B antes de que llegue el video.
+  1. POST /matches/config — paso previo: crea el combate, genera match_id y
+     fija weapon_side_A/B antes de que llegue el video.
   2. POST /webrtc/offer — recibe oferta SDP + config de combate del front
      (Edge), arma la pista de video, devuelve la respuesta SDP.
   3. POST /webrtc/{match_id}/luz — recibe la señal de luz Favero (RJ11,
      fuera de alcance de este backend) antes de que termine el clip.
   4. POST /matches/{match_id}/clip — alternativa a 2+3 para subir un clip
      ya grabado (sin WebRTC) junto con los frames de señal Favero;
-     responde con el veredicto de forma síncrona.
+     abre una revisión (un combate admite N) y responde con la sugerencia
+     de forma síncrona, incluido su revision_id.
   5. Procesa los frames del clip (WebRTC o subido) frame a frame en
      cuanto llegan (PoseTrackingSession, ver ports/pose_estimator.py) y
      extrae features 192-dim al finalizar (FeatureExtractorPort).
   6. Publica las features en el stream Redis "fog:features" para Cloud.
-  7. Escucha el stream de veredicto de Cloud ("cloud:verdicts:{match_id}")
-     y lo reenvía al front por WebSocket (/ws/veredicto/{match_id}).
+  7. Escucha el stream de veredicto de Cloud ("cloud:verdicts:{revision_id}")
+     y lo reenvía al front por WebSocket (/ws/veredicto/{revision_id}).
+  8. POST /revisiones/{revision_id}/veredicto — registra la decisión del
+     árbitro sobre esa revisión y la cierra.
 
 Arquitectura DDD/hexagonal: domain/, ports/, application/, infrastructure/
 (ver PLAN_ARQUITECTURA_DDD.md). Este archivo solo ensambla el Container

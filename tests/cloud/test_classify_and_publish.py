@@ -16,7 +16,7 @@ _MODELO = "lstm_6class/20260928_141021/best_model.pt"
 async def test_run_forever_classifies_publishes_and_acks_each_entry():
     luz = LuzSignal.none()
     seq = FeatureSequence(
-        match_id="m1", sequence=np.zeros((5, 192), dtype=np.float32),
+        match_id="m1", revision_id="r1", sequence=np.zeros((5, 192), dtype=np.float32),
         luz=luz, weapon_side_a="right", weapon_side_b="right",
     )
     consumer = FakeFeatureConsumer(items=[("0-1", seq)])
@@ -40,6 +40,7 @@ async def test_run_forever_classifies_publishes_and_acks_each_entry():
     verdict = publisher.published[0]
     assert verdict.disponible is True
     assert verdict.match_id == "m1"
+    assert verdict.revision_id == "r1"
     assert verdict.action_class is ActionClass.ATTACK_A
     assert verdict.fencer == "ROJ"  # side "A" -> ROJ, ver shared.config.FENCER_COLOR
     assert consumer.acked == ["0-1"]
@@ -55,7 +56,7 @@ async def test_run_forever_classifies_publishes_and_acks_each_entry():
 
 async def test_run_forever_resolves_fencer_color_for_side_b():
     seq = FeatureSequence(
-        match_id="m2", sequence=np.zeros((5, 192), dtype=np.float32),
+        match_id="m2", revision_id="r2", sequence=np.zeros((5, 192), dtype=np.float32),
         luz=LuzSignal.none(), weapon_side_a="right", weapon_side_b="left",
     )
     consumer = FakeFeatureConsumer(items=[("0-1", seq)])
@@ -79,7 +80,7 @@ async def test_run_forever_publishes_unavailable_verdict_for_invalid_message():
     dead-letter y ACKeada por el adaptador) se traduce en un veredicto
     disponible=false, sin llamar al clasificador ni volver a acked()."""
     invalid = InvalidFeatureMessage(
-        match_id="m3", motivo=MotivoNoDisponible.MENSAJE_INVALIDO,
+        match_id="m3", revision_id="r3", motivo=MotivoNoDisponible.MENSAJE_INVALIDO,
         detalle="shape inesperado: (5, 10)",
     )
     consumer = FakeFeatureConsumer(items=[("0-1", invalid)])
@@ -99,14 +100,16 @@ async def test_run_forever_publishes_unavailable_verdict_for_invalid_message():
     verdict = publisher.published[0]
     assert verdict.disponible is False
     assert verdict.match_id == "m3"
+    assert verdict.revision_id == "r3"
     assert verdict.motivo_no_disp == "mensaje_invalido"
     assert verdict.action_class is None
 
 
-async def test_run_forever_skips_verdict_when_invalid_message_has_no_match_id():
+async def test_run_forever_skips_verdict_when_invalid_message_has_no_revision_id():
+    """Sin revision_id no hay stream (`cloud:verdicts:{revision_id}`) donde publicar."""
     invalid = InvalidFeatureMessage(
-        match_id=None, motivo=MotivoNoDisponible.MENSAJE_INVALIDO,
-        detalle="sin match_id",
+        match_id="m4", revision_id=None, motivo=MotivoNoDisponible.MENSAJE_INVALIDO,
+        detalle="sin revision_id",
     )
     consumer = FakeFeatureConsumer(items=[("0-1", invalid)])
     publisher = FakeVerdictPublisher()
@@ -136,11 +139,11 @@ async def test_run_forever_continues_after_exception_processing_one_entry():
             return self._ok_result
 
     seq_bad = FeatureSequence(
-        match_id="bad", sequence=np.zeros((5, 192), dtype=np.float32),
+        match_id="bad", revision_id="rbad", sequence=np.zeros((5, 192), dtype=np.float32),
         luz=LuzSignal.none(), weapon_side_a="right", weapon_side_b="right",
     )
     seq_ok = FeatureSequence(
-        match_id="ok", sequence=np.zeros((5, 192), dtype=np.float32),
+        match_id="ok", revision_id="rok", sequence=np.zeros((5, 192), dtype=np.float32),
         luz=LuzSignal.none(), weapon_side_a="right", weapon_side_b="right",
     )
     consumer = FakeFeatureConsumer(items=[("0-1", seq_bad), ("0-2", seq_ok)])
@@ -161,3 +164,39 @@ async def test_run_forever_continues_after_exception_processing_one_entry():
     assert consumer.acked == ["0-2"]  # solo la segunda (exitosa) se ackea
     assert len(publisher.published) == 1
     assert publisher.published[0].match_id == "ok"
+
+
+async def test_run_forever_publishes_each_revision_of_the_same_match_separately():
+    """Un combate admite N revisiones: dos clips del mismo match_id se
+    clasifican por separado y cada veredicto lleva su propio revision_id."""
+
+    def _seq(revision_id: str) -> FeatureSequence:
+        return FeatureSequence(
+            match_id="mismo", revision_id=revision_id,
+            sequence=np.zeros((5, 192), dtype=np.float32),
+            luz=LuzSignal.none(), weapon_side_a="right", weapon_side_b="right",
+        )
+
+    class AlternatingClassifier:
+        def __init__(self):
+            self._results = iter([
+                RawVerdict(action_class=ActionClass.ATTACK_A, confidence=0.9, probs={}),
+                RawVerdict(action_class=ActionClass.RIPOSTE_B, confidence=0.6, probs={}),
+            ])
+
+        def classify(self, sequence, luz):
+            return next(self._results)
+
+    consumer = FakeFeatureConsumer(items=[("0-1", _seq("rev-1")), ("0-2", _seq("rev-2"))])
+    publisher = FakeVerdictPublisher()
+    use_case = ClassifyAndPublish(
+        consumer=consumer, classifier=AlternatingClassifier(),
+        arbitration=IdentityArbitrationPolicy(), publisher=publisher,
+        modelo_version_name=_MODELO,
+    )
+    await use_case.run_forever()
+
+    assert [(v.match_id, v.revision_id, v.action_class) for v in publisher.published] == [
+        ("mismo", "rev-1", ActionClass.ATTACK_A),
+        ("mismo", "rev-2", ActionClass.RIPOSTE_B),
+    ]
