@@ -445,8 +445,9 @@ Body (JSON):
 
 En **una sola transacción**: inserta `veredicto`, cierra `revision_var` (`cerrada_en` =
 `veredicto.registrado_en`) e inserta `registro_auditoria` con el snapshot JSON
-`{revision, tocado, clasificacion, veredicto, modelo, reglamento}` (`reglamento` = el de la
-versión de modelo, `FIE 2026`; las clases del snapshot llevan los nombres del modelo). Si
+`{revision, tocado, clasificacion, veredicto, modelo, reglamento, vocabulario}` (`reglamento` =
+el de la versión de modelo, `FIE 2026`; `vocabulario` es siempre `"modelo"`: las clases del
+snapshot llevan los nombres del modelo). Si
 cualquier paso falla no queda nada. El hash y el encadenamiento los calcula la base;
 `sabre.fn_verificar_auditoria()` devuelve las filas alteradas (ninguna si la cadena es
 íntegra). Veredicto y auditoría son de solo adición (RNF-05): un `UPDATE`/`DELETE` falla con

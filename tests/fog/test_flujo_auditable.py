@@ -123,7 +123,10 @@ def test_flujo_completo_persiste_y_audita(crear_app):
         "SELECT * FROM sabre.registro_auditoria WHERE revision_id = :i", i=revision["id"]
     )[0]
     snap = auditoria["snapshot"]
-    assert set(snap) == {"revision", "tocado", "clasificacion", "veredicto", "modelo", "reglamento"}
+    assert set(snap) == {
+        "revision", "tocado", "clasificacion", "veredicto", "modelo", "reglamento", "vocabulario",
+    }
+    assert snap["vocabulario"] == "modelo"
     assert snap["reglamento"] == "FIE 2026"
     assert snap["veredicto"]["decision"] == "cambiar"
     assert snap["clasificacion"]["clase"] == "AttackA"
