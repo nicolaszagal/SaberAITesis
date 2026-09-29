@@ -5,10 +5,12 @@ Sin update/delete (ver el puerto): el adaptador no los implementa.
 import uuid
 
 from sqlalchemy import insert, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from fog.domain.audit_models import Veredicto
+from fog.domain.errors import VeredictoYaRegistrado
 from fog.infrastructure.persistence.postgres.tables import veredicto as veredicto_tabla
 from fog.ports.veredicto_repository import VeredictoRepositoryPort
 
@@ -36,20 +38,26 @@ class PostgresVeredictoRepository(VeredictoRepositoryPort):
         arbitro_id: uuid.UUID,
         clase_final: str | None = None,
     ) -> Veredicto:
-        async with self._session_factory() as session, session.begin():
-            fila = (
-                await session.execute(
-                    insert(veredicto_tabla)
-                    .values(
-                        id=uuid.uuid4(),
-                        revision_id=revision_id,
-                        decision=decision,
-                        clase_final=clase_final,
-                        arbitro_id=arbitro_id,
+        try:
+            async with self._session_factory() as session, session.begin():
+                fila = (
+                    await session.execute(
+                        insert(veredicto_tabla)
+                        .values(
+                            id=uuid.uuid4(),
+                            revision_id=revision_id,
+                            decision=decision,
+                            clase_final=clase_final,
+                            arbitro_id=arbitro_id,
+                        )
+                        .returning(veredicto_tabla)
                     )
-                    .returning(veredicto_tabla)
-                )
-            ).one()
+                ).one()
+        except IntegrityError as exc:
+            # UNIQUE(revision_id): carrera entre dos veredictos simultáneos.
+            if "veredicto_revision_id_key" in str(exc.orig):
+                raise VeredictoYaRegistrado(str(revision_id)) from exc
+            raise
         return _fila_a_veredicto(fila)
 
     async def obtener_por_revision(self, revision_id: uuid.UUID) -> Veredicto | None:

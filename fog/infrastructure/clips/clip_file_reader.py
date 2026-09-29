@@ -23,11 +23,14 @@ import logging
 import os
 import tempfile
 from concurrent.futures import Executor
+from dataclasses import dataclass
+from pathlib import Path
 
 import cv2
 from fastapi import UploadFile
 
 from fog.domain.models import TrackedSequence
+from fog.ports.file_storage import FileStoragePort
 from fog.ports.pose_estimator import PoseEstimatorPort
 
 log = logging.getLogger("fog.infrastructure.clips")
@@ -42,13 +45,46 @@ class InvalidClipError(Exception):
     (DEF-13). El router lo traduce a HTTP 400."""
 
 
+@dataclass(frozen=True)
+class ClipProcesado:
+    """Clip subido ya procesado y guardado: pose+tracking y metadatos de
+    video para `sabre.clip`."""
+
+    tracked: TrackedSequence
+    uri: str
+    sha256: str
+    fps: float
+    ancho_px: int
+    alto_px: int
+    duracion_ms: int
+
+
 async def process_uploaded_clip(
     file: UploadFile,
     pose_estimator: PoseEstimatorPort,
     executor: Executor,
+    storage: FileStoragePort,
     clip_max_mb: float,
     min_frames: int,
-) -> TrackedSequence:
+) -> ClipProcesado:
+    """Valida el clip subido, corre pose+tracking y lo guarda por SHA-256.
+
+    Args:
+        file: archivo multipart recibido.
+        pose_estimator: puerto de pose+tracking.
+        executor: hilos para el trabajo de CPU.
+        storage: almacén donde se guarda el clip (uri + sha256).
+        clip_max_mb: tamaño máximo aceptado.
+        min_frames: frames mínimos para aceptar el clip.
+
+    Returns:
+        Secuencia rastreada, uri/sha256 del archivo y metadatos de video.
+
+    Raises:
+        ClipTooLargeError: si supera `clip_max_mb`.
+        InvalidClipError: si no abre como video, no informa fps válidos o
+            tiene menos de `min_frames` frames.
+    """
     suffix = os.path.splitext(file.filename or "")[1] or ".mp4"
     content = await file.read()
 
@@ -67,16 +103,20 @@ async def process_uploaded_clip(
         loop = asyncio.get_running_loop()
         pose_session = pose_estimator.start_session()
 
-        def _read_all_frames() -> int:
+        def _read_all_frames() -> tuple[int, float, int, int]:
             cap = cv2.VideoCapture(tmp_path)
             if not cap.isOpened():
                 raise InvalidClipError(f"no se pudo abrir el clip subido ({file.filename!r})")
             n = 0
+            alto = ancho = 0
+            fps = cap.get(cv2.CAP_PROP_FPS)
             try:
                 while True:
                     ok, frame = cap.read()
                     if not ok:
                         break
+                    if n == 0:
+                        alto, ancho = frame.shape[:2]
                     pose_session.add_frame(frame)
                     n += 1
             finally:
@@ -86,11 +126,24 @@ async def process_uploaded_clip(
                     f"el clip subido ({file.filename!r}) tiene {n} frames, "
                     f"se requieren al menos {min_frames}"
                 )
-            return n
+            if not fps or fps <= 0:
+                raise InvalidClipError(
+                    f"el clip subido ({file.filename!r}) no informa una tasa de frames válida"
+                )
+            return n, float(fps), ancho, alto
 
-        n_frames = await loop.run_in_executor(executor, _read_all_frames)
+        n_frames, fps, ancho, alto = await loop.run_in_executor(executor, _read_all_frames)
         tracked = await loop.run_in_executor(executor, pose_session.finish)
+        uri, sha256 = await storage.save_clip(Path(tmp_path))
         log.info("clip subido (%s): %d frames procesados", file.filename, n_frames)
-        return tracked
+        return ClipProcesado(
+            tracked=tracked,
+            uri=uri,
+            sha256=sha256,
+            fps=round(fps, 2),
+            ancho_px=ancho,
+            alto_px=alto,
+            duracion_ms=max(1, round(n_frames / fps * 1000)),
+        )
     finally:
         os.remove(tmp_path)

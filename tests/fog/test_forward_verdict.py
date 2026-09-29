@@ -1,5 +1,5 @@
 from fog.application.forward_verdict import ForwardVerdictToClient
-from fog.domain.models import VerdictView, WeaponSide
+from fog.domain.models import MotivoNoDisponible, UnavailableResult, VerdictView, WeaponSide
 from fog.infrastructure.webrtc.session_registry import SessionRegistry
 from tests.fog.fakes import FakeVerdictSubscriber
 
@@ -53,3 +53,22 @@ async def test_forward_verdict_sets_state_without_ws_connected():
     assert session.verdict == verdict
     assert session.verdict_event.is_set()
     assert session.closed_at is not None
+
+
+async def test_forward_verdict_cloud_no_disponible_cierra_la_sesion_y_avisa_por_ws():
+    """Cloud publicó disponible=false (DEF-09, mensaje_invalido): Fog lo
+    trata como "no disponible", no como veredicto."""
+    sessions = SessionRegistry()
+    session = sessions.create("m3", WeaponSide.RIGHT, WeaponSide.LEFT)
+    session.ws = FakeWebSocket()
+    resultado = UnavailableResult(match_id="m3", motivo=MotivoNoDisponible.MENSAJE_INVALIDO)
+    use_case = ForwardVerdictToClient(subscriber=FakeVerdictSubscriber(resultado), sessions=sessions)
+
+    await use_case.execute("m3")
+
+    assert session.verdict is None
+    assert session.unavailable == resultado
+    assert session.closed_at is not None
+    assert session.ws.sent == [
+        {"type": "no_disponible", "match_id": "m3", "motivo": "mensaje_invalido"}
+    ]

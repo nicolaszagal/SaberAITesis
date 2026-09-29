@@ -15,6 +15,27 @@ from datetime import date, datetime
 
 
 @dataclass(frozen=True)
+class Usuario:
+    id: uuid.UUID
+    nombre: str
+    rol: str  # 'arbitro' | 'operador' | 'administrador'
+    activo: bool
+    creado_en: datetime
+
+
+@dataclass(frozen=True)
+class Tirador:
+    id: uuid.UUID
+    alias: str
+    brazo_habitual: str  # 'diestro' | 'zurdo'
+    es_menor: bool
+    consentimiento_firmado: bool
+    consentimiento_fecha: date | None
+    firmante: str | None
+    creado_en: datetime
+
+
+@dataclass(frozen=True)
 class Evento:
     id: uuid.UUID
     nombre: str

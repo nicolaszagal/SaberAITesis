@@ -5,11 +5,16 @@ ejemplos de cada endpoint (ver CONTRATO_API.md).
 
 from __future__ import annotations
 
+import uuid
+from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 WeaponSideLiteral = Literal["right", "left"]
+ClaseFinalLiteral = Literal[
+    "AtaqueA", "AtaqueB", "ContraataqueA", "ContraataqueB", "RiposteA", "RiposteB"
+]
 
 
 class OfferRequest(BaseModel):
@@ -19,10 +24,10 @@ class OfferRequest(BaseModel):
         None, description="ID del combate. Si se omite, Fog genera uno nuevo (uuid4)."
     )
     weapon_side_A: WeaponSideLiteral = Field(
-        "right", description="Lado del arma del tirador A: 'right' o 'left'."
+        ..., description="Brazo armado del tirador A: 'right' o 'left'. Obligatorio, sin valor por defecto."
     )
     weapon_side_B: WeaponSideLiteral = Field(
-        "right", description="Lado del arma del tirador B: 'right' o 'left'."
+        ..., description="Brazo armado del tirador B: 'right' o 'left'. Obligatorio, sin valor por defecto."
     )
 
     model_config = {
@@ -56,24 +61,86 @@ class LuzAck(BaseModel):
 
 
 class MatchConfigRequest(BaseModel):
-    """Paso previo opcional a POST /webrtc/offer (o a POST
-    /matches/{match_id}/clip): genera un match_id y fija el lado de arma
-    de cada tirador antes de que llegue el video. Si Edge no llama a este
-    endpoint, /webrtc/offer sigue aceptando weapon_side_A/B directamente
-    en su propio body, igual que hoy (no es un campo obligatorio)."""
+    """CU-01 (F-039, RF-07): configura el combate. Crea los dos tiradores y
+    el combate en la base y devuelve el `match_id` (= id del combate) que
+    Edge reutiliza en /webrtc/offer, /matches/{match_id}/clip,
+    /webrtc/{match_id}/luz, /ws/veredicto/{match_id} y
+    /matches/{match_id}/veredicto."""
 
+    evento_id: uuid.UUID = Field(..., description="Evento existente (`sabre.evento`) al que pertenece el combate.")
+    pista: str = Field(..., min_length=1, description="Pista asignada al combate.")
+    arbitro_id: uuid.UUID = Field(
+        ..., description="Usuario árbitro existente (`sabre.usuario`). Queda también como `configurado_por`."
+    )
+
+    alias_A: str = Field(..., min_length=1, description="Alias del tirador A (minimización de datos).")
     weapon_side_A: WeaponSideLiteral = Field(
-        "right", description="Lado del arma del tirador A: 'right' o 'left'."
+        ..., description="Brazo armado del tirador A: 'right' (diestro) o 'left' (zurdo). Obligatorio."
     )
+    es_menor_A: bool = Field(..., description="True si el tirador A es menor de edad.")
+    consentimiento_firmado_A: bool = Field(False, description="Consentimiento informado firmado (RNF-16).")
+    consentimiento_fecha_A: date | None = Field(None, description="Fecha del consentimiento; obligatoria si está firmado.")
+    firmante_A: str | None = Field(None, description="Apoderado que firma; obligatorio si es menor y hay consentimiento.")
+
+    alias_B: str = Field(..., min_length=1, description="Alias del tirador B.")
     weapon_side_B: WeaponSideLiteral = Field(
-        "right", description="Lado del arma del tirador B: 'right' o 'left'."
+        ..., description="Brazo armado del tirador B: 'right' (diestro) o 'left' (zurdo). Obligatorio."
     )
+    es_menor_B: bool = Field(..., description="True si el tirador B es menor de edad.")
+    consentimiento_firmado_B: bool = Field(False, description="Consentimiento informado firmado (RNF-16).")
+    consentimiento_fecha_B: date | None = Field(None, description="Fecha del consentimiento; obligatoria si está firmado.")
+    firmante_B: str | None = Field(None, description="Apoderado que firma; obligatorio si es menor y hay consentimiento.")
+
+    @model_validator(mode="after")
+    def _consentimiento_coherente(self) -> "MatchConfigRequest":
+        # Mismas restricciones CHECK de `sabre.tirador`, para responder 422 y no 500.
+        for lado in ("A", "B"):
+            firmado = getattr(self, f"consentimiento_firmado_{lado}")
+            if firmado and getattr(self, f"consentimiento_fecha_{lado}") is None:
+                raise ValueError(f"consentimiento_fecha_{lado} es obligatoria si consentimiento_firmado_{lado}")
+            if firmado and getattr(self, f"es_menor_{lado}") and not getattr(self, f"firmante_{lado}"):
+                raise ValueError(f"firmante_{lado} es obligatorio si el tirador {lado} es menor y firmó")
+        return self
 
 
 class MatchConfigResponse(BaseModel):
-    match_id: str = Field(..., description="ID de combate generado (uuid4), a reutilizar en /webrtc/offer o /matches/{match_id}/clip.")
+    match_id: str = Field(..., description="Id del combate creado (uuid), a reutilizar en el resto de la API.")
     weapon_side_A: WeaponSideLiteral
     weapon_side_B: WeaponSideLiteral
+
+
+class VeredictoRequest(BaseModel):
+    """CU-10 (F-033, RF-20): decisión final del árbitro sobre la revisión
+    vigente del combate. El sistema solo sugiere (RNF-01)."""
+
+    decision: Literal["mantener", "cambiar", "anular"] = Field(
+        ..., description="'mantener' la acción sugerida, 'cambiar' la acción o 'anular' (acción simultánea, t.106)."
+    )
+    clase_final: ClaseFinalLiteral | None = Field(
+        None, description="Obligatoria con 'cambiar'; no se admite con 'anular'. Valores del dominio `clase_tact`."
+    )
+    arbitro_id: uuid.UUID = Field(..., description="Usuario árbitro existente que decide.")
+
+    @model_validator(mode="after")
+    def _clase_final_coherente(self) -> "VeredictoRequest":
+        if self.decision == "cambiar" and self.clase_final is None:
+            raise ValueError("clase_final es obligatoria cuando decision='cambiar'")
+        if self.decision == "anular" and self.clase_final is not None:
+            raise ValueError("clase_final no se admite cuando decision='anular'")
+        return self
+
+
+class VeredictoResponse(BaseModel):
+    match_id: str
+    revision_id: uuid.UUID
+    veredicto_id: uuid.UUID
+    decision: Literal["mantener", "cambiar", "anular"]
+    clase_final: ClaseFinalLiteral | None
+    arbitro_id: uuid.UUID
+    registrado_en: datetime
+    cerrada_en: datetime = Field(..., description="Cierre de la revisión (igual a registrado_en).")
+    auditoria_seq: int = Field(..., description="Posición del registro en la cadena de auditoría.")
+    auditoria_hash: str = Field(..., description="SHA-256 encadenado del registro (RNF-05).")
 
 
 class ClipUploadResponse(BaseModel):
@@ -109,7 +176,7 @@ class ClipUploadResponse(BaseModel):
             "Motivo cuando disponible=False, uno de "
             "clasificacion.motivo_no_disp (sabre_ai_schema.sql): "
             "'pose_incompleta', 'confianza_baja', 'clase_fuera_mvp', "
-            "'timeout', 'sin_senal_favero'. None si disponible=True."
+            "'timeout', 'sin_senal_favero', 'mensaje_invalido'. None si disponible=True."
         ),
     )
     fencer: str | None = Field(None, description="'ROJ' o 'VER'. None si disponible=False.")

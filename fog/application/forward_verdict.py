@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 
+from fog.domain.models import UnavailableResult
 from fog.infrastructure.webrtc.session_registry import SessionRegistry
 from fog.ports.verdict_subscriber import VerdictStreamSubscriberPort
 
@@ -20,13 +21,16 @@ class ForwardVerdictToClient:
         self._sessions = sessions
 
     async def execute(self, match_id: str) -> None:
-        verdict = await self._subscriber.wait_for_verdict(match_id)
+        resultado = await self._subscriber.wait_for_verdict(match_id)
 
         session = self._sessions.get(match_id)
         if session is None:
             log.warning("[%s] veredicto recibido pero la sesión ya no existe", match_id)
             return
 
-        await session.set_verdict(verdict)
+        if isinstance(resultado, UnavailableResult):
+            await session.set_unavailable(resultado)
+        else:
+            await session.set_verdict(resultado)
         if session.ws is not None:
-            await session.ws.send_json(verdict.to_ws_message())
+            await session.ws.send_json(resultado.to_ws_message())

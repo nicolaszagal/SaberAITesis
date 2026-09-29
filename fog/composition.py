@@ -16,8 +16,12 @@ import redis.asyncio as redis
 from dependency_injector import containers, providers
 from ultralytics import YOLO
 
+from fog.application.abrir_revision import AbrirRevisionVar
+from fog.application.configurar_combate import ConfigurarCombate
 from fog.application.forward_verdict import ForwardVerdictToClient
 from fog.application.process_match import ProcessIncomingMatch
+from fog.application.registrar_clasificacion import RegistrarClasificacion
+from fog.application.registrar_veredicto import RegistrarVeredicto
 from fog.infrastructure.features.new192_feature_extractor import New192FeatureExtractor
 from fog.infrastructure.features.preprocessing_profile import load_profile
 from fog.infrastructure.messaging.redis_feature_publisher import RedisFeaturePublisher
@@ -49,6 +53,9 @@ from fog.infrastructure.persistence.postgres.revision_repository import (
 )
 from fog.infrastructure.persistence.postgres.tocado_repository import (
     PostgresTocadoRepository,
+)
+from fog.infrastructure.persistence.postgres.unidad_de_trabajo import (
+    PostgresUnidadDeTrabajo,
 )
 from fog.infrastructure.persistence.postgres.veredicto_repository import (
     PostgresVeredictoRepository,
@@ -109,8 +116,9 @@ class Container(containers.DeclarativeContainer):
     db_session_factory = providers.Singleton(build_session_factory, engine=db_engine)
 
     # Adaptadores del esquema de auditoría (D02, docs_claude/sabre_ai_schema.sql).
-    # Sin consumidor todavía en infrastructure/api/routes.py: D03 los conecta
-    # al implementar el flujo auditable de la revisión VAR.
+    # Los casos de uso de D03 no los usan sueltos: piden una transacción a
+    # `unidad_de_trabajo`, que arma los mismos adaptadores sobre una sola
+    # sesión (atomicidad de RF-21/RF-22).
     evento_repository = providers.Singleton(
         PostgresEventoRepository, session_factory=db_session_factory
     )
@@ -140,6 +148,20 @@ class Container(containers.DeclarativeContainer):
     )
 
     file_storage = providers.Singleton(LocalFileStorage, root=config.storage_dir)
+
+    unidad_de_trabajo = providers.Singleton(
+        PostgresUnidadDeTrabajo, session_factory=db_session_factory
+    )
+
+    configurar_combate = providers.Singleton(ConfigurarCombate, uow=unidad_de_trabajo)
+
+    abrir_revision = providers.Singleton(AbrirRevisionVar, uow=unidad_de_trabajo)
+
+    registrar_clasificacion = providers.Singleton(
+        RegistrarClasificacion, uow=unidad_de_trabajo, storage=file_storage
+    )
+
+    registrar_veredicto = providers.Singleton(RegistrarVeredicto, uow=unidad_de_trabajo)
 
     feature_publisher = providers.Singleton(RedisFeaturePublisher, client=redis_client)
 
