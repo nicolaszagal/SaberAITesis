@@ -207,7 +207,9 @@ class Container(containers.DeclarativeContainer):
     verificador_auditoria = providers.Singleton(
         PostgresVerificadorAuditoria, session_factory=db_session_factory
     )
-    sonda_postgres = providers.Singleton(PostgresSonda, session_factory=db_session_factory)
+    sonda_postgres = providers.Singleton(
+        PostgresSonda, session_factory=db_session_factory
+    )
     sonda_redis = providers.Singleton(RedisSonda, client=redis_client)
 
     listar_revisiones = providers.Singleton(
