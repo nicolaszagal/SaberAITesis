@@ -43,7 +43,9 @@ def database_url():
 def alembic_cfg(database_url, monkeypatch):
     monkeypatch.setattr(config, "DATABASE_URL", database_url)
     cfg = Config(str(BACKEND / "alembic.ini"))
-    cfg.set_main_option("script_location", str(BACKEND / "fog/infrastructure/persistence/migrations"))
+    cfg.set_main_option(
+        "script_location", str(BACKEND / "fog/infrastructure/persistence/migrations")
+    )
     return cfg
 
 

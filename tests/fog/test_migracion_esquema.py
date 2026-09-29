@@ -15,7 +15,9 @@ from sqlalchemy import text
 from fog.infrastructure.persistence.database import build_engine
 
 BACKEND = Path(__file__).resolve().parents[2]
-SQL_COPIA = BACKEND / "fog/infrastructure/persistence/migrations/sql/0001_esquema_sabre.sql"
+SQL_COPIA = (
+    BACKEND / "fog/infrastructure/persistence/migrations/sql/0001_esquema_sabre.sql"
+)
 SQL_DOCS = BACKEND.parent / "docs_claude" / "sabre_ai_schema.sql"
 
 
@@ -42,16 +44,22 @@ async def test_migracion_aplica_sobre_base_limpia(alembic_cfg, engine):
         funcion = (
             await conn.execute(
                 text(
-                    "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                    "SELECT count(*) FROM pg_proc p "
+                    "JOIN pg_namespace n ON n.oid = p.pronamespace "
                     "WHERE n.nspname = 'sabre' AND p.proname = 'fn_verificar_auditoria'"
                 )
             )
         ).scalar_one()
         assert funcion == 1
         # La función corre y, sin registros, no reporta alteraciones.
-        assert (await conn.execute(text("SELECT * FROM sabre.fn_verificar_auditoria()"))).all() == []
+        alterados = await conn.execute(
+            text("SELECT * FROM sabre.fn_verificar_auditoria()")
+        )
+        assert alterados.all() == []
         vista = (
-            await conn.execute(text("SELECT count(*) FROM sabre.v_muestras_confirmadas"))
+            await conn.execute(
+                text("SELECT count(*) FROM sabre.v_muestras_confirmadas")
+            )
         ).scalar_one()
         assert vista == 0
         triggers = {
@@ -78,8 +86,7 @@ async def test_downgrade_y_reaplicacion(alembic_cfg, engine):
     await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
     await asyncio.to_thread(command.downgrade, alembic_cfg, "base")
     async with engine.connect() as conn:
-        esquemas = (
-            await conn.execute(text("SELECT count(*) FROM pg_namespace WHERE nspname = 'sabre'"))
-        ).scalar_one()
+        consulta = text("SELECT count(*) FROM pg_namespace WHERE nspname = 'sabre'")
+        esquemas = (await conn.execute(consulta)).scalar_one()
         assert esquemas == 0
     await asyncio.to_thread(command.upgrade, alembic_cfg, "head")

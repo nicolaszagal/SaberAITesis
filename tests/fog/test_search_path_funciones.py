@@ -10,7 +10,6 @@ defecto, y verifica que el trigger igual calcula el hash correctamente.
 
 import json
 
-import pytest
 from sqlalchemy import text
 
 
@@ -45,7 +44,8 @@ async def test_insertar_auditoria_sin_search_path_en_la_conexion(migrated_engine
         combate_id = await _insert_returning_id(
             conn,
             "INSERT INTO sabre.combate "
-            "(pista, tirador_a_id, tirador_b_id, brazo_a, brazo_b, arbitro_id, configurado_por) "
+            "(pista, tirador_a_id, tirador_b_id, brazo_a, brazo_b, "
+            "arbitro_id, configurado_por) "
             "VALUES (:pista, :tirador_a_id, :tirador_b_id, 'diestro', 'zurdo', "
             ":arbitro_id, :arbitro_id)",
             pista="pista-1",
@@ -67,7 +67,9 @@ async def test_insertar_auditoria_sin_search_path_en_la_conexion(migrated_engine
             arbitro_id=arbitro_id,
         )
 
-        snapshot = json.dumps({"revision_id": revision_id, "nota": "prueba search_path"})
+        snapshot = json.dumps(
+            {"revision_id": revision_id, "nota": "prueba search_path"}
+        )
         registro = (
             await conn.execute(
                 text(
