@@ -37,10 +37,13 @@ services:
       - ../../dataset:/app/dataset:ro
 
   # Base de registro (esquema `sabre`, ver docs_claude/sabre_ai_schema.sql).
-  # Fog corre con network_mode: host, así que llega por localhost:5432; el
-  # puerto se publica solo en loopback. Definir en fog/.env:
+  # Fog corre con network_mode: host, así que llega por localhost:<puerto>;
+  # el puerto se publica solo en loopback. El del host es configurable con
+  # POSTGRES_HOST_PORT (por defecto 5433, para no chocar con un PostgreSQL
+  # local en el 5432). Definir en fog/.env:
   #   POSTGRES_PASSWORD=...
-  #   DATABASE_URL=postgresql+asyncpg://sabre:<POSTGRES_PASSWORD>@localhost:5432/sabre
+  #   POSTGRES_HOST_PORT=5433            # opcional
+  #   DATABASE_URL=postgresql+asyncpg://sabre:<POSTGRES_PASSWORD>@localhost:<POSTGRES_HOST_PORT>/sabre
   # El esquema lo crea Alembic: desde backend/, `alembic upgrade head`.
   postgres:
     image: postgres:16-alpine
@@ -49,7 +52,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?definir POSTGRES_PASSWORD en fog/.env}
       POSTGRES_DB: sabre
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
     volumes:
       - sabre_pgdata:/var/lib/postgresql/data
     healthcheck:
