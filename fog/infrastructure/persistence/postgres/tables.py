@@ -25,6 +25,29 @@ evento = sa.Table(
     sa.Column("tipo", sa.Text, nullable=False),
 )
 
+usuario = sa.Table(
+    "usuario",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("nombre", sa.Text, nullable=False),
+    sa.Column("rol", sa.Text, nullable=False),
+    sa.Column("activo", sa.Boolean, nullable=False),
+    sa.Column("creado_en", sa.TIMESTAMP(timezone=True), nullable=False),
+)
+
+tirador = sa.Table(
+    "tirador",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("alias", sa.Text, nullable=False),
+    sa.Column("brazo_habitual", sa.Text, nullable=False),
+    sa.Column("es_menor", sa.Boolean, nullable=False),
+    sa.Column("consentimiento_firmado", sa.Boolean, nullable=False),
+    sa.Column("consentimiento_fecha", sa.Date),
+    sa.Column("firmante", sa.Text),
+    sa.Column("creado_en", sa.TIMESTAMP(timezone=True), nullable=False),
+)
+
 combate = sa.Table(
     "combate",
     metadata,

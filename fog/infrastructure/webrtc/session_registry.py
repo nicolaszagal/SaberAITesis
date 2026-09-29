@@ -46,9 +46,8 @@ class MatchSession:
         self.ws = None  # fastapi.WebSocket, asignado por GET /ws/veredicto/{match_id}
         self.luz: LuzSignal | None = None
         self.luz_event = asyncio.Event()
-        # Instante del tocado en ms (RF-02, DEF-14). Se guarda tal cual para
-        # persistirlo más adelante (prompt D03) — no se usa para recortar
-        # el clip.
+        # Instante del tocado en ms (RF-02, DEF-14). Se persiste en `tocado`
+        # (D03); no se usa para recortar el clip.
         self.t_tocado_ms: int | None = None
         self.verdict: VerdictView | None = None
         self.verdict_event = asyncio.Event()
@@ -94,15 +93,6 @@ class SessionRegistry:
 
     def get(self, match_id: str) -> MatchSession | None:
         return self._sessions.get(match_id)
-
-    def get_or_create_default(self, match_id: str) -> MatchSession:
-        """Para endpoints que aceptan un match_id no configurado antes vía
-        POST /matches/config: reutiliza la sesión existente (con su
-        weapon_side_A/B ya fijado) o crea una con el default right/right."""
-        session = self.get(match_id)
-        if session is None:
-            session = self.create(match_id, WeaponSide.RIGHT, WeaponSide.RIGHT)
-        return session
 
     def remove(self, match_id: str) -> None:
         self._sessions.pop(match_id, None)

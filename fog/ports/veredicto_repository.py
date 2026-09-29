@@ -21,6 +21,11 @@ class VeredictoRepositoryPort(ABC):
         arbitro_id: uuid.UUID,
         clase_final: str | None = None,
     ) -> Veredicto:
+        """Inserta el veredicto.
+
+        Raises:
+            VeredictoYaRegistrado: si la revisión ya tiene uno.
+        """
         raise NotImplementedError
 
     @abstractmethod

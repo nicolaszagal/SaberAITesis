@@ -21,6 +21,39 @@ class WeaponSide(str, Enum):
     LEFT = "left"
 
 
+_BRAZO_POR_LADO = {WeaponSide.RIGHT: "diestro", WeaponSide.LEFT: "zurdo"}
+
+
+def brazo_de(side: WeaponSide) -> str:
+    """Traduce el lado del arma de la API al dominio `brazo` del esquema.
+
+    Args:
+        side: lado del arma (`right` o `left`).
+
+    Returns:
+        `diestro` para `right`, `zurdo` para `left`.
+    """
+    return _BRAZO_POR_LADO[side]
+
+
+def lado_de_brazo(brazo: str) -> WeaponSide:
+    """Inversa de `brazo_de`.
+
+    Args:
+        brazo: valor del dominio `brazo` (`diestro` o `zurdo`).
+
+    Returns:
+        `WeaponSide.RIGHT` para `diestro`, `WeaponSide.LEFT` para `zurdo`.
+
+    Raises:
+        ValueError: si `brazo` no es un valor del dominio.
+    """
+    for side, valor in _BRAZO_POR_LADO.items():
+        if valor == brazo:
+            return side
+    raise ValueError(f"brazo desconocido: {brazo!r}")
+
+
 @dataclass(frozen=True)
 class PersonPose:
     """Pose de una persona en un frame, ya en arrays planos (sin tipos de
@@ -102,6 +135,7 @@ class MotivoNoDisponible(str, Enum):
     CLASE_FUERA_MVP = "clase_fuera_mvp"
     TIMEOUT = "timeout"
     SIN_SENAL_FAVERO = "sin_senal_favero"
+    MENSAJE_INVALIDO = "mensaje_invalido"  # lo produce Cloud (DEF-09)
 
 
 @dataclass(frozen=True)
@@ -133,6 +167,11 @@ class VerdictView:
     fencer: str
     action: str
     confidence: float
+    # Campos de auditoría (RF-22, RNF-04) que Cloud publica junto al veredicto;
+    # opcionales porque el front no los usa y no siempre están presentes.
+    probs: dict[str, float] | None = None
+    latencia_inferencia_ms: int | None = None
+    modelo: str | None = None
 
     def to_ws_message(self) -> dict:
         return {
