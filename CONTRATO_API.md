@@ -74,6 +74,16 @@ Cada configuración crea sus dos tiradores nuevos (el alias no es único en el e
 
 Respuesta (JSON): `{ "match_id": "<id del combate>", "weapon_side_A": "right", "weapon_side_B": "left" }`
 
+`GET /matches/{match_id}` — combate configurado (solo lectura). El frontend guarda únicamente el
+`match_id` del combate activo y lo valida con este endpoint al cargar la app. **404** si el combate
+no existe o `match_id` no es uuid (`POST`/`PUT`/`DELETE` responden 404/405).
+```json
+{ "match_id": "uuid", "pista": "P1", "arbitro_id": "uuid", "arbitro": "Nombre Árbitro",
+  "alias_A": "Rojo", "weapon_side_A": "right", "alias_B": "Verde", "weapon_side_B": "left" }
+```
+`weapon_side_A/B` usa los mismos valores que en `POST /matches/config` (`"right"` = diestro,
+`"left"` = zurdo).
+
 ## 1.2 Catálogos para la pantalla de configuración (solo lectura)
 
 `GET /eventos` — eventos de `sabre.evento`, del más reciente al más antiguo (fecha y nombre):
@@ -484,7 +494,7 @@ Body (JSON):
 
 | campo | descripción |
 |---|---|
-| `decision` | `"mantener"`, `"cambiar"` o `"anular"` (acción simultánea, FIE t.106). Describe la relación con la decisión original del árbitro en pista |
+| `decision` | `"mantener"`, `"cambiar"` o `"anular"` (acción simultánea, FIE t.106). Describe la relación con la decisión original del árbitro en pista. |
 | `clase_final` | la decisión final declarada, siempre. **Obligatoria con `"mantener"` y `"cambiar"`** (también si la clasificación no estuvo disponible) y **prohibida con `"anular"`** (422 en ambos casos). Valores de la taxonomía del modelo: `AttackA`, `AttackB`, `ContrattackA`, `ContrattackB`, `RiposteA`, `RiposteB` (un nombre del esquema como `AtaqueA` es inválido) |
 | `arbitro_id` | usuario existente en `sabre.usuario` |
 
