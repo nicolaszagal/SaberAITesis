@@ -139,6 +139,19 @@ class MatchConfigResponse(BaseModel):
     weapon_side_B: WeaponSideLiteral
 
 
+class CombateResponse(BaseModel):
+    """Combate configurado (GET /matches/{match_id}, solo lectura)."""
+
+    match_id: str = Field(..., description="Id del combate (uuid).")
+    pista: str
+    arbitro_id: uuid.UUID
+    arbitro: str = Field(..., description="Nombre del árbitro del combate.")
+    alias_A: str
+    weapon_side_A: WeaponSideLiteral
+    alias_B: str
+    weapon_side_B: WeaponSideLiteral
+
+
 class VeredictoRequest(BaseModel):
     """CU-10 (F-033, RF-20): decisión final del árbitro sobre una revisión
     (POST /revisiones/{revision_id}/veredicto). El sistema solo sugiere (RNF-01)."""

@@ -29,6 +29,7 @@ from fastapi.responses import JSONResponse
 
 from fog.application.abrir_revision import AbrirRevisionVar, VideoGuardado
 from fog.application.configurar_combate import ConfigurarCombate, DatosTirador
+from fog.application.consultar_combate import ObtenerCombate
 from fog.application.consultar_revisiones import (
     ConsultarSalud,
     ListarRevisiones,
@@ -61,6 +62,7 @@ from fog.domain.models import (
 from fog.infrastructure.api.schemas import (
     AuditoriaVerificarResponse,
     ClipUploadResponse,
+    CombateResponse,
     EventoResponse,
     HealthResponse,
     LuzAck,
@@ -210,6 +212,44 @@ async def configure_match(
         match_id=str(combate.id),
         weapon_side_A=body.weapon_side_A,
         weapon_side_B=body.weapon_side_B,
+    )
+
+
+@router.get(
+    "/matches/{match_id}",
+    response_model=CombateResponse,
+    tags=["matches"],
+    summary="Combate configurado (solo lectura)",
+    description=(
+        "Pista, árbitro, alias y brazo armado de A y B del combate creado con "
+        "POST /matches/config. El frontend lo usa para validar el combate "
+        "activo que recuerda entre recargas. No crea ni modifica nada. 404 si "
+        "el combate no existe o `match_id` no es uuid."
+    ),
+    responses={404: {"description": "El combate no existe."}},
+)
+@inject
+async def obtener_combate(
+    match_id: str,
+    caso: ObtenerCombate = Depends(Provide[Container.obtener_combate]),
+) -> CombateResponse:
+    try:
+        combate_uuid = uuid.UUID(match_id)
+    except ValueError as exc:
+        raise _combate_no_creado(match_id) from exc
+    try:
+        c = await caso.execute(combate_uuid)
+    except RecursoNoEncontrado as exc:
+        raise _combate_no_creado(match_id) from exc
+    return CombateResponse(
+        match_id=str(c.id),
+        pista=c.pista,
+        arbitro_id=c.arbitro_id,
+        arbitro=c.arbitro,
+        alias_A=c.alias_a,
+        weapon_side_A=lado_de_brazo(c.brazo_a).value,
+        alias_B=c.alias_b,
+        weapon_side_B=lado_de_brazo(c.brazo_b).value,
     )
 
 

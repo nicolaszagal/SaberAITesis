@@ -26,6 +26,7 @@ from fog.application.consultar_revisiones import (
     ObtenerRevision,
     VerificarAuditoria,
 )
+from fog.application.consultar_combate import ObtenerCombate
 from fog.application.listar_catalogos import ListarEventos, ListarUsuarios
 from fog.application.process_match import ProcessIncomingMatch
 from fog.application.registrar_clasificacion import RegistrarClasificacion
@@ -180,6 +181,8 @@ class Container(containers.DeclarativeContainer):
     registrar_veredicto = providers.Singleton(RegistrarVeredicto, uow=unidad_de_trabajo)
 
     listar_eventos = providers.Singleton(ListarEventos, uow=unidad_de_trabajo)
+
+    obtener_combate = providers.Singleton(ObtenerCombate, uow=unidad_de_trabajo)
 
     listar_usuarios = providers.Singleton(ListarUsuarios, uow=unidad_de_trabajo)
 
