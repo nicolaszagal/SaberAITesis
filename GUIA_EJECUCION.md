@@ -85,6 +85,7 @@ sobre `numpy==2.3.4` en `requirements.txt` para un caso concreto ya resuelto.
 | `POSTGRES_HOST_PORT`    | `5433`                                          | puerto del host donde `fog/docker-compose.yml` publica PostgreSQL (solo loopback) |
 | `STORAGE_DIR`           | — (sin default)                                 | raíz del almacenamiento local de clips y keypoints `.npz` por SHA-256 (Fog); en Docker, `/data/storage` |
 | `EVIDENCE_DIR`          | — (obligatoria en Fog)                          | log de evidencia (L01): una línea JSON por revisión cerrada en `EVIDENCE_DIR/<evento_id>.jsonl` (logger `sabre.evidencia`); en Docker, `/data/evidencia` |
+| `M01_EXPERIMENT_LOG`    | — (opcional)                                    | `dataset/lstm_6class/EXPERIMENT_LOG.md`: de ahí el resumen de validación (L02) copia la tabla resumen de M01; sin él, indica "no disponible" |
 | `LOG_LEVEL`             | `INFO`                                          | nivel del log técnico (Fog y Cloud); `aioice`, `aiortc`, `uvicorn.access` y `ultralytics` quedan siempre en WARNING |
 | `FAVERO_LUZ_TIMEOUT_S`  | `2.0`                                           | espera máxima de la luz Favero antes de clasificar sin ella |
 | `CLOUD_CONSUMER_NAME`   | `cloud-worker-1`                                | nombre de consumidor en el grupo `cloud_workers` (relevante si se levanta más de una instancia de Cloud) |
@@ -119,6 +120,25 @@ sin servidor.
 Edge (captura RTSP de los iPhones → WebSocket para el front) es un tercer
 servicio independiente, solo necesario si estás probando con video real de
 las cámaras — Fog/Cloud no dependen de él. Ver sección 6.4.
+
+### 4.1 Exportar la evidencia de una validación (L02)
+
+Con PostgreSQL arriba y las variables `DATABASE_URL` y `EVIDENCE_DIR` fijadas (y, si quieres la
+tabla de M01, `M01_EXPERIMENT_LOG`):
+
+```bash
+cd backend && source .venv/bin/activate
+export M01_EXPERIMENT_LOG=../dataset/lstm_6class/EXPERIMENT_LOG.md
+python scripts/exportar_evidencia.py --evento <evento_id>
+```
+
+Genera en `EVIDENCE_DIR/<evento_id>/`: `resumen.json`, `revisiones.csv` (los 16 campos de L01,
+armados desde la base) y `resumen.md` (métricas por V1 y V2, umbrales, conciliación con
+`EVIDENCE_DIR/<evento_id>.jsonl` e integridad de la auditoría). Todo se calcula desde
+PostgreSQL; el JSONL solo se concilia y no se modifica. Es idempotente: al reejecutarlo se
+sobrescriben los tres archivos y con los mismos datos solo cambia `generado_en`. El mismo
+contenido de `resumen.json` está en `GET /validaciones/{evento_id}/resumen`. Sale con código 1
+si falta configuración o el evento no existe.
 
 ## 5. Tests
 

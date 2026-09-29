@@ -29,8 +29,11 @@ from fog.application.consultar_revisiones import (
 from fog.application.consultar_combate import ObtenerCombate
 from fog.application.listar_catalogos import ListarEventos, ListarUsuarios
 from fog.application.process_match import ProcessIncomingMatch
+from fog.application.resumir_validacion import ResumirValidacion
 from fog.application.registrar_clasificacion import RegistrarClasificacion
 from fog.application.registrar_veredicto import RegistrarVeredicto
+from fog.infrastructure.evidencia.fuente_modelo_m01 import FuenteModeloM01
+from fog.infrastructure.evidencia.lector_jsonl import LectorEvidenciaJsonl
 from fog.infrastructure.evidencia.registro_jsonl import RegistroEvidenciaJsonl
 from fog.infrastructure.features.new192_feature_extractor import New192FeatureExtractor
 from fog.infrastructure.features.preprocessing_profile import load_profile
@@ -52,6 +55,9 @@ from fog.infrastructure.persistence.postgres.clip_repository import (
 )
 from fog.infrastructure.persistence.postgres.combate_repository import (
     PostgresCombateRepository,
+)
+from fog.infrastructure.persistence.postgres.consulta_evidencia_repository import (
+    PostgresConsultaEvidenciaRepository,
 )
 from fog.infrastructure.persistence.postgres.consulta_revision_repository import (
     PostgresConsultaRevisionRepository,
@@ -218,6 +224,26 @@ class Container(containers.DeclarativeContainer):
     )
     consultar_salud = providers.Singleton(
         ConsultarSalud, redis=sonda_redis, postgres=sonda_postgres
+    )
+
+    # Resumen de validación (L02): todo desde la base; el JSONL de L01 solo
+    # se concilia. La tabla M01 sale del log de experimentos (solo lectura).
+    consulta_evidencia_repository = providers.Singleton(
+        PostgresConsultaEvidenciaRepository, session_factory=db_session_factory
+    )
+    lector_evidencia = providers.Singleton(
+        LectorEvidenciaJsonl, directorio=config.evidence_dir
+    )
+    fuente_evidencia_modelo = providers.Singleton(
+        FuenteModeloM01, ruta_log=config.m01_experiment_log
+    )
+    resumir_validacion = providers.Singleton(
+        ResumirValidacion,
+        consulta=consulta_evidencia_repository,
+        lector=lector_evidencia,
+        verificador=verificador_auditoria,
+        modelos=modelo_version_repository,
+        fuente_modelo=fuente_evidencia_modelo,
     )
 
     feature_publisher = providers.Singleton(RedisFeaturePublisher, client=redis_client)

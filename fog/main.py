@@ -45,7 +45,9 @@ from shared.logging_config import configurar_logging_tecnico
 configurar_logging_tecnico()
 log = logging.getLogger("fog")
 
-config.require_paths("FEATURE_STATS_PATH", "FEATURE_PREPROCESSING_PROFILE", "EVIDENCE_DIR")
+config.require_paths(
+    "FEATURE_STATS_PATH", "FEATURE_PREPROCESSING_PROFILE", "EVIDENCE_DIR"
+)
 
 container = Container()
 container.config.redis_url.from_value(config.REDIS_URL)
@@ -56,6 +58,7 @@ container.config.feature_preprocessing_profiles_path.from_value(config.FEATURE_P
 container.config.database_url.from_value(config.DATABASE_URL)
 container.config.storage_dir.from_value(config.STORAGE_DIR)
 container.config.evidence_dir.from_value(config.EVIDENCE_DIR)
+container.config.m01_experiment_log.from_value(config.M01_EXPERIMENT_LOG)
 container.config.min_frames.from_value(config.MIN_FRAMES)
 container.config.clip_max_mb.from_value(config.CLIP_MAX_MB)
 container.config.luz_timeout_s.from_value(config.FAVERO_LUZ_TIMEOUT_S)

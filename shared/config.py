@@ -28,6 +28,12 @@ STORAGE_DIR = os.environ.get("STORAGE_DIR")
 # (require_paths) para no perder evidencia sin darse cuenta.
 EVIDENCE_DIR = os.environ.get("EVIDENCE_DIR")
 
+# Log de experimentos del modelo de 6 clases (dataset/lstm_6class/
+# EXPERIMENT_LOG.md), del que el resumen de validación (L02) copia la tabla
+# resumen de M01. Opcional y sin default: si falta, el resumen indica que la
+# tabla no está disponible.
+M01_EXPERIMENT_LOG = os.environ.get("M01_EXPERIMENT_LOG")
+
 # Nivel del log técnico (INFO por defecto). Las librerías ruidosas quedan en
 # WARNING aparte (ver shared/logging_config.py).
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
