@@ -58,6 +58,10 @@ COPY fog/ fog/
 COPY shared/ shared/
 COPY alembic.ini .
 
+RUN chmod +x fog/docker-entrypoint.sh
+
 EXPOSE 8001
 
-CMD ["uvicorn", "fog.main:app", "--host", "0.0.0.0", "--port", "8001"]
+# Aplica alembic upgrade head (requiere DATABASE_URL) antes de levantar
+# uvicorn — ver fog/docker-entrypoint.sh.
+ENTRYPOINT ["fog/docker-entrypoint.sh"]

@@ -229,7 +229,7 @@ BEGIN
     NEW.hash_prev := prev;
     NEW.hash := encode(digest(coalesce(prev,'') || NEW.snapshot::text, 'sha256'), 'hex');
     RETURN NEW;
-END $$ LANGUAGE plpgsql;
+END $$ LANGUAGE plpgsql SET search_path = sabre, pg_temp;
 
 CREATE TRIGGER tg_auditoria_hash BEFORE INSERT ON registro_auditoria
     FOR EACH ROW EXECUTE FUNCTION fn_auditoria_hash();
@@ -237,7 +237,7 @@ CREATE TRIGGER tg_auditoria_hash BEFORE INSERT ON registro_auditoria
 CREATE FUNCTION fn_bloquear_cambios() RETURNS trigger AS $$
 BEGIN
     RAISE EXCEPTION 'Los registros de auditoría no pueden modificarse';
-END $$ LANGUAGE plpgsql;
+END $$ LANGUAGE plpgsql SET search_path = sabre, pg_temp;
 
 CREATE TRIGGER tg_auditoria_inmutable BEFORE UPDATE OR DELETE ON registro_auditoria
     FOR EACH ROW EXECUTE FUNCTION fn_bloquear_cambios();
@@ -255,7 +255,7 @@ RETURNS TABLE(seq BIGINT, esperado TEXT, guardado TEXT) AS $$
                              || r.snapshot::text,'sha256'),'hex') AS calc
         FROM sabre.registro_auditoria r)
     SELECT c.seq, c.calc, c.hash FROM c WHERE c.calc <> c.hash;
-$$ LANGUAGE sql STABLE;
+$$ LANGUAGE sql STABLE SET search_path = sabre, pg_temp;
 
 -- ---------------------------------------------------------------------
 -- Reentrenamiento (CU-14, T-018)
