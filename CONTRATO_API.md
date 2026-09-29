@@ -96,6 +96,51 @@ usuarios árbitro y operador (roles del esquema), y muestra sus ids. Es idempote
 (reutiliza lo que ya existe) y responde con código 1 si el evento existe con un tipo distinto de
 `piloto`.
 
+## 1.3 Consultas de solo lectura (CU-07, CU-12)
+
+Ninguno crea ni modifica nada (`POST`/`PUT`/`DELETE` responden 404/405). Sin autenticación
+(RF-26 es COULD). Las clases usan siempre los nombres del modelo (sección 1).
+
+`GET /revisiones?evento_id=&desde=&hasta=` — lista resumida, de la más reciente a la más
+antigua. Los tres filtros son opcionales; `evento_id` es el evento del combate y
+`desde`/`hasta` filtran `revision_var.abierta_en` (ISO 8601, inclusivos; sin zona horaria se
+interpreta como UTC). **422** si `evento_id` no es uuid o una fecha no es ISO 8601.
+```json
+[ { "id": "uuid", "combate_id": "uuid", "abierta_en": "2026-10-01T15:00:00Z", "cerrada_en": null,
+    "disponible": true, "clase": "AttackA", "confianza": 0.74,
+    "decision": null, "clase_final": null } ]
+```
+`disponible`, `clase` y `confianza` son la sugerencia (null si aún no hay clasificación);
+`decision` y `clase_final` son la decisión del árbitro (null sin veredicto; `clase_final`
+también con `anular`).
+
+`GET /revisiones/{id}` — detalle. **404** si la revisión no existe o `id` no es uuid.
+```json
+{ "id": "uuid", "combate_id": "uuid", "abierta_en": "...", "cerrada_en": null,
+  "sugerencia": { "disponible": true, "motivo_no_disp": null, "clase": "AttackA",
+                  "tirador": "A", "confianza": 0.74 },
+  "probabilidades": { "AttackA": 0.74, "AttackB": 0.0, "ContrattackA": 0.16,
+                      "ContrattackB": 0.0, "RiposteA": 0.10, "RiposteB": 0.0 },
+  "decision": null, "clase_final": null, "registrado_en": null,
+  "auditoria_seq": null, "auditoria_hash": null }
+```
+`sugerencia` es null si la revisión aún no tiene clasificación; con `disponible=false` trae
+`motivo_no_disp` y `clase`/`tirador`/`confianza` en null. `tirador` es `A` o `B`. No incluye
+la versión de modelo ni keypoints. `decision`, `clase_final`, `registrado_en`,
+`auditoria_seq` y `auditoria_hash` son null hasta el veredicto (sección 7.1).
+
+`GET /auditoria/verificar` — resultado de `sabre.fn_verificar_auditoria()` sin filtrar, con
+200 en ambos casos: `{ "integra": true, "alteradas": [] }` o
+`{ "integra": false, "alteradas": [ { "seq": 3, "esperado": "<hash>", "guardado": "<hash>" } ] }`.
+
+`GET /modelo/activo` — `{ "nombre": "...", "num_clases": 6, "f1_macro_test": 0.4856,
+"kappa_piloto": null }`; las métricas son las registradas en `modelo_version` (null si no
+se registraron). **404** si no hay versión activa.
+
+`GET /health` — `{ "fog": "ok", "redis": "ok", "postgres": "ok" }` (`"error"` por
+componente). Redis (PING) y PostgreSQL (`SELECT 1`) tienen 2 s de tiempo límite. **200** si
+todo está `ok`; **503** con el mismo cuerpo si alguno falla.
+
 ## 2. Edge → Fog: señalización WebRTC
 
 `POST /webrtc/offer`
