@@ -64,7 +64,8 @@ def construir_snapshot(*, revision, tocado, clasificacion, veredicto, modelo) ->
 
     Returns:
         Diccionario serializable con revisión, tocado, clasificación,
-        veredicto, modelo y reglamento.
+        veredicto, modelo, reglamento y `vocabulario` (`"modelo"`: nombres
+        de clase del modelo).
     """
     return _a_json(
         {
@@ -74,6 +75,8 @@ def construir_snapshot(*, revision, tocado, clasificacion, veredicto, modelo) ->
             "veredicto": veredicto,
             "modelo": modelo,
             "reglamento": modelo.reglamento,
+            # Las clases del snapshot usan los nombres del modelo, no los del esquema.
+            "vocabulario": "modelo",
         }
     )
 
