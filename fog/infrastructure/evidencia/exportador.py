@@ -58,6 +58,10 @@ def _bloque_validacion(nombre: str, m: dict[str, Any]) -> list[str]:
     nd = m["no_disponibles"]
     motivos = ", ".join(f"{k} {v}" for k, v in nd["por_motivo"].items() if v)
     lat = m["latencia"]
+    if lat["p95_excede_umbral"]:
+        texto_p95 = "> 60 s"
+    else:
+        texto_p95 = f"{_numero(lat['p95_ms'])} ms"
     kappa = m["kappa"]
     if kappa["calculable"]:
         texto_kappa = (
@@ -72,9 +76,12 @@ def _bloque_validacion(nombre: str, m: dict[str, Any]) -> list[str]:
         f"## {nombre} ({ETIQUETA_VALIDACION[nombre]})",
         f"- Revisiones: {m['n_revisiones']} · disponibles {m['disponibles']} · "
         f"no disponibles {nd['n']}" + (f" ({motivos})" if motivos else ""),
-        f"- Latencia (n={lat['n']}): mediana {_numero(lat['mediana_ms'])} ms · "
-        f"p95 {_numero(lat['p95_ms'])} ms · máx {_numero(lat['max_ms'])} ms · "
-        f"≤ 60 s {_numero(lat['pct_le_60s'])} %",
+        f"- Latencia (N total={lat['n_total']} · disponibles={lat['n_disponibles']} · "
+        f"no disponibles={lat['n_no_disponibles']}): "
+        f"mediana {_numero(lat['mediana_ms'])} ms · máx {_numero(lat['max_ms'])} ms "
+        "(solo disponibles) · "
+        f"p95 {texto_p95} · ≤ 60 s {_numero(lat['pct_le_60s'])} % "
+        "(sobre todas; no disponible = > 60 s)",
         f"- Umbral p95 ≤ {lat['umbral_ms']} ms: {_cumple(lat['cumple'])}",
         f"- κ de Cohen: {texto_kappa}",
         f"- Concordancia: {_numero(pct)} % (n={m['concordancia']['n']})",

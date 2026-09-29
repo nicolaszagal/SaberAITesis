@@ -163,8 +163,10 @@ veredicto** del evento; el JSONL de L01 no es la fuente (solo se concilia). Sin 
     "V1": { "n_revisiones": 8, "disponibles": 7,
             "no_disponibles": { "n": 1, "por_motivo": { "pose_incompleta": 1, "confianza_baja": 0,
               "clase_fuera_mvp": 0, "timeout": 0, "sin_senal_favero": 0, "mensaje_invalido": 0 } },
-            "latencia": { "n": 8, "mediana_ms": 48, "p95_ms": 55, "max_ms": 55,
-                          "pct_le_60s": 100.0, "umbral_ms": 60000, "cumple": true },
+            "latencia": { "n_total": 8, "n_disponibles": 7, "n_no_disponibles": 1,
+                          "sin_medicion": 0, "mediana_ms": 48, "max_ms": 55, "p95_ms": null,
+                          "p95_excede_umbral": true, "pct_le_60s": 87.5,
+                          "umbral_ms": 60000, "cumple": false },
             "kappa": { "n": 6, "calculable": true, "kappa": 0.3333, "banda": "aceptable",
                        "umbral": 0.61, "cumple": false, "motivo": null },
             "concordancia": { "n": 6, "pct": 66.67 },
@@ -182,10 +184,18 @@ Definiciones (solo las de `docs_claude/protocolo_validacion.md`):
 - **V1/V2**: `tocado.fuente` = `simulado` / `favero`. Las métricas van separadas; no hay total.
 - **Disponibilidad y motivos**: `clasificacion.disponible` y `motivo_no_disp` (los seis valores
   del esquema, siempre presentes aunque valgan 0).
-- **Latencia**: `clasificacion.latencia_ms` (la misma de L01) de todas las revisiones que la
-  tienen, disponibles o no. `mediana_ms` es la mediana; `p95_ms` usa el rango más cercano
-  (el elemento ⌈0.95·n⌉-ésimo). `cumple` = `p95_ms` ≤ 60000 (RNF-04, D-08); `pct_le_60s` es el
-  porcentaje de revisiones con latencia ≤ 60 s.
+- **Latencia**: `clasificacion.latencia_ms` (la misma de L01), que mide desde que se envía el
+  clip hasta que la sugerencia está disponible (D-08, RNF-04). Una revisión no disponible no
+  tiene sugerencia, así que su `latencia_ms` no cuenta como latencia, pero tampoco se oculta:
+  - `mediana_ms` y `max_ms`: solo sobre las revisiones **disponibles**.
+  - `pct_le_60s` y `p95_ms`: sobre **todas** las revisiones; una no disponible cuenta como
+    > 60 s. `p95_ms` usa el rango más cercano (el elemento ⌈0.95·n⌉-ésimo). Si más del 5 % no
+    está disponible, el p95 cae en una no disponible: `p95_ms` es null y `p95_excede_umbral`
+    es true (el resumen.md lo muestra como "> 60 s"). Sin revisiones, ambos son null.
+  - `cumple` = p95 ≤ 60000 calculado así (RNF-04), es decir, `not p95_excede_umbral`.
+  - Denominador: `n_total`, `n_disponibles` y `n_no_disponibles`. Una disponible sin
+    `latencia_ms` registrada no se puede medir: queda fuera de todos los cálculos y se cuenta
+    en `sin_medicion`.
 - **κ de Cohen** sistema-árbitro (`clase_sugerida` vs. `clase_final_arbitro`) sobre las
   revisiones disponibles y no anuladas. `banda` es la de Landis & Koch (< 0 pobre; 0–0.20
   leve; 0.21–0.40 aceptable; 0.41–0.60 moderada; 0.61–0.80 sustancial; 0.81–1.00 casi
