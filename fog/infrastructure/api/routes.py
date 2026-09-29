@@ -53,6 +53,7 @@ from fog.infrastructure.api.schemas import (
 from fog.infrastructure.clips.clip_file_reader import (
     ClipTooLargeError,
     InvalidClipError,
+    TocadoFueraDelClipError,
     process_uploaded_clip,
 )
 from fog.infrastructure.webrtc.session_registry import SessionRegistry
@@ -267,7 +268,8 @@ def _respuesta_clip(
         "Alternativa a POST /webrtc/offer para subir un clip ya grabado. "
         "Exige un combate creado con POST /matches/config (404 si no), "
         "`t_tocado_ms` y al menos una luz encendida (422 si falta alguna, "
-        "CU-03 flujo 2a). Registra `clip` (archivo por SHA-256, fps, ancho, "
+        "CU-03 flujo 2a). `t_tocado_ms` debe estar entre 0 y la duración del "
+        "clip, ambos incluidos (422 si no). Registra `clip` (archivo por SHA-256, fps, ancho, "
         "alto, duración), `tocado` (fuente='simulado') y `revision_var` "
         "(aceptada); no registra qué tirador pidió la revisión (D-04). "
         "Corre pose+tracking, extracción de 192 features y publicación en "
@@ -284,7 +286,12 @@ def _respuesta_clip(
     ),
     responses={
         404: {"description": "El combate no fue creado."},
-        422: {"description": "Falta t_tocado_ms o no hay ninguna luz encendida."},
+        422: {
+            "description": (
+                "Falta t_tocado_ms, está fuera de [0, duración del clip] o no hay "
+                "ninguna luz encendida."
+            )
+        },
         503: {"description": "No hay versión de modelo activa."},
     },
 )
@@ -293,7 +300,10 @@ async def upload_clip(
     match_id: str,
     file: UploadFile = File(..., description="Clip de video del combate (MP4/MOV)."),
     t_tocado_ms: int = Form(
-        ..., ge=0, description="Instante del tocado simulado en ms desde el inicio del clip (RF-02). Obligatorio."
+        ..., ge=0, description=(
+            "Instante del tocado simulado en ms desde el inicio del clip (RF-02). Obligatorio; "
+            "entre 0 y la duración del clip."
+        )
     ),
     has_luz_A: bool | None = Form(
         None, description="True si se encendió la luz Favero del tirador A."
@@ -359,12 +369,14 @@ async def upload_clip(
     try:
         clip = await process_uploaded_clip(
             file, pose_estimator, executor, file_storage,
-            clip_max_mb=clip_max_mb, min_frames=min_frames,
+            clip_max_mb=clip_max_mb, min_frames=min_frames, t_tocado_ms=t_tocado_ms,
         )
     except ClipTooLargeError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     except InvalidClipError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except TocadoFueraDelClipError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     revision = await abrir_revision.execute(
         combate=combate,

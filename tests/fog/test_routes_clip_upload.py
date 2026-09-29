@@ -97,7 +97,7 @@ def test_upload_clip_has_luz_fields_take_precedence_over_legacy_alias(crear_app)
         match_id,
         has_luz_A="true",
         has_luz_B="false",
-        t_tocado_ms="1234",
+        t_tocado_ms="400",
         # Alias obsoleto, con un valor que produciría el resultado
         # contrario si el endpoint todavía lo usara como fuente principal.
         luz_frame_b="0",
@@ -108,9 +108,9 @@ def test_upload_clip_has_luz_fields_take_precedence_over_legacy_alias(crear_app)
     assert body["has_luz_A"] is True
     assert body["has_luz_B"] is False
 
-    assert app.container.sessions().get(body["revision_id"]).t_tocado_ms == 1234
+    assert app.container.sessions().get(body["revision_id"]).t_tocado_ms == 400
     tocado = app.sql.filas("SELECT * FROM sabre.tocado WHERE combate_id = :i", i=match_id)[0]
-    assert (tocado["luz_a"], tocado["luz_b"], tocado["t_tocado_ms"]) == (True, False, 1234)
+    assert (tocado["luz_a"], tocado["luz_b"], tocado["t_tocado_ms"]) == (True, False, 400)
 
 
 def test_upload_clip_legacy_alias_used_when_new_fields_absent(crear_app):
@@ -236,3 +236,44 @@ def test_publica_en_redis_con_el_revision_id_de_cada_clip(crear_app):
         (match_id, primero["revision_id"]),
         (match_id, segundo["revision_id"]),
     ]
+
+
+def _sin_rastro_del_clip(app, match_id: str) -> None:
+    assert app.sql.escalar("SELECT count(*) FROM sabre.clip WHERE combate_id = :i", i=match_id) == 0
+    assert app.sql.escalar("SELECT count(*) FROM sabre.tocado WHERE combate_id = :i", i=match_id) == 0
+    assert app.container.feature_publisher().published == []
+    assert not list(app.storage_dir.rglob("*.mp4"))
+
+
+def test_t_tocado_ms_mayor_que_la_duracion_del_clip_responde_422(crear_app):
+    # clip_de_prueba: 5 frames a 10 fps = 500 ms
+    app = crear_app()
+    match_id = app.configurar()
+
+    response = app.subir_clip(match_id, t_tocado_ms="501")
+
+    assert response.status_code == 422
+    assert "501" in response.json()["detail"] and "500" in response.json()["detail"]
+    _sin_rastro_del_clip(app, match_id)
+
+
+def test_t_tocado_ms_negativo_responde_422(crear_app):
+    app = crear_app()
+    match_id = app.configurar()
+
+    assert app.subir_clip(match_id, t_tocado_ms="-1").status_code == 422
+    _sin_rastro_del_clip(app, match_id)
+
+
+def test_t_tocado_ms_en_los_extremos_del_clip_se_acepta(crear_app):
+    app = crear_app()
+    match_id = app.configurar()
+
+    inicio = app.subir_clip(match_id, t_tocado_ms="0")
+    final = app.subir_clip(match_id, t_tocado_ms="500")
+
+    assert inicio.status_code == final.status_code == 200
+    guardados = app.sql.filas(
+        "SELECT t_tocado_ms FROM sabre.tocado WHERE combate_id = :i ORDER BY t_tocado_ms", i=match_id
+    )
+    assert [g["t_tocado_ms"] for g in guardados] == [0, 500]
