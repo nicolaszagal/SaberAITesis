@@ -121,17 +121,26 @@ class VeredictoRequest(BaseModel):
     (POST /revisiones/{revision_id}/veredicto). El sistema solo sugiere (RNF-01)."""
 
     decision: Literal["mantener", "cambiar", "anular"] = Field(
-        ..., description="'mantener' la acción sugerida, 'cambiar' la acción o 'anular' (acción simultánea, t.106)."
+        ...,
+        description=(
+            "Relación con la decisión original del árbitro en pista: 'mantener' la acción, "
+            "'cambiar' la acción o 'anular' (acción simultánea, t.106)."
+        ),
     )
     clase_final: ClaseFinalLiteral | None = Field(
-        None, description="Obligatoria con 'cambiar'; no se admite con 'anular'. Valores del dominio `clase_tact`."
+        None,
+        description=(
+            "Decisión final declarada por el árbitro, siempre. Obligatoria con 'mantener' y "
+            "'cambiar' (también si la clasificación no estuvo disponible); no se admite con "
+            "'anular'. Valores de la taxonomía del modelo."
+        ),
     )
     arbitro_id: uuid.UUID = Field(..., description="Usuario árbitro existente que decide.")
 
     @model_validator(mode="after")
     def _clase_final_coherente(self) -> "VeredictoRequest":
-        if self.decision == "cambiar" and self.clase_final is None:
-            raise ValueError("clase_final es obligatoria cuando decision='cambiar'")
+        if self.decision in ("mantener", "cambiar") and self.clase_final is None:
+            raise ValueError(f"clase_final es obligatoria cuando decision='{self.decision}'")
         if self.decision == "anular" and self.clase_final is not None:
             raise ValueError("clase_final no se admite cuando decision='anular'")
         return self

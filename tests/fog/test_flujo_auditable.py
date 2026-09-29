@@ -172,13 +172,48 @@ def test_cambiar_sin_clase_final_responde_422_y_no_cierra_la_revision(crear_app)
     match_id, clip = _combate_completo(app)
     revision_id = clip["revision_id"]
 
-    resp = app.veredicto(revision_id, decision="cambiar")
+    resp = app.veredicto(revision_id, decision="cambiar", clase_final=None)
 
     assert resp.status_code == 422
     assert app.sql.escalar(
         "SELECT count(*) FROM sabre.revision_var r JOIN sabre.tocado t ON t.id = r.tocado_id "
         "WHERE t.combate_id = :i AND r.cerrada_en IS NULL", i=match_id,
     ) == 1
+
+
+def test_mantener_sin_clase_final_responde_422_y_no_cierra_la_revision(crear_app):
+    app = crear_app()
+    match_id, clip = _combate_completo(app)
+    revision_id = clip["revision_id"]
+
+    resp = app.veredicto(revision_id, decision="mantener", clase_final=None)
+
+    assert resp.status_code == 422
+    assert app.sql.escalar(SQL_REVISIONES_ABIERTAS_DEL_COMBATE, i=match_id) == 1
+    assert app.sql.escalar(SQL_VEREDICTOS_DEL_COMBATE, i=match_id) == 0
+
+
+def test_mantener_y_cambiar_registran_la_clase_final_declarada(crear_app):
+    """`mantener`/`cambiar` describen la relación con la decisión original en
+    pista; `clase_final` es siempre la decisión final declarada, aunque
+    `mantener` no coincida con la clase sugerida."""
+    app = crear_app()
+    _, primero = _combate_completo(app)
+    _, segundo = _combate_completo(app)
+
+    r1 = app.veredicto(primero["revision_id"], decision="mantener", clase_final="RiposteB")
+    r2 = app.veredicto(segundo["revision_id"], decision="cambiar", clase_final="ContraataqueA")
+
+    assert (r1.status_code, r2.status_code) == (200, 200)
+    assert (r1.json()["decision"], r1.json()["clase_final"]) == ("mantener", "RiposteB")
+    assert (r2.json()["decision"], r2.json()["clase_final"]) == ("cambiar", "ContraataqueA")
+    guardadas = app.sql.filas(
+        "SELECT decision, clase_final FROM sabre.veredicto WHERE revision_id = ANY(:ids)",
+        ids=[uuid.UUID(primero["revision_id"]), uuid.UUID(segundo["revision_id"])],
+    )
+    assert {(g["decision"], g["clase_final"]) for g in guardadas} == {
+        ("mantener", "RiposteB"), ("cambiar", "ContraataqueA"),
+    }
 
 
 def test_anular_con_clase_final_responde_422(crear_app):
@@ -245,8 +280,14 @@ def test_pose_incompleta_registra_clasificacion_no_disponible(crear_app):
     assert clasif["motivo_no_disp"] == "pose_incompleta"
     assert clasif["clase"] is None
     assert (app.storage_dir / clasif["keypoints_uri"].removeprefix("local://")).exists()
-    # El árbitro puede cerrar la revisión revisando solo el video
-    assert app.veredicto(revision_id, decision="anular").status_code == 200
+    # Sin sugerencia la regla es la misma: mantener/cambiar exigen clase_final...
+    for decision in ("mantener", "cambiar"):
+        assert app.veredicto(revision_id, decision=decision, clase_final=None).status_code == 422
+    # ...y anular no la admite.
+    assert app.veredicto(revision_id, decision="anular", clase_final="AtaqueA").status_code == 422
+    assert app.sql.escalar(SQL_REVISIONES_ABIERTAS_DEL_COMBATE, i=match_id) == 1
+    # El árbitro puede cerrar la revisión declarando su decisión final
+    assert app.veredicto(revision_id, decision="cambiar", clase_final="AtaqueB").status_code == 200
     _sin_filas_alteradas(app)
 
 
@@ -458,3 +499,26 @@ def test_veredicto_de_revision_inexistente_responde_404(crear_app):
 
     assert app.veredicto(str(uuid.uuid4())).status_code == 404
     assert app.veredicto("no-es-un-uuid").status_code == 404
+
+
+def test_vista_de_muestras_usa_clase_final_como_etiqueta_y_excluye_anular(crear_app):
+    """v_muestras_confirmadas: la etiqueta es siempre `clase_final`, sin
+    depender de si el árbitro mantuvo o cambió la acción sugerida."""
+    app = crear_app()
+    _, mantenida = _combate_completo(app)      # sugerida AtaqueA
+    _, cambiada = _combate_completo(app)       # sugerida AtaqueA
+    _, anulada = _combate_completo(app)
+    assert app.veredicto(mantenida["revision_id"], decision="mantener", clase_final="RiposteB").status_code == 200
+    assert app.veredicto(cambiada["revision_id"], decision="cambiar", clase_final="ContraataqueB").status_code == 200
+    assert app.veredicto(anulada["revision_id"], decision="anular").status_code == 200
+
+    ids = [uuid.UUID(c["revision_id"]) for c in (mantenida, cambiada, anulada)]
+    filas = app.sql.filas(
+        "SELECT revision_id, clase_sugerida, etiqueta, decision FROM sabre.v_muestras_confirmadas "
+        "WHERE revision_id = ANY(:ids)", ids=ids,
+    )
+
+    assert {str(f["revision_id"]): (f["decision"], f["clase_sugerida"], f["etiqueta"]) for f in filas} == {
+        mantenida["revision_id"]: ("mantener", "AtaqueA", "RiposteB"),
+        cambiada["revision_id"]: ("cambiar", "AtaqueA", "ContraataqueB"),
+    }

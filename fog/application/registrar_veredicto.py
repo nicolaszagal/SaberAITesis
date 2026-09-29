@@ -97,24 +97,27 @@ class RegistrarVeredicto:
 
         Args:
             revision_id: revisión que se decide (un combate admite N).
-            decision: `mantener`, `cambiar` o `anular`.
-            clase_final: obligatoria con `cambiar`; prohibida con `anular`.
+            decision: `mantener`, `cambiar` o `anular`; describe la relación
+                con la decisión original del árbitro en pista.
+            clase_final: decisión final declarada. Obligatoria con `mantener`
+                y `cambiar` (aunque la clasificación no estuviera
+                disponible); prohibida con `anular`.
             arbitro_id: usuario que decide.
 
         Returns:
             Veredicto, revisión cerrada y registro de auditoría.
 
         Raises:
-            VeredictoInvalido: `cambiar` sin clase_final, `anular` con
-                clase_final, o valores fuera de los dominios del esquema.
+            VeredictoInvalido: `mantener` o `cambiar` sin clase_final,
+                `anular` con clase_final, o valores fuera de los dominios.
             RecursoNoEncontrado: árbitro o revisión inexistentes.
             VeredictoYaRegistrado: la revisión ya tiene veredicto (409).
             ClasificacionPendiente: la revisión no tiene clasificación.
         """
         if decision not in DECISIONES:
             raise VeredictoInvalido(f"decision desconocida: {decision!r}")
-        if decision == "cambiar" and clase_final is None:
-            raise VeredictoInvalido("decision='cambiar' requiere clase_final")
+        if decision in ("mantener", "cambiar") and clase_final is None:
+            raise VeredictoInvalido(f"decision={decision!r} requiere clase_final")
         if decision == "anular" and clase_final is not None:
             raise VeredictoInvalido("decision='anular' no admite clase_final")
         if clase_final is not None and clase_final not in CLASES:

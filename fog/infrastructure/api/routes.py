@@ -429,14 +429,17 @@ async def upload_clip(
         "(`cerrada_en`) e inserta el `registro_auditoria` con el snapshot "
         "(revisión, tocado, clasificación, veredicto, modelo y reglamento). "
         "Sin veredicto la revisión no se cierra (RF-21); el sistema solo "
-        "sugiere, nunca asigna el punto (RNF-01). `clase_final` es "
-        "obligatoria con 'cambiar' (422) y no se admite con 'anular'. 409 si "
-        "la revisión ya tiene veredicto o aún no tiene clasificación."
+        "sugiere, nunca asigna el punto (RNF-01). `decision` describe la "
+        "relación con la decisión original del árbitro en pista y "
+        "`clase_final` es siempre la decisión final declarada: obligatoria "
+        "con 'mantener' y 'cambiar' (422 si falta, aunque la clasificación "
+        "no estuviera disponible) y prohibida con 'anular' (422 si viene). "
+        "409 si la revisión ya tiene veredicto o aún no tiene clasificación."
     ),
     responses={
         404: {"description": "La revisión o el árbitro no existen."},
         409: {"description": "La revisión ya tiene veredicto, o no tiene clasificación registrada."},
-        422: {"description": "decision='cambiar' sin clase_final, o combinación no admitida."},
+        422: {"description": "'mantener' o 'cambiar' sin clase_final, 'anular' con clase_final, o clase fuera de dominio."},
     },
 )
 @inject

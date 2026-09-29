@@ -230,8 +230,16 @@ class AppAuditable:
         )
 
     def veredicto(self, revision_id: str, **cuerpo):
-        body = {"decision": "mantener", "arbitro_id": str(self.arbitro_id)}
+        """POST del veredicto. Por defecto `mantener` con `clase_final`
+        (obligatoria salvo con `anular`); pasar `clase_final=None` la omite."""
+        decision = cuerpo.get("decision", "mantener")
+        body = {
+            "decision": decision,
+            "clase_final": None if decision == "anular" else "AtaqueA",
+            "arbitro_id": str(self.arbitro_id),
+        }
         body.update(cuerpo)
+        body = {k: v for k, v in body.items() if v is not None}
         return self.client.post(f"/revisiones/{revision_id}/veredicto", json=body)
 
 
