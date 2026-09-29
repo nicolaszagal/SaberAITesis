@@ -144,49 +144,76 @@ def matriz_confusion(
     }
 
 
-def _percentil_nearest_rank(ordenados: Sequence[int], porcentaje: int) -> int:
+def _percentil_nearest_rank(ordenados: Sequence[float], porcentaje: int) -> float:
     """Percentil por rango más cercano: el elemento ceil(p·n/100)-ésimo."""
     posicion = math.ceil(porcentaje * len(ordenados) / 100)
     return ordenados[max(posicion, 1) - 1]
 
 
-def resumen_latencia(latencias_ms: Sequence[int]) -> dict[str, Any]:
+def resumen_latencia(
+    latencias_disponibles_ms: Sequence[int | None], n_no_disponibles: int
+) -> dict[str, Any]:
     """Estadísticos de la latencia de la sugerencia (D-08, RNF-04).
 
+    La latencia es el tiempo hasta que la sugerencia está disponible
+    (`protocolo_validacion.md`), así que una revisión no disponible no tiene
+    una latencia que medir. Por eso:
+
+    - Mediana y máximo: solo sobre las revisiones disponibles.
+    - % ≤ 60 s y p95 (rango más cercano): sobre todas las revisiones; las no
+      disponibles cuentan como > 60 s. Si más del 5 % no está disponible, el
+      p95 cae en una no disponible y se reporta como "> 60 s".
+
+    Una revisión disponible sin `latencia_ms` no se puede medir: queda fuera
+    de todos los cálculos y se cuenta en `sin_medicion`.
+
     Args:
-        latencias_ms: `latencia_ms` de cada revisión que la tiene.
+        latencias_disponibles_ms: `latencia_ms` de cada revisión disponible
+            (None si no se registró).
+        n_no_disponibles: cantidad de revisiones no disponibles.
 
     Returns:
-        `n`, `mediana_ms`, `p95_ms` (rango más cercano), `max_ms`,
-        `pct_le_60s`, `umbral_ms` y `cumple` (p95 ≤ 60 s, RNF-04). Con
-        `n = 0` todos los valores son None.
+        `n_total`, `n_disponibles`, `n_no_disponibles`, `sin_medicion`,
+        `mediana_ms` y `max_ms` (disponibles), `p95_ms` (None si es
+        "> 60 s" o no hay datos), `p95_excede_umbral` (True si el p95 es
+        "> 60 s"), `pct_le_60s`, `umbral_ms` y `cumple` (p95 ≤ 60 s, RNF-04).
+        Sin revisiones medibles, los valores son None.
     """
-    n = len(latencias_ms)
+    medidas = sorted(x for x in latencias_disponibles_ms if x is not None)
+    n_disponibles = len(latencias_disponibles_ms)
+    base = len(medidas) + n_no_disponibles
     resultado: dict[str, Any] = {
-        "n": n,
+        "n_total": n_disponibles + n_no_disponibles,
+        "n_disponibles": n_disponibles,
+        "n_no_disponibles": n_no_disponibles,
+        "sin_medicion": n_disponibles - len(medidas),
         "mediana_ms": None,
-        "p95_ms": None,
         "max_ms": None,
+        "p95_ms": None,
+        "p95_excede_umbral": None,
         "pct_le_60s": None,
         "umbral_ms": UMBRAL_LATENCIA_MS,
         "cumple": None,
     }
-    if n == 0:
+    if base == 0:
         return resultado
-    ordenados = sorted(latencias_ms)
-    mitad = n // 2
-    if n % 2:
-        mediana = ordenados[mitad]
-    else:
-        mediana = (ordenados[mitad - 1] + ordenados[mitad]) / 2
-    p95 = _percentil_nearest_rank(ordenados, 95)
-    dentro = sum(1 for x in ordenados if x <= UMBRAL_LATENCIA_MS)
+    if medidas:
+        mitad = len(medidas) // 2
+        if len(medidas) % 2:
+            resultado["mediana_ms"] = medidas[mitad]
+        else:
+            resultado["mediana_ms"] = (medidas[mitad - 1] + medidas[mitad]) / 2
+        resultado["max_ms"] = medidas[-1]
+    # Las no disponibles van al final como +inf: superan cualquier umbral.
+    todas: list[float] = [*medidas, *([math.inf] * n_no_disponibles)]
+    p95 = _percentil_nearest_rank(todas, 95)
+    dentro = sum(1 for x in medidas if x <= UMBRAL_LATENCIA_MS)
+    excede = p95 > UMBRAL_LATENCIA_MS
     resultado.update(
-        mediana_ms=mediana,
-        p95_ms=p95,
-        max_ms=ordenados[-1],
-        pct_le_60s=round(100 * dentro / n, 2),
-        cumple=p95 <= UMBRAL_LATENCIA_MS,
+        p95_ms=None if math.isinf(p95) else p95,
+        p95_excede_umbral=excede,
+        pct_le_60s=round(100 * dentro / base, 2),
+        cumple=not excede,
     )
     return resultado
 
@@ -223,7 +250,7 @@ def resumir_validacion(lineas: Sequence[LineaEvidencia]) -> dict[str, Any]:
         "disponibles": len(disponibles),
         "no_disponibles": {"n": len(no_disponibles), "por_motivo": por_motivo},
         "latencia": resumen_latencia(
-            [x.latencia_ms for x in lineas if x.latencia_ms is not None]
+            [x.latencia_ms for x in disponibles], len(no_disponibles)
         ),
         "kappa": cohen_kappa(sistema, arbitro),
         "concordancia": {

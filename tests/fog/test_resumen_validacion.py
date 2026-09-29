@@ -156,20 +156,65 @@ def test_latencia_mediana_p95_maximo_y_porcentaje():
     latencias = list(range(1000, 21000, 1000))  # 20 valores: 1 s ... 20 s
     latencias[-1] = 70_000  # uno por encima de 60 s
 
-    r = resumen_latencia(latencias)
+    r = resumen_latencia(latencias, 0)
 
-    assert r["n"] == 20
+    assert (r["n_total"], r["n_disponibles"], r["n_no_disponibles"]) == (20, 20, 0)
     assert r["mediana_ms"] == 10_500  # promedio de los dos centrales
     assert r["p95_ms"] == 19_000  # rango más cercano: ceil(0.95·20) = 19.º
+    assert r["p95_excede_umbral"] is False
     assert r["max_ms"] == 70_000
     assert r["pct_le_60s"] == 95.0
     assert r["cumple"] is True  # p95 ≤ 60 s (RNF-04)
 
 
 def test_latencia_p95_sobre_60s_no_cumple_y_sin_datos_es_nula():
-    assert resumen_latencia([1000] * 5 + [90_000] * 5)["cumple"] is False
-    vacio = resumen_latencia([])
-    assert vacio["n"] == 0 and vacio["p95_ms"] is None and vacio["cumple"] is None
+    r = resumen_latencia([1000] * 5 + [90_000] * 5, 0)
+    assert r["cumple"] is False and r["p95_ms"] == 90_000
+    vacio = resumen_latencia([], 0)
+    assert vacio["n_total"] == 0 and vacio["p95_ms"] is None and vacio["cumple"] is None
+
+
+def test_latencia_mediana_y_maximo_solo_sobre_disponibles():
+    # Las no disponibles no aportan latencia a la mediana ni al máximo.
+    r = resumen_latencia([1000, 2000, 3000], 1)
+
+    assert r["mediana_ms"] == 2000 and r["max_ms"] == 3000
+    assert (r["n_total"], r["n_disponibles"], r["n_no_disponibles"]) == (4, 3, 1)
+
+
+def test_latencia_no_disponibles_cuentan_como_mas_de_60s_en_pct_y_p95():
+    # 1 no disponible de 20 (5 %): el p95 (19.º) sigue siendo una disponible,
+    # pero el % ≤ 60 s se calcula sobre las 20.
+    r = resumen_latencia([1000] * 19, 1)
+
+    assert r["p95_ms"] == 1000 and r["p95_excede_umbral"] is False
+    assert r["pct_le_60s"] == 95.0
+    assert r["cumple"] is True
+
+
+def test_latencia_mas_del_5_por_ciento_no_disponible_reporta_p95_sobre_60s():
+    # 2 no disponibles de 20 (10 %): el p95 cae en una no disponible.
+    r = resumen_latencia([1000] * 18, 2)
+
+    assert r["p95_ms"] is None and r["p95_excede_umbral"] is True
+    assert r["pct_le_60s"] == 90.0
+    assert r["cumple"] is False
+    assert r["mediana_ms"] == 1000 and r["max_ms"] == 1000
+
+
+def test_latencia_solo_no_disponibles_no_inventa_mediana_ni_maximo():
+    r = resumen_latencia([], 3)
+
+    assert r["mediana_ms"] is None and r["max_ms"] is None
+    assert r["p95_excede_umbral"] is True and r["pct_le_60s"] == 0.0
+    assert r["cumple"] is False
+
+
+def test_latencia_disponible_sin_medicion_queda_fuera_y_se_cuenta():
+    r = resumen_latencia([1000, None], 0)
+
+    assert r["n_total"] == 2 and r["sin_medicion"] == 1
+    assert r["mediana_ms"] == 1000 and r["pct_le_60s"] == 100.0
 
 
 def test_matriz_de_confusion_6x6_con_sistema_en_filas():
@@ -207,7 +252,11 @@ def test_resumen_de_validacion_excluye_anuladas_y_no_disponibles_del_kappa():
     assert r["kappa"]["n"] == 2
     assert r["concordancia"] == {"n": 2, "pct": 50.0}
     assert sum(map(sum, r["matriz_confusion"]["matriz"])) == 2
-    assert r["latencia"]["n"] == 5 and r["latencia"]["max_ms"] == 61_000
+    # 3 disponibles (100 ms) y 2 no disponibles: el máximo es solo de disponibles.
+    lat = r["latencia"]
+    assert (lat["n_total"], lat["n_disponibles"], lat["n_no_disponibles"]) == (5, 3, 2)
+    assert lat["max_ms"] == 100 and lat["p95_excede_umbral"] is True
+    assert lat["pct_le_60s"] == 60.0 and lat["cumple"] is False
 
 
 def test_resumen_sin_revisiones_no_inventa_valores():
@@ -334,7 +383,8 @@ def test_resumen_desde_la_base_separa_v1_y_v2(sesion):
     assert v1["concordancia"] == {"n": 6, "pct": pytest.approx(66.67)}
     assert v1["matriz_confusion"]["matriz"][0][0] == 2  # AttackA / AttackA
     assert v1["matriz_confusion"]["matriz"][5][0] == 1  # RiposteB / AttackA
-    assert v1["latencia"]["n"] == 8 and v1["latencia"]["pct_le_60s"] == 100.0
+    assert v1["latencia"]["n_total"] == 8 and v1["latencia"]["n_disponibles"] == 7
+    assert v1["latencia"]["n_no_disponibles"] == 1
 
     assert (v2["n_revisiones"], v2["disponibles"]) == (2, 2)
     assert v2["kappa"]["kappa"] == 1.0 and v2["kappa"]["cumple"] is True
@@ -501,6 +551,20 @@ async def test_resumen_md_cabe_en_una_pantalla_y_lleva_los_umbrales(sesion):
         "Conciliación", "Faltantes en JSONL: ninguno", "sabre.fn_verificar_auditoria: ok",
     ):
         assert esperado in md
+
+
+def test_bloque_md_muestra_denominador_y_p95_sobre_60s():
+    from fog.infrastructure.evidencia.exportador import _bloque_validacion
+
+    lineas = [_linea("AttackA", "AttackA")] * 18 + [
+        _linea(None, None, disponible=False, motivo="timeout")
+    ] * 2
+
+    texto = "\n".join(_bloque_validacion("V1", resumir_validacion(lineas)))
+
+    assert "N total=20 · disponibles=18 · no disponibles=2" in texto
+    assert "p95 > 60 s" in texto
+    assert "p95 ≤ 60000 ms: no cumple" in texto
 
 
 async def test_endpoint_devuelve_el_contenido_de_resumen_json(sesion, tmp_path):
