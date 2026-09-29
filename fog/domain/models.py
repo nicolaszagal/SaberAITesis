@@ -16,6 +16,13 @@ from enum import Enum
 import numpy as np
 
 
+# Taxonomía única de la API y del dominio (D-06): los nombres del modelo. La
+# traducción a los del esquema vive solo en los adaptadores de persistencia.
+CLASES_MODELO = (
+    "AttackA", "AttackB", "ContrattackA", "ContrattackB", "RiposteA", "RiposteB",
+)
+
+
 class WeaponSide(str, Enum):
     RIGHT = "right"
     LEFT = "left"

@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import text, update
+from sqlalchemy import select, text, update
 from sqlalchemy.exc import DBAPIError
 
 from fog.infrastructure.persistence.postgres.auditoria_repository import (
@@ -30,6 +30,9 @@ from fog.infrastructure.persistence.postgres.modelo_version_repository import (
 )
 from fog.infrastructure.persistence.postgres.revision_repository import (
     PostgresRevisionRepository,
+)
+from fog.infrastructure.persistence.postgres.tables import (
+    clasificacion as clasificacion_tabla,
 )
 from fog.infrastructure.persistence.postgres.tables import veredicto as veredicto_tabla
 from fog.infrastructure.persistence.postgres.tocado_repository import (
@@ -126,14 +129,14 @@ async def test_flujo_completo_de_revision(session_factory, personas):
         tocado_id=tocado.id,
         modelo_version_id=modelo.id,
         disponible=True,
-        clase="AtaqueA",
+        clase="AttackA",
         tirador="A",
         confianza=0.83,
         probabilidades={
-            "AtaqueA": 0.83,
-            "AtaqueB": 0.0,
-            "ContraataqueA": 0.1,
-            "ContraataqueB": 0.0,
+            "AttackA": 0.83,
+            "AttackB": 0.0,
+            "ContrattackA": 0.1,
+            "ContrattackB": 0.0,
             "RiposteA": 0.05,
             "RiposteB": 0.02,
         },
@@ -142,6 +145,23 @@ async def test_flujo_completo_de_revision(session_factory, personas):
         latencia_ms=42,
     )
 
+    # El puerto habla con los nombres del modelo...
+    assert clasificacion.clase == "AttackA"
+    assert set(clasificacion.probabilidades) == {
+        "AttackA", "AttackB", "ContrattackA", "ContrattackB", "RiposteA", "RiposteB",
+    }
+    # ...y solo el adaptador traduce: la fila guarda los nombres del esquema.
+    async with session_factory() as session:
+        fila = (
+            await session.execute(
+                select(clasificacion_tabla).where(clasificacion_tabla.c.id == clasificacion.id)
+            )
+        ).one()
+    assert fila.clase == "AtaqueA"
+    assert set(fila.probabilidades) == {
+        "AtaqueA", "AtaqueB", "ContraataqueA", "ContraataqueB", "RiposteA", "RiposteB",
+    }
+
     revision_repo = PostgresRevisionRepository(session_factory)
     revision = await revision_repo.crear(
         tocado_id=tocado.id, aceptada=True, arbitro_id=personas["arbitro_id"]
@@ -149,8 +169,19 @@ async def test_flujo_completo_de_revision(session_factory, personas):
     await revision_repo.asignar_clasificacion(revision.id, clasificacion.id)
 
     veredicto = await PostgresVeredictoRepository(session_factory).crear(
-        revision_id=revision.id, decision="mantener", arbitro_id=personas["arbitro_id"]
+        revision_id=revision.id,
+        decision="cambiar",
+        clase_final="ContrattackB",
+        arbitro_id=personas["arbitro_id"],
     )
+    assert veredicto.clase_final == "ContrattackB"
+    async with session_factory() as session:
+        guardada = (
+            await session.execute(
+                select(veredicto_tabla.c.clase_final).where(veredicto_tabla.c.id == veredicto.id)
+            )
+        ).scalar_one()
+    assert guardada == "ContraataqueB"
 
     await revision_repo.cerrar(revision.id, datetime.now(timezone.utc))
 

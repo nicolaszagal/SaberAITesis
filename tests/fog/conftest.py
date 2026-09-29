@@ -235,7 +235,7 @@ class AppAuditable:
         decision = cuerpo.get("decision", "mantener")
         body = {
             "decision": decision,
-            "clase_final": None if decision == "anular" else "AtaqueA",
+            "clase_final": None if decision == "anular" else "AttackA",
             "arbitro_id": str(self.arbitro_id),
         }
         body.update(cuerpo)

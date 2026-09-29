@@ -3,6 +3,9 @@ Sin update ni delete: `tg_veredicto_inmutable` los bloquea igual (RNF-05).
 
 `obtener_por_revision` es lo que usa D03 para devolver 409 si la revisión
 ya tiene un veredicto registrado (`revision_id` es UNIQUE en el esquema).
+
+`clase_final` va con los nombres del modelo (`AttackA`, ...); el adaptador de
+persistencia los traduce al esquema.
 """
 
 import uuid

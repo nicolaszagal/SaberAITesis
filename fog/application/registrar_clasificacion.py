@@ -1,6 +1,9 @@
 """RegistrarClasificacion — CU-06: guarda la sugerencia de Cloud, o el
 "no disponible", contra el modelo activo, con los keypoints crudos de la
 TrackedSequence en .npz (uri + sha256) y la latencia medida por Fog.
+
+La clase y las probabilidades se pasan con los nombres del modelo
+(`AttackA`, ...); el adaptador de persistencia las traduce al esquema.
 """
 
 from __future__ import annotations
@@ -14,18 +17,6 @@ from fog.domain.errors import SinModeloActivo
 from fog.domain.models import TrackedSequence, UnavailableResult, VerdictView
 from fog.ports.file_storage import FileStoragePort
 from fog.ports.unidad_de_trabajo import UnidadDeTrabajoPort
-
-# Taxonomía del pipeline (D-06, nombres del dataset) -> dominio `clase_tact`
-# del esquema. Solo cambia el idioma del prefijo.
-CLASE_A_ESQUEMA = {
-    "AttackA": "AtaqueA",
-    "AttackB": "AtaqueB",
-    "ContrattackA": "ContraataqueA",
-    "ContrattackB": "ContraataqueB",
-    "RiposteA": "RiposteA",
-    "RiposteB": "RiposteB",
-}
-
 
 def keypoints_a_arrays(tracked: TrackedSequence) -> dict[str, np.ndarray]:
     """Arma los arreglos del .npz de keypoints crudos.
@@ -125,14 +116,10 @@ class RegistrarClasificacion:
             if isinstance(resultado, VerdictView):
                 clasificacion = await tx.clasificaciones.crear(
                     disponible=True,
-                    clase=CLASE_A_ESQUEMA[resultado.action],
+                    clase=resultado.action,
                     tirador=resultado.action[-1],
                     confianza=resultado.confidence,
-                    probabilidades=(
-                        {CLASE_A_ESQUEMA[k]: v for k, v in resultado.probs.items()}
-                        if resultado.probs is not None
-                        else None
-                    ),
+                    probabilidades=resultado.probs,
                     **comunes,
                 )
             else:

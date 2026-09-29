@@ -1,6 +1,9 @@
 """ClasificacionRepositoryPort — persistencia de `sabre.clasificacion`
 (CU-06). Sin update ni delete: el trigger `tg_clasificacion_inmutable` los
 bloquea igual (RNF-05), así que el puerto no los expone.
+
+`clase` y las llaves de `probabilidades` van con los nombres del modelo
+(`AttackA`, ...); el adaptador de persistencia los traduce al esquema.
 """
 
 import uuid

@@ -21,11 +21,9 @@ from fog.domain.errors import (
     VeredictoInvalido,
     VeredictoYaRegistrado,
 )
+from fog.domain.models import CLASES_MODELO
 from fog.ports.unidad_de_trabajo import UnidadDeTrabajoPort
 
-CLASES = (
-    "AtaqueA", "AtaqueB", "ContraataqueA", "ContraataqueB", "RiposteA", "RiposteB",
-)
 DECISIONES = ("mantener", "cambiar", "anular")
 
 
@@ -101,7 +99,8 @@ class RegistrarVeredicto:
                 con la decisión original del árbitro en pista.
             clase_final: decisión final declarada. Obligatoria con `mantener`
                 y `cambiar` (aunque la clasificación no estuviera
-                disponible); prohibida con `anular`.
+                disponible); prohibida con `anular`. Usa los nombres del
+                modelo (`AttackA`, ...).
             arbitro_id: usuario que decide.
 
         Returns:
@@ -120,7 +119,7 @@ class RegistrarVeredicto:
             raise VeredictoInvalido(f"decision={decision!r} requiere clase_final")
         if decision == "anular" and clase_final is not None:
             raise VeredictoInvalido("decision='anular' no admite clase_final")
-        if clase_final is not None and clase_final not in CLASES:
+        if clase_final is not None and clase_final not in CLASES_MODELO:
             raise VeredictoInvalido(f"clase_final desconocida: {clase_final!r}")
 
         async with self._uow.transaccion() as tx:

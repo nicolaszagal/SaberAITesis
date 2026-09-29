@@ -108,13 +108,13 @@ def test_flujo_completo_persiste_y_audita(crear_app):
         assert {"a_xy", "b_xy", "a_conf", "a_box", "a_detected", "locked"} <= set(npz.files)
 
     # CU-10/11: veredicto que cambia la clase; todo en una transacción
-    resp = app.veredicto(revision_id, decision="cambiar", clase_final="ContraataqueB")
+    resp = app.veredicto(revision_id, decision="cambiar", clase_final="ContrattackB")
     assert resp.status_code == 200, resp.text
     cuerpo = resp.json()
     assert cuerpo["match_id"] == match_id
     assert cuerpo["revision_id"] == revision_id
     assert cuerpo["decision"] == "cambiar"
-    assert cuerpo["clase_final"] == "ContraataqueB"
+    assert cuerpo["clase_final"] == "ContrattackB"
     assert cuerpo["cerrada_en"] == cuerpo["registrado_en"]
 
     revision = app.sql.filas("SELECT * FROM sabre.revision_var WHERE id = :i", i=revision["id"])[0]
@@ -126,7 +126,7 @@ def test_flujo_completo_persiste_y_audita(crear_app):
     assert set(snap) == {"revision", "tocado", "clasificacion", "veredicto", "modelo", "reglamento"}
     assert snap["reglamento"] == "FIE 2026"
     assert snap["veredicto"]["decision"] == "cambiar"
-    assert snap["clasificacion"]["clase"] == "AtaqueA"
+    assert snap["clasificacion"]["clase"] == "AttackA"
     assert snap["modelo"]["nombre"] == app.sql.escalar(
         "SELECT nombre FROM sabre.modelo_version WHERE activo"
     )
@@ -202,11 +202,11 @@ def test_mantener_y_cambiar_registran_la_clase_final_declarada(crear_app):
     _, segundo = _combate_completo(app)
 
     r1 = app.veredicto(primero["revision_id"], decision="mantener", clase_final="RiposteB")
-    r2 = app.veredicto(segundo["revision_id"], decision="cambiar", clase_final="ContraataqueA")
+    r2 = app.veredicto(segundo["revision_id"], decision="cambiar", clase_final="ContrattackA")
 
     assert (r1.status_code, r2.status_code) == (200, 200)
     assert (r1.json()["decision"], r1.json()["clase_final"]) == ("mantener", "RiposteB")
-    assert (r2.json()["decision"], r2.json()["clase_final"]) == ("cambiar", "ContraataqueA")
+    assert (r2.json()["decision"], r2.json()["clase_final"]) == ("cambiar", "ContrattackA")
     guardadas = app.sql.filas(
         "SELECT decision, clase_final FROM sabre.veredicto WHERE revision_id = ANY(:ids)",
         ids=[uuid.UUID(primero["revision_id"]), uuid.UUID(segundo["revision_id"])],
@@ -221,7 +221,7 @@ def test_anular_con_clase_final_responde_422(crear_app):
     match_id, clip = _combate_completo(app)
     revision_id = clip["revision_id"]
 
-    assert app.veredicto(revision_id, decision="anular", clase_final="AtaqueA").status_code == 422
+    assert app.veredicto(revision_id, decision="anular", clase_final="AttackA").status_code == 422
 
 
 def test_clase_final_fuera_del_dominio_responde_422(crear_app):
@@ -229,7 +229,37 @@ def test_clase_final_fuera_del_dominio_responde_422(crear_app):
     match_id, clip = _combate_completo(app)
     revision_id = clip["revision_id"]
 
-    assert app.veredicto(revision_id, decision="cambiar", clase_final="AttackA").status_code == 422
+    # Los nombres del esquema no son vocabulario de la API
+    for clase in ("AtaqueA", "ContraataqueB", "Inventada"):
+        assert app.veredicto(revision_id, decision="cambiar", clase_final=clase).status_code == 422
+    assert app.sql.escalar(SQL_VEREDICTOS_DEL_COMBATE, i=match_id) == 0
+
+
+def test_la_api_usa_los_nombres_del_modelo_y_la_base_los_del_esquema(crear_app):
+    """Vocabulario único: respuestas y `clase_final` en AttackA/ContrattackA/...;
+    la traducción a AtaqueA/ContraataqueA/... ocurre solo al persistir."""
+    app = crear_app()
+    match_id = app.configurar()
+    clip = app.subir_clip(match_id).json()
+    assert clip["action"] == "AttackA"
+
+    resp = app.veredicto(clip["revision_id"], decision="cambiar", clase_final="ContrattackB")
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["clase_final"] == "ContrattackB"
+    revision = clip["revision_id"]
+    fila_veredicto = app.sql.filas(
+        "SELECT clase_final FROM sabre.veredicto WHERE revision_id = :r", r=revision
+    )[0]
+    assert fila_veredicto["clase_final"] == "ContraataqueB"
+    fila_clasif = app.sql.filas(
+        "SELECT c.clase, c.probabilidades FROM sabre.clasificacion c "
+        "JOIN sabre.revision_var r ON r.clasificacion_id = c.id WHERE r.id = :r", r=revision,
+    )[0]
+    assert fila_clasif["clase"] == "AtaqueA"
+    assert set(fila_clasif["probabilidades"]) == {
+        "AtaqueA", "AtaqueB", "ContraataqueA", "ContraataqueB", "RiposteA", "RiposteB",
+    }
 
 
 def test_veredicto_es_atomico_si_falla_la_auditoria(crear_app, monkeypatch):
@@ -284,10 +314,10 @@ def test_pose_incompleta_registra_clasificacion_no_disponible(crear_app):
     for decision in ("mantener", "cambiar"):
         assert app.veredicto(revision_id, decision=decision, clase_final=None).status_code == 422
     # ...y anular no la admite.
-    assert app.veredicto(revision_id, decision="anular", clase_final="AtaqueA").status_code == 422
+    assert app.veredicto(revision_id, decision="anular", clase_final="AttackA").status_code == 422
     assert app.sql.escalar(SQL_REVISIONES_ABIERTAS_DEL_COMBATE, i=match_id) == 1
     # El árbitro puede cerrar la revisión declarando su decisión final
-    assert app.veredicto(revision_id, decision="cambiar", clase_final="AtaqueB").status_code == 200
+    assert app.veredicto(revision_id, decision="cambiar", clase_final="AttackB").status_code == 200
     _sin_filas_alteradas(app)
 
 
@@ -352,7 +382,7 @@ def test_clasificacion_es_unica_por_tocado_y_modelo(crear_app):
     ))
 
     assert app.sql.escalar("SELECT count(*) FROM sabre.clasificacion WHERE tocado_id = :t", t=tocado_id) == 1
-    assert nueva.clase == "AtaqueA"  # la original, sin sobrescribir
+    assert nueva.clase == "AttackA"  # la original, sin sobrescribir
 
 
 # ---------------------------------------------------------------------------
@@ -430,11 +460,11 @@ def test_dos_clips_del_mismo_combate_producen_dos_revisiones_independientes(crea
     assert (clasificaciones[rev_2]["clase"], clasificaciones[rev_2]["t_tocado_ms"]) == ("RiposteB", 400)
 
     # Veredictos independientes: cerrar una no toca la otra
-    r2 = app.veredicto(rev_2, decision="cambiar", clase_final="AtaqueB")
+    r2 = app.veredicto(rev_2, decision="cambiar", clase_final="AttackB")
     assert r2.status_code == 200, r2.text
     assert r2.json()["revision_id"] == rev_2
     assert app.sql.escalar(SQL_REVISIONES_ABIERTAS_DEL_COMBATE, i=match_id) == 1
-    r1 = app.veredicto(rev_1, decision="mantener", clase_final="AtaqueA")
+    r1 = app.veredicto(rev_1, decision="mantener", clase_final="AttackA")
     assert r1.status_code == 200, r1.text
     assert r1.json()["revision_id"] == rev_1
     assert app.sql.escalar(SQL_REVISIONES_ABIERTAS_DEL_COMBATE, i=match_id) == 0
@@ -505,11 +535,11 @@ def test_vista_de_muestras_usa_clase_final_como_etiqueta_y_excluye_anular(crear_
     """v_muestras_confirmadas: la etiqueta es siempre `clase_final`, sin
     depender de si el árbitro mantuvo o cambió la acción sugerida."""
     app = crear_app()
-    _, mantenida = _combate_completo(app)      # sugerida AtaqueA
-    _, cambiada = _combate_completo(app)       # sugerida AtaqueA
+    _, mantenida = _combate_completo(app)      # sugerida AttackA
+    _, cambiada = _combate_completo(app)       # sugerida AttackA
     _, anulada = _combate_completo(app)
     assert app.veredicto(mantenida["revision_id"], decision="mantener", clase_final="RiposteB").status_code == 200
-    assert app.veredicto(cambiada["revision_id"], decision="cambiar", clase_final="ContraataqueB").status_code == 200
+    assert app.veredicto(cambiada["revision_id"], decision="cambiar", clase_final="ContrattackB").status_code == 200
     assert app.veredicto(anulada["revision_id"], decision="anular").status_code == 200
 
     ids = [uuid.UUID(c["revision_id"]) for c in (mantenida, cambiada, anulada)]

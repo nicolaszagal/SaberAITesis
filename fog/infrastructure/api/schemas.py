@@ -12,8 +12,11 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 WeaponSideLiteral = Literal["right", "left"]
+# Taxonomía única de la API: los nombres del modelo (D-06). Coincide con
+# fog.domain.models.CLASES_MODELO; la traducción al esquema vive en los
+# adaptadores de persistencia.
 ClaseFinalLiteral = Literal[
-    "AtaqueA", "AtaqueB", "ContraataqueA", "ContraataqueB", "RiposteA", "RiposteB"
+    "AttackA", "AttackB", "ContrattackA", "ContrattackB", "RiposteA", "RiposteB"
 ]
 
 
