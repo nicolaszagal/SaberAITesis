@@ -90,14 +90,14 @@ CLIP_MAX_MB = float(os.environ.get("CLIP_MAX_MB", "200"))
 FAVERO_LUZ_TIMEOUT_S = float(os.environ.get("FAVERO_LUZ_TIMEOUT_S", "2.0"))
 
 # Tiempo que POST /matches/{match_id}/clip espera el veredicto de Cloud
-# (Redis "cloud:verdicts:{match_id}") antes de responder con timed_out=True.
+# (Redis "cloud:verdicts:{revision_id}") antes de responder con timed_out=True.
 # Pipeline completo (pose+tracking+features+Redis+LSTM), no solo la espera
 # corta de la luz Favero — default más generoso que FAVERO_LUZ_TIMEOUT_S.
 CLIP_UPLOAD_VERDICT_TIMEOUT_S = float(os.environ.get("CLIP_UPLOAD_VERDICT_TIMEOUT_S", "30.0"))
 
 # Tiempo que SessionRegistry mantiene una sesión (MatchSession) después de
 # entregar el veredicto o el "no disponible", antes de liberarla (DEF-16):
-# ventana para aceptar conexiones tardías de GET /ws/veredicto/{match_id}
+# ventana para aceptar conexiones tardías de GET /ws/veredicto/{revision_id}
 # que todavía no llegaron cuando el resultado quedó listo.
 SESSION_TTL_S = float(os.environ.get("SESSION_TTL_S", "120.0"))
 
@@ -107,8 +107,8 @@ SESSION_TTL_S = float(os.environ.get("SESSION_TTL_S", "120.0"))
 # más arriba.
 SESSION_SWEEP_INTERVAL_S = float(os.environ.get("SESSION_SWEEP_INTERVAL_S", "30.0"))
 
-# TTL (segundos) del stream Redis "cloud:verdicts:{match_id}": Cloud lo fija
-# con EXPIRE en cada XADD (DEF-16) para que un match_id sin consumidor no
+# TTL (segundos) del stream Redis "cloud:verdicts:{revision_id}": Cloud lo fija
+# con EXPIRE en cada XADD (DEF-16) para que una revisión sin consumidor no
 # quede acumulando memoria en Redis indefinidamente.
 VERDICT_STREAM_TTL_S = int(os.environ.get("VERDICT_STREAM_TTL_S", "3600"))
 

@@ -107,9 +107,9 @@ es porque Redis no está corriendo — confirmar el prerequisito de la sección 
 
 Swagger UI de Fog: `http://localhost:8001/docs` (generado automáticamente por
 FastAPI a partir de `fog/infrastructure/api/routes.py` y
-`fog/infrastructure/api/schemas.py`). El WebSocket (`/ws/veredicto/{match_id}`)
+`fog/infrastructure/api/schemas.py`). El WebSocket (`/ws/veredicto/{revision_id}`)
 no aparece ahí porque OpenAPI no documenta WebSockets — el contrato de sus
-mensajes está en `CONTRATO_API.md` sección 6.
+mensajes está en `CONTRATO_API.md` sección 7.
 
 Cloud no expone HTTP; es un loop de consumo de Redis (`python -m cloud.main`)
 sin servidor.

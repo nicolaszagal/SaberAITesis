@@ -7,7 +7,7 @@ consumidores "cloud_workers"), corre el modelo desplegado (LSTMClassifier,
 run_config.json, también como input real del modelo — ver MODEL_RUN_DIR en
 ../CONTRATO_API.md), aplica la política de arbitraje (hoy sin regla propia,
 ver NullArbitrationPolicy) y publica el veredicto en
-"cloud:verdicts:{match_id}" para que Fog lo reenvíe al front por WebSocket.
+"cloud:verdicts:{revision_id}" para que Fog lo reenvíe al front por WebSocket.
 
 Arquitectura DDD/hexagonal: domain/, ports/, application/, infrastructure/
 (ver PLAN_ARQUITECTURA_DDD.md). Este archivo solo ensambla el Container
