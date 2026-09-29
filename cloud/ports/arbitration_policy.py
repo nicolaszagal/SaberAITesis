@@ -2,11 +2,13 @@
 el veredicto final, aplicando reglas que no son parte del modelo de ML.
 
 Decisión de Nicolas (ver PLAN_ARQUITECTURA_DDD.md sección 1): "definir el
-puerto ahora, implementar después". Implementación inicial:
-FaveroHardMaskPolicy, que solo aplica la máscara hard de luz Favero
-(equivalente a `apply_favero_mask` de dataset/lstm_4class/08_evaluate.py).
-Las reglas de prioridad FIE (t.101-t.106) son una implementación futura
-de este mismo puerto — el "Scoring Híbrido" del diagrama de arquitectura.
+puerto ahora, implementar después". Implementación activa:
+NullArbitrationPolicy — el filtro de luz Favero para el pipeline de 6
+clases ya vive en LSTM6ClassAdapter (sobre los logits, antes del softmax,
+equivalente a `apply_favero_logit_mask` de dataset/lstm_6class/evaluate.py),
+así que este puerto no tiene todavía una regla propia. Las reglas de
+prioridad FIE (t.101-t.106) son una implementación futura de este mismo
+puerto — el "Scoring Híbrido" del diagrama de arquitectura.
 """
 
 from abc import ABC, abstractmethod

@@ -2,7 +2,8 @@
 
 Features de Fog: 192 por frame, idénticas a dataset/05_extract_features.py;
 recorte y ablación por versión de modelo (FEATURE_PREPROCESSING_PROFILE).
-Los valores de Cloud (LSTM_*) siguen siendo los de 4 clases hasta cerrar DEF-03.
+Cloud despliega el pipeline de 6 clases (DEF-03 resuelto): hiperparámetros
+del LSTM en `run_config.json` dentro de MODEL_RUN_DIR, no en este módulo.
 """
 
 import os
@@ -45,15 +46,19 @@ YOLO_POSE_MODEL_PATH = os.environ.get(
     os.path.join(os.path.dirname(__file__), "..", "..", "dataset", "yolov8x-pose.pt"),
 )
 
-# Checkpoint del modelo LSTM desplegado (lstm_4class: 4 clases, 192 features,
-# luz Favero, attention). Seleccionado por val loss — ver PLAN_ARQUITECTURA_DDD.md.
+# Directorio de la corrida del modelo LSTM desplegado (DEF-03): apunta a
+# dataset/lstm_6class/checkpoints/<run_id>/, que contiene run_config.json
+# (hiperparámetros: hidden_size, num_layers, dropout, luz_size, use_attention,
+# n_classes, classes) y el checkpoint (ver
+# cloud/infrastructure/classifier/lstm6class_adapter.py, CHECKPOINT_FILENAME).
+# El run_id vigente puede cambiar tras un diagnóstico en curso — no se fija
+# nada del run en el código, todo por esta variable (contexto_sabre.md
+# sección 8).
 #
-# Sin default (DEF-15): antes apuntaba a dataset/lstm_4class/checkpoints/
-# best_model.pt, que ya no existe en este repo. No se reemplaza por otra
-# ruta a ciegas — Cloud debe fijar esta variable explícitamente con la
-# ubicación vigente del checkpoint (ver require_paths() más abajo y
+# Sin default (DEF-15): Cloud debe fijar esta variable explícitamente con
+# la ubicación vigente del checkpoint (ver require_paths() más abajo y
 # GUIA_EJECUCION.md).
-LSTM_CHECKPOINT_PATH = os.environ.get("LSTM_CHECKPOINT_PATH")
+MODEL_RUN_DIR = os.environ.get("MODEL_RUN_DIR")
 
 # Estadísticas de estandarización (mean/std, shape (192,), calculadas solo
 # sobre train) — ver dataset/lstm_4class/compute_stats.py. FeatureExtractorPort
@@ -63,12 +68,6 @@ LSTM_CHECKPOINT_PATH = os.environ.get("LSTM_CHECKPOINT_PATH")
 # que ya no existe en este repo. Fog debe fijar esta variable explícitamente
 # con la ubicación vigente (ver require_paths() más abajo y GUIA_EJECUCION.md).
 FEATURE_STATS_PATH = os.environ.get("FEATURE_STATS_PATH")
-
-LSTM_HIDDEN_SIZE = 64
-LSTM_NUM_LAYERS = 1
-LSTM_NUM_CLASSES = 4
-LUZ_SIZE = 2
-USE_ATTENTION = True
 
 # Preprocesamiento de features por versión de modelo (recorte ±kσ y ablación
 # de columnas): nombre del perfil definido en
@@ -116,19 +115,12 @@ VERDICT_STREAM_TTL_S = int(os.environ.get("VERDICT_STREAM_TTL_S", "3600"))
 # Mapeo fijo v1, confirmado por Nicolas: A=ROJ (izquierda en cámara), B=VER (derecha).
 FENCER_COLOR = {"A": "ROJ", "B": "VER"}
 
-# Nombre de la versión del modelo activo, publicado en cada veredicto para
-# auditoría (RF-22, DEF-09) — ver CONTRATO_API.md sección 6. No hay registro
-# de versiones todavía (CU-13, modelo_version en sabre_ai_schema.sql sigue
-# pendiente de implementar): se fija explícitamente por entorno, sin default,
-# para no inventar un nombre que no corresponda al checkpoint desplegado.
-MODEL_VERSION_NAME = os.environ.get("MODEL_VERSION_NAME")
-
 
 def require_paths(*names: str) -> None:
     """Falla con un mensaje explícito si alguna ruta requerida no está seteada.
 
     dataset/lstm_4class/ ya no existe en este repo (DEF-15), así que
-    LSTM_CHECKPOINT_PATH y FEATURE_STATS_PATH quedaron sin valor por
+    MODEL_RUN_DIR y FEATURE_STATS_PATH quedaron sin valor por
     defecto: hay que fijarlas por variable de entorno con la ubicación
     vigente del modelo. Fog y Cloud llaman a esta función al arrancar,
     antes de construir su Container, para fallar con un mensaje claro en
@@ -136,7 +128,7 @@ def require_paths(*names: str) -> None:
 
     Args:
         names: nombres de variables de este módulo a validar (por ejemplo
-            "LSTM_CHECKPOINT_PATH").
+            "MODEL_RUN_DIR").
 
     Raises:
         RuntimeError: si alguna de las variables nombradas es None,

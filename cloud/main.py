@@ -3,9 +3,10 @@ Cloud — consumidor Redis Streams + inferencia LSTM.
 
 Lee features extraídas por Fog desde el stream "fog:features" (grupo de
 consumidores "cloud_workers"), corre el modelo desplegado (LSTMClassifier,
-192 features, 4 clases, luz Favero como input, dataset/lstm_4class/
-checkpoints/best_model.pt — ver ../CONTRATO_API.md), aplica la política de
-arbitraje (máscara hard de luz Favero) y publica el veredicto en
+192 features, 6 clases, luz Favero como filtro sobre logits y, según
+run_config.json, también como input real del modelo — ver MODEL_RUN_DIR en
+../CONTRATO_API.md), aplica la política de arbitraje (hoy sin regla propia,
+ver NullArbitrationPolicy) y publica el veredicto en
 "cloud:verdicts:{match_id}" para que Fog lo reenvíe al front por WebSocket.
 
 Arquitectura DDD/hexagonal: domain/, ports/, application/, infrastructure/
@@ -27,19 +28,13 @@ log = logging.getLogger("cloud")
 
 
 async def main() -> None:
-    config.require_paths("LSTM_CHECKPOINT_PATH")
-    if not config.MODEL_VERSION_NAME:
-        raise RuntimeError(
-            "Falta la variable de entorno MODEL_VERSION_NAME: nombre de la "
-            "versión del modelo activo, requerido para auditoría en cada "
-            "veredicto publicado (ver CONTRATO_API.md sección 6, DEF-09)."
-        )
+    config.require_paths("MODEL_RUN_DIR")
 
     container = Container()
     container.config.redis_url.from_value(config.REDIS_URL)
-    container.config.checkpoint_path.from_value(config.LSTM_CHECKPOINT_PATH)
+    container.config.model_run_dir.from_value(config.MODEL_RUN_DIR)
 
-    log.info("Cargando %s ...", config.LSTM_CHECKPOINT_PATH)
+    log.info("Cargando %s ...", config.MODEL_RUN_DIR)
     use_case = container.classify_and_publish()
     log.info("Cloud escuchando '%s' como '%s'...", config.STREAM_FEATURES, config.CONSUMER_CLOUD)
     await use_case.run_forever()

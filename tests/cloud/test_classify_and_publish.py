@@ -5,11 +5,12 @@ from cloud.domain.models import (
     ActionClass, FeatureSequence, InvalidFeatureMessage, LuzSignal,
     MotivoNoDisponible, RawVerdict,
 )
-from shared import config
 from tests.cloud.fakes import (
     FakeActionClassifier, FakeFeatureConsumer, FakeVerdictPublisher,
     IdentityArbitrationPolicy,
 )
+
+_MODELO = "lstm_6class/20260928_141021/best_model.pt"
 
 
 async def test_run_forever_classifies_publishes_and_acks_each_entry():
@@ -21,7 +22,8 @@ async def test_run_forever_classifies_publishes_and_acks_each_entry():
     consumer = FakeFeatureConsumer(items=[("0-1", seq)])
     classifier = FakeActionClassifier(
         result=RawVerdict(action_class=ActionClass.ATTACK_A, confidence=0.8, probs={
-            "AttackA": 0.8, "AttackB": 0.1, "ResponseA": 0.05, "ResponseB": 0.05,
+            "AttackA": 0.8, "AttackB": 0.1, "ContrattackA": 0.05, "ContrattackB": 0.03,
+            "RiposteA": 0.01, "RiposteB": 0.01,
         })
     )
     publisher = FakeVerdictPublisher()
@@ -29,6 +31,7 @@ async def test_run_forever_classifies_publishes_and_acks_each_entry():
     use_case = ClassifyAndPublish(
         consumer=consumer, classifier=classifier,
         arbitration=IdentityArbitrationPolicy(), publisher=publisher,
+        modelo_version_name=_MODELO,
     )
 
     await use_case.run_forever()
@@ -42,11 +45,12 @@ async def test_run_forever_classifies_publishes_and_acks_each_entry():
     assert consumer.acked == ["0-1"]
     # DEF-09: datos de auditoría agregados al veredicto
     assert verdict.probs == {
-        "AttackA": 0.8, "AttackB": 0.1, "ResponseA": 0.05, "ResponseB": 0.05,
+        "AttackA": 0.8, "AttackB": 0.1, "ContrattackA": 0.05, "ContrattackB": 0.03,
+        "RiposteA": 0.01, "RiposteB": 0.01,
     }
     assert isinstance(verdict.latencia_inferencia_ms, int)
     assert verdict.latencia_inferencia_ms >= 0
-    assert verdict.modelo == config.MODEL_VERSION_NAME
+    assert verdict.modelo == _MODELO
 
 
 async def test_run_forever_resolves_fencer_color_for_side_b():
@@ -56,13 +60,14 @@ async def test_run_forever_resolves_fencer_color_for_side_b():
     )
     consumer = FakeFeatureConsumer(items=[("0-1", seq)])
     classifier = FakeActionClassifier(
-        result=RawVerdict(action_class=ActionClass.RESPONSE_B, confidence=0.6, probs={})
+        result=RawVerdict(action_class=ActionClass.RIPOSTE_B, confidence=0.6, probs={})
     )
     publisher = FakeVerdictPublisher()
 
     use_case = ClassifyAndPublish(
         consumer=consumer, classifier=classifier,
         arbitration=IdentityArbitrationPolicy(), publisher=publisher,
+        modelo_version_name=_MODELO,
     )
     await use_case.run_forever()
 
@@ -84,6 +89,7 @@ async def test_run_forever_publishes_unavailable_verdict_for_invalid_message():
     use_case = ClassifyAndPublish(
         consumer=consumer, classifier=classifier,
         arbitration=IdentityArbitrationPolicy(), publisher=publisher,
+        modelo_version_name=_MODELO,
     )
     await use_case.run_forever()
 
@@ -107,6 +113,7 @@ async def test_run_forever_skips_verdict_when_invalid_message_has_no_match_id():
     use_case = ClassifyAndPublish(
         consumer=consumer, classifier=FakeActionClassifier(),
         arbitration=IdentityArbitrationPolicy(), publisher=publisher,
+        modelo_version_name=_MODELO,
     )
     await use_case.run_forever()
 
@@ -139,13 +146,14 @@ async def test_run_forever_continues_after_exception_processing_one_entry():
     consumer = FakeFeatureConsumer(items=[("0-1", seq_bad), ("0-2", seq_ok)])
     classifier = FlakyClassifier(ok_result=RawVerdict(
         action_class=ActionClass.ATTACK_A, confidence=0.9,
-        probs={"AttackA": 0.9, "AttackB": 0.05, "ResponseA": 0.03, "ResponseB": 0.02},
+        probs={"AttackA": 0.9, "AttackB": 0.05, "ContrattackA": 0.03, "ContrattackB": 0.01, "RiposteA": 0.005, "RiposteB": 0.005},
     ))
     publisher = FakeVerdictPublisher()
 
     use_case = ClassifyAndPublish(
         consumer=consumer, classifier=classifier,
         arbitration=IdentityArbitrationPolicy(), publisher=publisher,
+        modelo_version_name=_MODELO,
     )
     await use_case.run_forever()
 

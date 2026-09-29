@@ -56,9 +56,14 @@ hacerlo tras recibir el veredicto.
 
 `POST /webrtc/{match_id}/luz`
 
-El modelo desplegado (`lstm_4class`) usa la luz Favero como entrada real del modelo
-(concatenada después del pooling, antes de la capa final), no solo como regla de
-arbitraje. El front debe reportarla en cuanto el clip termina de reproducirse,
+El modelo desplegado (`lstm_6class`) usa la luz Favero como filtro sobre los
+logits antes del softmax (equivalente a `apply_favero_logit_mask` de
+dataset/lstm_6class/evaluate.py) y, si `luz_size > 0` en el `run_config.json`
+del checkpoint activo, también como entrada real del modelo (concatenada
+después del pooling, antes de la capa final) — ver
+`cloud/infrastructure/classifier/lstm6class_adapter.py`. El checkpoint
+desplegado actualmente usa `luz_size=0` (ver sección 8), así que solo se usa
+como filtro. El front debe reportar la luz en cuanto el clip termina de reproducirse,
 **antes** de que Fog dispare la clasificación; si no llega dentro de
 `FAVERO_LUZ_TIMEOUT_S` (2s por defecto, configurable por entorno), Fog continúa sin
 luz (`has_luz_A = has_luz_B = false`).
@@ -186,12 +191,12 @@ Una entrada por veredicto. `disponible` distingue dos formas (igual que
 |---|---|---|
 | `match_id` | str | |
 | `disponible` | str | `"true"` |
-| `action_class` | str | una de `AttackA, AttackB, ResponseA, ResponseB` |
-| `confidence` | str | probabilidad softmax de la clase ganadora (post arbitraje de luz), `"0.0"`-`"1.0"` |
+| `action_class` | str | una de `AttackA, AttackB, ContrattackA, ContrattackB, RiposteA, RiposteB` |
+| `confidence` | str | probabilidad softmax de la clase ganadora (post filtro de luz), `"0.0"`-`"1.0"` |
 | `fencer` | str | `"ROJ"` si la clase termina en `A`, `"VER"` si termina en `B` (mapeo fijo v1) |
 | `probs` | str | JSON `{"AttackA": 0.61, ...}` — softmax completo, post filtro Favero (auditoría, RF-22) |
 | `latencia_inferencia_ms` | str | duración de `ActionClassifierPort.classify` en ms (auditoría, RNF-04) |
-| `modelo` | str | `shared.config.MODEL_VERSION_NAME` — nombre de la versión del modelo activo |
+| `modelo` | str | `"lstm_6class/<run_id>/<archivo>"`, derivado de `MODEL_RUN_DIR` (ver `LSTM6ClassAdapter.model_version_name`) |
 | `ts` | str | timestamp ISO |
 
 **`disponible=false`** (DEF-09, mensaje de `fog:features` inválido — ver sección 5):
@@ -203,10 +208,13 @@ Una entrada por veredicto. `disponible` distingue dos formas (igual que
 | `motivo_no_disp` | str | uno de `clasificacion.motivo_no_disp` (`sabre_ai_schema.sql`); hoy solo `"mensaje_invalido"` |
 | `ts` | str | timestamp ISO |
 
-`action_class` ya viene resuelto por `FaveroHardMaskPolicy`: si exactamente una luz se
-encendió, el lado imposible queda con probabilidad 0 y se re-normaliza/re-argmax antes
-de publicar. Si ambas luces o ninguna se encendieron (caso ambiguo), el veredicto crudo
-del LSTM se publica sin cambios.
+`action_class` ya viene resuelto por el filtro Favero de `LSTM6ClassAdapter`
+(sobre los logits, antes del softmax): si exactamente una luz se encendió, el
+lado imposible queda en probabilidad exactamente 0. Si ambas luces o ninguna
+se encendieron (caso ambiguo, D-06), el veredicto crudo del LSTM se publica
+sin cambios. `ArbitrationPolicyPort` (implementación activa:
+`NullArbitrationPolicy`) no modifica el veredicto todavía — queda reservado
+para las reglas de prioridad FIE (t.101-t.106), ver sección 8.
 
 **Pendiente (fuera de esta entrega):** `RedisVerdictSubscriber` en Fog
 (`fog/infrastructure/messaging/redis_verdict_subscriber.py`) todavía asume que toda
@@ -260,45 +268,55 @@ el contrato — hoy solo llega a Fog vía `cloud:verdicts:{match_id}`
 (sección 6); todavía no se reenvía por este WebSocket (ver pendiente en
 sección 6).
 
-Carlos debe traducir `action` (taxonomía interna en inglés, 4 clases) a las etiquetas en
-español que ya usa el front (`mock.ts`: "ATAQUE AL PECHO", "PARADA-RESPUESTA",
-"CONTRAATAQUE EN TIEMPO", etc.). Esa traducción **no** vive en el backend porque depende
-de decisiones de UI/copy que son de Carlos. Tabla sugerida:
+Carlos debe traducir `action` (taxonomía interna en inglés, 6 clases) a las etiquetas en
+español que ya usa el front (`actionMapper.ts`, `translateAction`). Esa traducción
+**no** vive en el backend porque depende de decisiones de UI/copy que son de Carlos.
+Tabla vigente (implementada en `SaberAISoftware/src/application/mappers/actionMapper.ts`):
 
-| `action` (backend) | sugerido en español |
+| `action` (backend) | en español |
 |---|---|
 | `AttackA` / `AttackB` | "ATAQUE" |
-| `ResponseA` / `ResponseB` | "RESPUESTA" |
+| `ContrattackA` / `ContrattackB` | "CONTRAATAQUE" |
+| `RiposteA` / `RiposteB` | "RIPOSTE" |
 
-`ResponseA`/`ResponseB` unifica lo que en el dataset original eran dos carpetas
-distintas (`ContrattackA/B` y `RiposteA/B`) bajo una sola clase del modelo
-(`dataset/lstm_4class/lstm_dataset.py`, `FOLDER_TO_CLASS`). El backend no distingue
-contraataque de riposte; si el front necesita esa distinción para el copy, requiere
-reentrenar con esa separación, no es un cambio de capa de presentación.
+El tirador se muestra por separado, derivado del sufijo de `action` (`A`/`B`) y de
+`fencer` (`ROJ`/`VER`): `formatFencerLabel` arma la etiqueta `"A · ROJ"` / `"B · VER"`.
+Esto reemplaza el nombre de atleta simulado que mostraba antes `ActionPanel` (regla 8,
+sin datos simulados): no hay todavía una fuente real del nombre del tirador, así que se
+muestra el dato real disponible (lado + color) en vez de inventar uno.
 
 `confidence` ya viene en escala 0–1; el front la muestra como % (`mock.ts` usa enteros
 0–100, ej. `94`).
 
 ## 8. Notas y desviaciones respecto a los diagramas de arquitectura
 
-- **Modelo desplegado**: `dataset/lstm_4class/checkpoints/best_model.pt` — 4 clases
-  (`AttackA, AttackB, ResponseA, ResponseB`), 192 features (96 por tirador, incluye
-  bloque biomecánico Fase B), luz Favero como entrada real del modelo (no solo regla de
-  arbitraje) y pooling por atención aditiva. Reemplaza al pipeline anterior de 6 clases/
-  182 features, que queda completamente descartado (no se despliega ni se mantiene).
+- **Modelo desplegado**: `dataset/lstm_6class/checkpoints/<run_id>/best_model.pt`
+  (`run_id` fijado por `MODEL_RUN_DIR`, sin valor por defecto — DEF-15) — 6 clases
+  (`AttackA, AttackB, ContrattackA, ContrattackB, RiposteA, RiposteB`, D-06), 192
+  features (96 por tirador, incluye bloque biomecánico Fase B) y pooling por atención
+  aditiva. Los hiperparámetros (incluido `luz_size`, que decide si la luz Favero
+  también es input real del modelo) se leen de `run_config.json` dentro de
+  `MODEL_RUN_DIR`, nunca fijos en código — el checkpoint activo puede cambiar tras un
+  diagnóstico en curso (docs_claude/contexto_sabre.md sección 8). Reemplaza al pipeline
+  de 4 clases (DEF-03 resuelto), que queda descartado.
+- **RNF-03 no se cumple con el checkpoint vigente**: F1 macro ≥ 0.65 requerido; media
+  documentada de la serie baseline 0.4856 ± 0.0322 (N=10, ver
+  docs_claude/contexto_sabre.md sección 8). Decisión pendiente con el asesor.
 - **Tracker**: se usa ByteTrack vía `model.track(..., persist=True)` de Ultralytics
-  (igual que `dataset/lstm_4class/05_extract_features.py`), no DeepSORT como indica el
+  (igual que `dataset/05_extract_features.py`), no DeepSORT como indica el
   diagrama de capas. Motivo: consistencia con el pipeline que generó los datos de
   entrenamiento — cambiar de tracker puede cambiar el comportamiento de asignación de
   IDs A/B.
 - **Detector de pose**: YOLOv8x-pose (no YOLOv8n-pose como indica el diagrama), decisión
   confirmada por Nicolas para mantener fidelidad con el entrenamiento. Sin requisito de
   tiempo real en v1, el costo de latencia es aceptable.
-- **Scoring Híbrido FIE**: no implementado en v1. El veredicto que llega al front es el
-  resultado de `LSTM4ClassAdapter` ya arbitrado por `FaveroHardMaskPolicy` (sección 6),
-  no la salida cruda del LSTM. Las reglas FIE completas (t.101-t.106, prioridad de
-  ataque/cobertura/etc.) quedan para una versión posterior — `ArbitrationPolicyPort`
-  está diseñado para admitir una implementación más rica sin tocar el resto del sistema.
+- **Scoring Híbrido FIE**: no implementado en v1. El veredicto que llega al front ya
+  tiene el filtro Favero aplicado dentro de `LSTM6ClassAdapter` (sección 6), no la
+  salida cruda del LSTM sin filtrar. `ArbitrationPolicyPort` (implementación activa:
+  `NullArbitrationPolicy`) no aplica ninguna regla propia todavía. Las reglas FIE
+  completas (t.101-t.106, prioridad de ataque/cobertura/etc.) quedan para una versión
+  posterior — el puerto está diseñado para admitir esa implementación más rica sin
+  tocar el resto del sistema.
 - **Luz Favero**: sin integración física con el aparato real. El front debe simular/
   capturar la señal y reportarla vía `POST /webrtc/{match_id}/luz` (sección 3).
 - **Mapeo A/B ↔ ROJ/VER**: fijo (`A=ROJ`, `B=VER`) para v1, confirmado por Nicolas. No

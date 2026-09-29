@@ -125,7 +125,13 @@ class VerdictMessage(BaseModel):
     type: str = Field("veredicto", description="Siempre 'veredicto'.")
     match_id: str
     fencer: str = Field(..., description="'ROJ' o 'VER', ver shared.config.FENCER_COLOR.")
-    action: str = Field(..., description="Clase de acción: AttackA, AttackB, ResponseA o ResponseB.")
+    action: str = Field(
+        ...,
+        description=(
+            "Clase de acción: AttackA, AttackB, ContrattackA, ContrattackB, "
+            "RiposteA o RiposteB."
+        ),
+    )
     confidence: float = Field(..., description="Confianza softmax de la clase ganadora, 0-1.")
 
 

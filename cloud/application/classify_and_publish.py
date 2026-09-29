@@ -35,11 +35,13 @@ class ClassifyAndPublish:
         classifier: ActionClassifierPort,
         arbitration: ArbitrationPolicyPort,
         publisher: VerdictPublisherPort,
+        modelo_version_name: str,
     ):
         self._consumer = consumer
         self._classifier = classifier
         self._arbitration = arbitration
         self._publisher = publisher
+        self._modelo_version_name = modelo_version_name
 
     async def run_forever(self) -> None:
         async for entry_id, item in self._consumer.consume():
@@ -84,6 +86,6 @@ class ClassifyAndPublish:
             fencer=fencer,
             probs=resolved.probs,
             latencia_inferencia_ms=latencia_inferencia_ms,
-            modelo=config.MODEL_VERSION_NAME,
+            modelo=self._modelo_version_name,
         ))
         await self._consumer.ack(entry_id)

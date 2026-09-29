@@ -11,8 +11,10 @@ import torch
 from dependency_injector import containers, providers
 
 from cloud.application.classify_and_publish import ClassifyAndPublish
-from cloud.infrastructure.arbitration.favero_hard_mask_policy import FaveroHardMaskPolicy
-from cloud.infrastructure.classifier.lstm4class_adapter import LSTM4ClassAdapter
+from cloud.infrastructure.arbitration.null_arbitration_policy import (
+    NullArbitrationPolicy,
+)
+from cloud.infrastructure.classifier.lstm6class_adapter import LSTM6ClassAdapter
 from cloud.infrastructure.messaging.redis_feature_consumer import RedisFeatureConsumer
 from cloud.infrastructure.messaging.redis_verdict_publisher import RedisVerdictPublisher
 
@@ -43,12 +45,16 @@ class Container(containers.DeclarativeContainer):
     redis_client = providers.Singleton(_build_redis_client, redis_url=config.redis_url)
 
     classifier = providers.Singleton(
-        LSTM4ClassAdapter,
-        checkpoint_path=config.checkpoint_path,
+        LSTM6ClassAdapter,
+        run_dir=config.model_run_dir,
         device=device,
     )
 
-    arbitration_policy = providers.Singleton(FaveroHardMaskPolicy)
+    arbitration_policy = providers.Singleton(NullArbitrationPolicy)
+
+    model_version_name = providers.Singleton(
+        LSTM6ClassAdapter.model_version_name, run_dir=config.model_run_dir,
+    )
 
     feature_consumer = providers.Singleton(RedisFeatureConsumer, client=redis_client)
 
@@ -60,4 +66,5 @@ class Container(containers.DeclarativeContainer):
         classifier=classifier,
         arbitration=arbitration_policy,
         publisher=verdict_publisher,
+        modelo_version_name=model_version_name,
     )
