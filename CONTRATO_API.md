@@ -147,6 +147,61 @@ la versión de modelo ni keypoints. `decision`, `clase_final`, `registrado_en`,
 "kappa_piloto": null }`; las métricas son las registradas en `modelo_version` (null si no
 se registraron). **404** si no hay versión activa.
 
+`GET /validaciones/{evento_id}/resumen` (L02, T-017, RNF-03, RNF-06) — resumen de la sesión de
+validación de un evento, con el mismo contenido que el `resumen.json` de
+`scripts/exportar_evidencia.py`. Se calcula desde PostgreSQL sobre las revisiones **con
+veredicto** del evento; el JSONL de L01 no es la fuente (solo se concilia). Sin autenticación
+(RF-26 es COULD, no hay regla de autorización documentada). **404** si el evento no existe,
+**422** si `evento_id` no es uuid. Solo lectura.
+```json
+{ "evento_id": "uuid", "generado_en": "2026-09-29T20:00:00+00:00",
+  "conciliacion": { "n_base": 10, "n_jsonl": 9, "jsonl_presente": true, "lineas_ilegibles": 0,
+                    "faltantes_en_jsonl": ["<revision_id>"], "sobrantes_en_jsonl": [] },
+  "integridad": { "fn_verificar_auditoria": "ok", "integra": true,
+                  "registros_alterados": 0, "seq_alterados": [] },
+  "por_validacion": {
+    "V1": { "n_revisiones": 8, "disponibles": 7,
+            "no_disponibles": { "n": 1, "por_motivo": { "pose_incompleta": 1, "confianza_baja": 0,
+              "clase_fuera_mvp": 0, "timeout": 0, "sin_senal_favero": 0, "mensaje_invalido": 0 } },
+            "latencia": { "n": 8, "mediana_ms": 48, "p95_ms": 55, "max_ms": 55,
+                          "pct_le_60s": 100.0, "umbral_ms": 60000, "cumple": true },
+            "kappa": { "n": 6, "calculable": true, "kappa": 0.3333, "banda": "aceptable",
+                       "umbral": 0.61, "cumple": false, "motivo": null },
+            "concordancia": { "n": 6, "pct": 66.67 },
+            "matriz_confusion": { "clases": ["AttackA", "AttackB", "ContrattackA", "ContrattackB",
+                                             "RiposteA", "RiposteB"],
+                                  "filas": "sistema", "columnas": "arbitro",
+                                  "matriz": [[2, 0, 0, 0, 0, 1], "... 6 filas de 6"] } },
+    "V2": { "...": "misma estructura" } },
+  "modelo": { "nota": "Referencia offline: F1 macro se mide sobre el test set, no en la sesión.",
+              "activo": { "nombre": "...", "num_clases": 6, "f1_macro_test": 0.4986,
+                          "kappa_piloto": null },
+              "modelos_en_revisiones": ["..."], "tabla_m01": "## Tabla resumen — ...\n..." } }
+```
+Definiciones (solo las de `docs_claude/protocolo_validacion.md`):
+- **V1/V2**: `tocado.fuente` = `simulado` / `favero`. Las métricas van separadas; no hay total.
+- **Disponibilidad y motivos**: `clasificacion.disponible` y `motivo_no_disp` (los seis valores
+  del esquema, siempre presentes aunque valgan 0).
+- **Latencia**: `clasificacion.latencia_ms` (la misma de L01) de todas las revisiones que la
+  tienen, disponibles o no. `mediana_ms` es la mediana; `p95_ms` usa el rango más cercano
+  (el elemento ⌈0.95·n⌉-ésimo). `cumple` = `p95_ms` ≤ 60000 (RNF-04, D-08); `pct_le_60s` es el
+  porcentaje de revisiones con latencia ≤ 60 s.
+- **κ de Cohen** sistema-árbitro (`clase_sugerida` vs. `clase_final_arbitro`) sobre las
+  revisiones disponibles y no anuladas. `banda` es la de Landis & Koch (< 0 pobre; 0–0.20
+  leve; 0.21–0.40 aceptable; 0.41–0.60 moderada; 0.61–0.80 sustancial; 0.81–1.00 casi
+  perfecta) y `cumple` es κ ≥ 0.61 (RNF-06). Si N < 2 o hay una sola clase en ambos lados,
+  `calculable` es false, `kappa`/`banda`/`cumple` son null y `motivo` lo explica (nunca NaN ni 0).
+- **Concordancia** (% de `clase_sugerida == clase_final_arbitro`) y **matriz de confusión** 6 × 6
+  (sistema en filas, árbitro en columnas, orden de `clases`) usan el mismo conjunto que κ.
+- **Conciliación**: revisiones con veredicto en la base (`n_base`) contra las líneas del JSONL
+  de L01 (`n_jsonl`); `faltantes_en_jsonl` y `sobrantes_en_jsonl` son `revision_id` ordenados.
+  El JSONL no se corrige.
+- **Integridad**: resultado de `sabre.fn_verificar_auditoria()` sobre la cadena completa.
+- **Modelo**: métricas registradas de la versión activa (`modelo_version`) y la tabla resumen de
+  M01 copiada de `M01_EXPERIMENT_LOG` (null si no está configurado o la sección no es única).
+  F1 no se recalcula en la sesión. No incluye delta de κ inter-árbitro: su protocolo no está
+  definido.
+
 `GET /health` — `{ "fog": "ok", "redis": "ok", "postgres": "ok" }` (`"error"` por
 componente). Redis (PING) y PostgreSQL (`SELECT 1`) tienen 2 s de tiempo límite. **200** si
 todo está `ok`; **503** con el mismo cuerpo si alguno falla.
