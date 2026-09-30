@@ -84,34 +84,15 @@ class MatchConfigRequest(BaseModel):
         ..., description="Usuario árbitro existente (`sabre.usuario`). Queda también como `configurado_por`."
     )
 
-    alias_A: str = Field(..., min_length=1, description="Alias del tirador A (minimización de datos).")
+    alias_A: str | None = Field(None, description="Alias del tirador A (opcional). Vacío: \"Tirador A\".")
     weapon_side_A: WeaponSideLiteral = Field(
         ..., description="Brazo armado del tirador A: 'right' (diestro) o 'left' (zurdo). Obligatorio."
     )
-    es_menor_A: bool = Field(..., description="True si el tirador A es menor de edad.")
-    consentimiento_firmado_A: bool = Field(False, description="Consentimiento informado firmado (RNF-16).")
-    consentimiento_fecha_A: date | None = Field(None, description="Fecha del consentimiento; obligatoria si está firmado.")
-    firmante_A: str | None = Field(None, description="Apoderado que firma; obligatorio si es menor y hay consentimiento.")
 
-    alias_B: str = Field(..., min_length=1, description="Alias del tirador B.")
+    alias_B: str | None = Field(None, description="Alias del tirador B (opcional). Vacío: \"Tirador B\".")
     weapon_side_B: WeaponSideLiteral = Field(
         ..., description="Brazo armado del tirador B: 'right' (diestro) o 'left' (zurdo). Obligatorio."
     )
-    es_menor_B: bool = Field(..., description="True si el tirador B es menor de edad.")
-    consentimiento_firmado_B: bool = Field(False, description="Consentimiento informado firmado (RNF-16).")
-    consentimiento_fecha_B: date | None = Field(None, description="Fecha del consentimiento; obligatoria si está firmado.")
-    firmante_B: str | None = Field(None, description="Apoderado que firma; obligatorio si es menor y hay consentimiento.")
-
-    @model_validator(mode="after")
-    def _consentimiento_coherente(self) -> "MatchConfigRequest":
-        # Mismas restricciones CHECK de `sabre.tirador`, para responder 422 y no 500.
-        for lado in ("A", "B"):
-            firmado = getattr(self, f"consentimiento_firmado_{lado}")
-            if firmado and getattr(self, f"consentimiento_fecha_{lado}") is None:
-                raise ValueError(f"consentimiento_fecha_{lado} es obligatoria si consentimiento_firmado_{lado}")
-            if firmado and getattr(self, f"es_menor_{lado}") and not getattr(self, f"firmante_{lado}"):
-                raise ValueError(f"firmante_{lado} es obligatorio si el tirador {lado} es menor y firmó")
-        return self
 
 
 class EventoResponse(BaseModel):

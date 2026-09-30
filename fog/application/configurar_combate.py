@@ -3,6 +3,11 @@ tiradores en una sola transacción.
 
 `configurado_por` es el propio árbitro: no hay login ni operador
 identificado en la interfaz (decisión del autor, prompt D03).
+
+Los tiradores se guardan con `es_menor = false` y `consentimiento_firmado =
+true` (valor conservador, V01): en V1 los consentimientos se gestionan en papel
+fuera del sistema. `consentimiento_fecha` es la fecha de registro del combate,
+porque el esquema la exige con el consentimiento firmado.
 """
 
 from __future__ import annotations
@@ -19,12 +24,13 @@ from fog.ports.unidad_de_trabajo import UnidadDeTrabajoPort
 
 @dataclass(frozen=True)
 class DatosTirador:
-    alias: str
+    """Datos del tirador que captura la configuración del combate.
+
+    `alias` vacío o en blanco se sustituye por "Tirador A" / "Tirador B".
+    """
+
+    alias: str | None
     weapon_side: WeaponSide
-    es_menor: bool
-    consentimiento_firmado: bool = False
-    consentimiento_fecha: date | None = None
-    firmante: str | None = None
 
 
 class ConfigurarCombate:
@@ -45,7 +51,7 @@ class ConfigurarCombate:
         Args:
             evento_id: evento existente al que pertenece el combate.
             pista: pista asignada.
-            tirador_a: datos del tirador A (alias, brazo armado, consentimiento).
+            tirador_a: datos del tirador A (alias opcional y brazo armado).
             tirador_b: datos del tirador B.
             arbitro_id: usuario árbitro; también queda como `configurado_por`.
 
@@ -62,15 +68,15 @@ class ConfigurarCombate:
                 raise RecursoNoEncontrado(f"usuario (árbitro) {arbitro_id}")
 
             filas = []
-            for datos in (tirador_a, tirador_b):
+            for lado, datos in (("A", tirador_a), ("B", tirador_b)):
                 filas.append(
                     await tx.tiradores.crear(
-                        alias=datos.alias,
+                        alias=(datos.alias or "").strip() or f"Tirador {lado}",
                         brazo_habitual=brazo_de(datos.weapon_side),
-                        es_menor=datos.es_menor,
-                        consentimiento_firmado=datos.consentimiento_firmado,
-                        consentimiento_fecha=datos.consentimiento_fecha,
-                        firmante=datos.firmante,
+                        es_menor=False,
+                        consentimiento_firmado=True,
+                        consentimiento_fecha=date.today(),
+                        firmante=None,
                     )
                 )
             return await tx.combates.crear(

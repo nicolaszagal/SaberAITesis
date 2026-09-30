@@ -519,22 +519,45 @@ def test_configurar_con_evento_o_arbitro_inexistente_responde_404(crear_app):
     assert app.sql.escalar("SELECT count(*) FROM sabre.tirador WHERE alias = 'Fantasma'") == 0
 
 
-def test_configurar_menor_con_consentimiento_sin_firmante_responde_422(crear_app):
+def test_configurar_sin_alias_usa_tirador_a_y_tirador_b(crear_app):
     app = crear_app()
 
-    resp = app.client.post("/matches/config", json=app.body_config(
-        es_menor_A=True, consentimiento_firmado_A=True, consentimiento_fecha_A="2026-09-01",
-    ))
+    match_id = app.configurar(alias_A=None, alias_B="  ")
 
-    assert resp.status_code == 422
+    filas = app.sql.filas(
+        "SELECT t.alias FROM sabre.combate c JOIN sabre.tirador t "
+        "ON t.id IN (c.tirador_a_id, c.tirador_b_id) WHERE c.id = :i ORDER BY t.alias",
+        i=match_id,
+    )
+    assert [f["alias"] for f in filas] == ["Tirador A", "Tirador B"]
 
 
-def test_configurar_sin_es_menor_responde_422(crear_app):
+def test_configurar_guarda_tiradores_no_menores_con_consentimiento(crear_app):
     app = crear_app()
+    match_id = app.configurar()
+
+    filas = app.sql.filas(
+        "SELECT t.es_menor, t.consentimiento_firmado, t.consentimiento_fecha, t.firmante "
+        "FROM sabre.combate c JOIN sabre.tirador t "
+        "ON t.id IN (c.tirador_a_id, c.tirador_b_id) WHERE c.id = :i",
+        i=match_id,
+    )
+    assert len(filas) == 2
+    for f in filas:
+        assert f["es_menor"] is False
+        assert f["consentimiento_firmado"] is True
+        assert f["consentimiento_fecha"] is not None
+        assert f["firmante"] is None
+
+
+def test_configurar_sin_brazo_armado_responde_422_y_no_crea_nada(crear_app):
+    app = crear_app()
+    antes = app.sql.escalar("SELECT count(*) FROM sabre.combate")
     body = app.body_config()
-    del body["es_menor_B"]
+    del body["weapon_side_B"]
 
     assert app.client.post("/matches/config", json=body).status_code == 422
+    assert app.sql.escalar("SELECT count(*) FROM sabre.combate") == antes
 
 
 def test_veredicto_de_revision_inexistente_responde_404(crear_app):
