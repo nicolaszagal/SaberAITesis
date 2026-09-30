@@ -29,6 +29,7 @@ class ClasificacionRepositoryPort(ABC):
         probabilidades: dict | None = None,
         features_uri: str | None = None,
         latencia_ms: int | None = None,
+        latencia_inferencia_ms: int | None = None,
     ) -> Clasificacion:
         raise NotImplementedError
 

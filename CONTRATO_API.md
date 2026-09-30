@@ -167,6 +167,9 @@ veredicto** del evento; el JSONL de L01 no es la fuente (solo se concilia). Sin 
                           "sin_medicion": 0, "mediana_ms": 48, "max_ms": 55, "p95_ms": null,
                           "p95_excede_umbral": true, "pct_le_60s": 87.5,
                           "umbral_ms": 60000, "cumple": false },
+            "latencia_inferencia": { "n_disponibles": 7, "n_medidas": 7, "sin_medicion": 0,
+                                     "mediana_ms": 14, "p95_ms": 34, "max_ms": 34,
+                                     "pct_le_50ms": 100.0, "umbral_ms": 50, "cumple": true },
             "kappa": { "n": 6, "calculable": true, "kappa": 0.3333, "banda": "aceptable",
                        "umbral": 0.61, "cumple": false, "motivo": null },
             "concordancia": { "n": 6, "pct": 66.67 },
@@ -175,8 +178,9 @@ veredicto** del evento; el JSONL de L01 no es la fuente (solo se concilia). Sin 
                                   "filas": "sistema", "columnas": "arbitro",
                                   "matriz": [[2, 0, 0, 0, 0, 1], "... 6 filas de 6"] } },
     "V2": { "...": "misma estructura" } },
-  "modelo": { "nota": "Referencia offline: F1 macro se mide sobre el test set, no en la sesión.",
-              "activo": { "nombre": "...", "num_clases": 6, "f1_macro_test": 0.4986,
+  "modelo": { "nota": "Referencia offline: F1 macro se mide sobre el test set, no en la sesión. ...",
+              "activo": { "nombre": "...", "num_clases": 6, "f1_macro_test": 0.5249,
+                          "f1_macro_test_rotulo": "checkpoint desplegado (test)",
                           "kappa_piloto": null },
               "modelos_en_revisiones": ["..."], "tabla_m01": "## Tabla resumen — ...\n..." } }
 ```
@@ -196,6 +200,12 @@ Definiciones (solo las de `docs_claude/protocolo_validacion.md`):
   - Denominador: `n_total`, `n_disponibles` y `n_no_disponibles`. Una disponible sin
     `latencia_ms` registrada no se puede medir: queda fuera de todos los cálculos y se cuenta
     en `sin_medicion`.
+- **Latencia de inferencia** (`latencia_inferencia`, F-027): `clasificacion.latencia_inferencia_ms`
+  (la del campo 17 de L01), el tiempo del clasificador por clip en Cloud. Solo sobre las
+  revisiones **disponibles** (las no disponibles no tuvieron inferencia): `mediana_ms`, `p95_ms`
+  (rango más cercano, ⌈0.95·n⌉-ésimo), `max_ms` y `pct_le_50ms` (sobre las medidas).
+  `cumple` = p95 ≤ 50 ms. Una disponible con `latencia_inferencia_ms` nulo (p. ej. anterior a la
+  migración `0004`) queda fuera y se cuenta en `sin_medicion`. Sin medidas, todo es null.
 - **κ de Cohen** sistema-árbitro (`clase_sugerida` vs. `clase_final_arbitro`) sobre las
   revisiones disponibles y no anuladas. `banda` es la de Landis & Koch (< 0 pobre; 0–0.20
   leve; 0.21–0.40 aceptable; 0.41–0.60 moderada; 0.61–0.80 sustancial; 0.81–1.00 casi
@@ -209,7 +219,9 @@ Definiciones (solo las de `docs_claude/protocolo_validacion.md`):
 - **Integridad**: resultado de `sabre.fn_verificar_auditoria()` sobre la cadena completa.
 - **Modelo**: métricas registradas de la versión activa (`modelo_version`) y la tabla resumen de
   M01 copiada de `M01_EXPERIMENT_LOG` (null si no está configurado o la sección no es única).
-  F1 no se recalcula en la sesión. No incluye delta de κ inter-árbitro: su protocolo no está
+  F1 no se recalcula en la sesión. `activo.f1_macro_test` es la métrica del **checkpoint
+  desplegado (test)** (`f1_macro_test_rotulo`); la cifra reportable de RNF-03 es la media de la
+  serie de N = 10 corridas (`tabla_m01`), y así lo dicen `nota` y `resumen.md`. No incluye delta de κ inter-árbitro: su protocolo no está
   definido.
 
 `GET /health` — `{ "fog": "ok", "redis": "ok", "postgres": "ok" }` (`"error"` por
@@ -350,12 +362,12 @@ Un combate admite N clips: ya no hay `409` por segundo clip.
    (`modelo_version.activo`): probabilidades post filtro Favero, keypoints crudos de la
    `TrackedSequence` en `.npz` (`keypoints_uri` + `keypoints_sha256`; por tirador
    `{a,b}_xy`, `_conf`, `_box`, `_detected`, más `frame_w/h`, `locked`, `lock_frame`) y
-   `latencia_ms` desde la recepción del clip hasta la sugerencia (o hasta el "no disponible").
+   `latencia_ms` desde la recepción del clip hasta la sugerencia (o hasta el "no disponible") y,
+   solo en las disponibles, `latencia_inferencia_ms` (la que informa Cloud; NULL en las no disponibles).
    La API y el dominio usan los nombres del modelo; solo el adaptador de persistencia los
    traduce a los del esquema al guardar (`AttackA` → `AtaqueA`, `ContrattackA` →
    `ContraataqueA`, `RiposteA` → `RiposteA`; igual en las llaves de `probabilidades`) y de
-   vuelta al leer. `latencia_inferencia_ms` (sección 6) llega a Fog pero **no se persiste**:
-   `clasificacion` no tiene columna para ella. Respeta `UNIQUE (tocado_id, modelo_version_id)` (un tocado por clip, así
+   vuelta al leer. Respeta `UNIQUE (tocado_id, modelo_version_id)` (un tocado por clip, así
    que cada revisión tiene su propia clasificación). La revisión queda abierta
    (`cerrada_en` nulo) hasta el veredicto de la sección 7.1.
 
@@ -448,7 +460,7 @@ distintos. `disponible` distingue dos formas (igual que
 | `confidence` | str | probabilidad softmax de la clase ganadora (post filtro de luz), `"0.0"`-`"1.0"` |
 | `fencer` | str | `"ROJ"` si la clase termina en `A`, `"VER"` si termina en `B` (mapeo fijo v1) |
 | `probs` | str | JSON `{"AttackA": 0.61, ...}` — softmax completo, post filtro Favero (auditoría, RF-22) |
-| `latencia_inferencia_ms` | str | duración de `ActionClassifierPort.classify` en ms (auditoría, RNF-04) |
+| `latencia_inferencia_ms` | str | duración de `ActionClassifierPort.classify` en ms (auditoría, F-027); Fog la persiste en `clasificacion.latencia_inferencia_ms`. El mensaje `disponible=false` no la trae y queda NULL |
 | `modelo` | str | `"lstm_6class/<run_id>/<archivo>"`, derivado de `MODEL_RUN_DIR` (ver `LSTM6ClassAdapter.model_version_name`) |
 | `ts` | str | timestamp ISO |
 
@@ -597,7 +609,8 @@ ya registrado en la base. Campos, en este orden: `ts` (`veredicto.registrado_en`
 `V2` si `favero`), `modelo`, `luz_A`, `luz_B`, `disponible`, `motivo`,
 `clase_sugerida`, `confianza`, `latencia_ms`, `decision`, `clase_final_arbitro`,
 `concordancia` (`clase_sugerida == clase_final_arbitro`; `null` si no disponible
-o anulada) y `hash_auditoria`. Las clases usan los nombres del modelo. Si la
+o anulada), `hash_auditoria` y `latencia_inferencia_ms` (campo 17, al final;
+`clasificacion.latencia_inferencia_ms`, `null` si no disponible). Las clases usan los nombres del modelo. Si la
 escritura falla, el veredicto ya registrado no se revierte; el error queda en el
 log técnico.
 
@@ -654,10 +667,9 @@ Archivos que Fog escribe fuera de la base (rutas fijadas por `STORAGE_DIR` y `EV
 | `EVIDENCE_DIR/<evento_id>.jsonl` | una línea por revisión cerrada (campos de la sección 7.1, L01); solo adición, no se corrige | cierre de la revisión |
 | `EVIDENCE_DIR/<evento_id>/resumen.json`, `revisiones.csv`, `resumen.md` | exportación de la sesión de validación (L02); se sobrescriben al reejecutar | `scripts/exportar_evidencia.py --evento <id>` |
 
-`EVIDENCE_DIR` es obligatorio al arrancar Fog; `STORAGE_DIR` y `DATABASE_URL` se exigen al
-primer uso (carga de clip, catálogos, consultas y `/health`): con Fog arrancado sin
-`DATABASE_URL`, esas rutas responden 500 (`/health` incluido, no 503) con
-"Falta la variable de entorno DATABASE_URL" en el log.
+`EVIDENCE_DIR` y `DATABASE_URL` son obligatorios al arrancar Fog: si falta alguna, Fog no
+arranca (`RuntimeError` al importar `fog.main`, con el nombre de la variable que falta).
+`STORAGE_DIR` se exige al primer uso (carga de clip y registro de clasificaciones).
 La evidencia de la sesión no incluye nombres de atletas: se usa el alias de `tirador`. La
 evidencia del modelo va dentro de `resumen.json` (`modelo`), no en una carpeta aparte.
 

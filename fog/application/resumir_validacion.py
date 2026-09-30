@@ -129,7 +129,9 @@ class ResumirValidacion:
         return {
             "nota": (
                 "Referencia offline: F1 macro se mide sobre el test set, "
-                "no en la sesión."
+                "no en la sesión. `f1_macro_test` es la métrica del checkpoint "
+                "desplegado (test), no la cifra reportable de RNF-03: esa es la "
+                "media de la serie de N = 10 corridas (`tabla_m01`)."
             ),
             "activo": None
             if activo is None
@@ -137,6 +139,7 @@ class ResumirValidacion:
                 "nombre": activo.nombre,
                 "num_clases": activo.num_clases,
                 "f1_macro_test": activo.f1_macro_test,
+                "f1_macro_test_rotulo": "checkpoint desplegado (test)",
                 "kappa_piloto": activo.kappa_piloto,
             },
             "modelos_en_revisiones": sorted({x.modelo for x in lineas}),

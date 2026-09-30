@@ -1,7 +1,7 @@
 """Exporta la evidencia de una sesión de validación (L02, T-017, RNF-03, RNF-06).
 
 Calcula todo desde PostgreSQL y escribe, en `EVIDENCE_DIR/<evento_id>/`,
-`resumen.json`, `revisiones.csv` (los 16 campos de L01) y `resumen.md`. El
+`resumen.json`, `revisiones.csv` (los 17 campos de L01) y `resumen.md`. El
 JSONL de L01 solo se concilia contra la base; no se corrige.
 
 Uso:

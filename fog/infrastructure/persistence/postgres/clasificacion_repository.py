@@ -42,6 +42,7 @@ def _fila_a_clasificacion(fila: Row) -> Clasificacion:
         features_uri=fila.features_uri,
         latencia_ms=fila.latencia_ms,
         creado_en=fila.creado_en,
+        latencia_inferencia_ms=fila.latencia_inferencia_ms,
     )
 
 
@@ -64,6 +65,7 @@ class PostgresClasificacionRepository(ClasificacionRepositoryPort):
         probabilidades: dict | None = None,
         features_uri: str | None = None,
         latencia_ms: int | None = None,
+        latencia_inferencia_ms: int | None = None,
     ) -> Clasificacion:
         async with self._session_factory() as session, session.begin():
             fila = (
@@ -83,6 +85,7 @@ class PostgresClasificacionRepository(ClasificacionRepositoryPort):
                         keypoints_sha256=keypoints_sha256,
                         features_uri=features_uri,
                         latencia_ms=latencia_ms,
+                        latencia_inferencia_ms=latencia_inferencia_ms,
                     )
                     .returning(clasificacion_tabla)
                 )
