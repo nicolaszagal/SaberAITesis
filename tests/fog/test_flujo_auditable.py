@@ -532,7 +532,9 @@ def test_configurar_sin_alias_usa_tirador_a_y_tirador_b(crear_app):
     assert [f["alias"] for f in filas] == ["Tirador A", "Tirador B"]
 
 
-def test_configurar_guarda_tiradores_no_menores_con_consentimiento(crear_app):
+def test_configurar_guarda_tiradores_menores_sin_consentimiento_registrado(crear_app):
+    """V01b: el sistema no registra consentimientos que no existen; los CHECK de
+    `tirador` permiten es_menor=true sin consentimiento, fecha ni firmante."""
     app = crear_app()
     match_id = app.configurar()
 
@@ -544,9 +546,9 @@ def test_configurar_guarda_tiradores_no_menores_con_consentimiento(crear_app):
     )
     assert len(filas) == 2
     for f in filas:
-        assert f["es_menor"] is False
-        assert f["consentimiento_firmado"] is True
-        assert f["consentimiento_fecha"] is not None
+        assert f["es_menor"] is True
+        assert f["consentimiento_firmado"] is False
+        assert f["consentimiento_fecha"] is None
         assert f["firmante"] is None
 
 

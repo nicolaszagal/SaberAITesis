@@ -4,17 +4,16 @@ tiradores en una sola transacción.
 `configurado_por` es el propio árbitro: no hay login ni operador
 identificado en la interfaz (decisión del autor, prompt D03).
 
-Los tiradores se guardan con `es_menor = false` y `consentimiento_firmado =
-true` (valor conservador, V01): en V1 los consentimientos se gestionan en papel
-fuera del sistema. `consentimiento_fecha` es la fecha de registro del combate,
-porque el esquema la exige con el consentimiento firmado.
+Los tiradores se guardan con `es_menor = true`, `consentimiento_firmado =
+false`, y `consentimiento_fecha` y `firmante` nulos (valor conservador, V01b):
+en V1 los consentimientos se gestionan en papel fuera del sistema y el sistema
+no registra uno que no existe.
 """
 
 from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import date
 
 from fog.domain.audit_models import Combate
 from fog.domain.errors import RecursoNoEncontrado
@@ -73,9 +72,9 @@ class ConfigurarCombate:
                     await tx.tiradores.crear(
                         alias=(datos.alias or "").strip() or f"Tirador {lado}",
                         brazo_habitual=brazo_de(datos.weapon_side),
-                        es_menor=False,
-                        consentimiento_firmado=True,
-                        consentimiento_fecha=date.today(),
+                        es_menor=True,
+                        consentimiento_firmado=False,
+                        consentimiento_fecha=None,
                         firmante=None,
                     )
                 )

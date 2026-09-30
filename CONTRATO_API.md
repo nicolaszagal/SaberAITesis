@@ -61,11 +61,10 @@ Body (JSON):
 | `alias_A/B` | no | alias del tirador (minimización de datos). Vacío u omitido: `"Tirador A"` / `"Tirador B"` |
 | `weapon_side_A/B` | **sí, sin valor por defecto** | `"right"` → `diestro`, `"left"` → `zurdo`. Se guarda en `combate.brazo_a/b` y `tirador.brazo_habitual`. Sin él: 422 y no se crea nada |
 
-Menor de edad y consentimiento ya no se reciben (V01): el backend guarda ambos tiradores con
-`es_menor = false` y `consentimiento_firmado = true`, valor conservador porque en V1 los
-consentimientos se gestionan en papel fuera del sistema. `consentimiento_fecha` es la fecha de
-registro del combate (el esquema la exige con el consentimiento firmado) y `firmante` queda nulo.
-Los campos antiguos (`es_menor_*`, `consentimiento_*`, `firmante_*`) se ignoran si llegan.
+Menor de edad y consentimiento no se reciben (V01b): el backend guarda ambos tiradores con
+`es_menor = true`, `consentimiento_firmado = false`, `consentimiento_fecha = NULL` y
+`firmante = NULL`, valor conservador: en V1 los consentimientos se gestionan en papel fuera del
+sistema y el sistema no registra uno que no existe. Los campos antiguos (`es_menor_*`, `consentimiento_*`, `firmante_*`) se ignoran si llegan.
 
 Cada configuración crea sus dos tiradores nuevos (el alias no es único en el esquema).
 
