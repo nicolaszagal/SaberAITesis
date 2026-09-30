@@ -26,7 +26,7 @@ VALIDACION_POR_FUENTE = {"simulado": "V1", "favero": "V2"}
 
 @dataclass(frozen=True)
 class LineaEvidencia:
-    """Campos exactos de una línea de evidencia (17), en orden de escritura.
+    """Campos exactos de una línea de evidencia (19), en orden de escritura.
 
     Las clases usan los nombres del modelo (`AttackA`, ..., `RiposteB`).
     """
@@ -48,6 +48,8 @@ class LineaEvidencia:
     concordancia: bool | None
     hash_auditoria: str
     latencia_inferencia_ms: int | None
+    t_luz_a_ms: int | None
+    t_luz_b_ms: int | None
 
 
 def construir_linea(
@@ -100,6 +102,8 @@ def construir_linea(
         concordancia=concordancia,
         hash_auditoria=auditoria.hash,
         latencia_inferencia_ms=clasificacion.latencia_inferencia_ms,
+        t_luz_a_ms=tocado.t_luz_a_ms,
+        t_luz_b_ms=tocado.t_luz_b_ms,
     )
 
 

@@ -91,6 +91,8 @@ tocado = sa.Table(
     sa.Column("luz_b", sa.Boolean, nullable=False),
     sa.Column("t_tocado_utc", sa.TIMESTAMP(timezone=True)),
     sa.Column("t_tocado_ms", sa.Integer),
+    sa.Column("t_luz_a_ms", sa.Integer),
+    sa.Column("t_luz_b_ms", sa.Integer),
     sa.Column("registrado_por", UUID(as_uuid=True)),
     sa.Column("creado_en", sa.TIMESTAMP(timezone=True), nullable=False),
 )

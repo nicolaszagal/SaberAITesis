@@ -7,8 +7,10 @@ registra el veredicto del árbitro (`POST /revisiones/{id}/veredicto`). Imprime 
 JSON por clip con las latencias medidas por el cliente y guarda todo en `--salida`.
 
 Convenciones de la prueba (no son reglas del sistema):
-    - `has_luz_X` = frame de luz > 0 en el CSV; `t_tocado_ms` = round(primer frame de
-      luz / fps · 1000) con el fps real del clip.
+    - `t_luz_X_ms` = round(frame de luz X / fps · 1000) con el fps real del clip, solo si
+      el frame de la luz en el CSV es > 0 (0 = luz apagada, sin instante). Con
+      `--alias-obsoleto` envía `has_luz_A/B` y `t_tocado_ms` (primer instante), como antes de
+      V02, para comparar que las sugerencias no cambian.
     - Brazo armado: el anotado en Label Studio (proyecto 5, último backup). Un clip sin
       brazo anotado en ambos tiradores aborta la prueba (no hay valor por defecto).
     - Veredicto: `clase_final` = clase real del clip; `decision` = `mantener` si coincide
@@ -134,7 +136,15 @@ def correr_clip(
     frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     cap.release()
     luz_a, luz_b = int(luces[stem]["luz_A"]), int(luces[stem]["luz_B"])
-    t_tocado_ms = round(min(f for f in (luz_a, luz_b) if f > 0) / fps * 1000)
+    t_luz_a_ms = round(luz_a / fps * 1000) if luz_a > 0 else None
+    t_luz_b_ms = round(luz_b / fps * 1000) if luz_b > 0 else None
+    t_tocado_ms = min(t for t in (t_luz_a_ms, t_luz_b_ms) if t is not None)
+    if args.alias_obsoleto:
+        datos_luz = {"t_tocado_ms": t_tocado_ms, "has_luz_A": str(luz_a > 0).lower(),
+                     "has_luz_B": str(luz_b > 0).lower()}
+    else:
+        datos_luz = {k: v for k, v in (("t_luz_a_ms", t_luz_a_ms), ("t_luz_b_ms", t_luz_b_ms))
+                     if v is not None}
     lados = brazos.get(stem, {})
     if len(lados) < 2:
         sys.exit(f"{stem}: brazo armado sin anotar; no se analiza sin brazo declarado")
@@ -152,8 +162,7 @@ def correr_clip(
         r = cliente.post(
             f"/matches/{match_id}/clip",
             files={"file": (mp4.name, f, "video/mp4")},
-            data={"t_tocado_ms": t_tocado_ms, "has_luz_A": str(luz_a > 0).lower(),
-                  "has_luz_B": str(luz_b > 0).lower()},
+            data=datos_luz,
         )
     t2 = time.perf_counter()
     r.raise_for_status()
@@ -166,7 +175,7 @@ def correr_clip(
     veredicto = r.json() if r.status_code == 200 else {"error": r.text}
     return {
         "clip": stem, "frames": frames, "fps": round(fps, 2), "luz_A": luz_a, "luz_B": luz_b,
-        "t_tocado_ms": t_tocado_ms, "brazos": f"{lados['weapon_side_A']}/{lados['weapon_side_B']}",
+        "t_luz_a_ms": t_luz_a_ms, "t_luz_b_ms": t_luz_b_ms, "t_tocado_ms": t_tocado_ms, "brazos": f"{lados['weapon_side_A']}/{lados['weapon_side_B']}",
         "disponible": clip["disponible"], "motivo": clip["motivo"], "sugerida": sugerida,
         "confianza": clip["confidence"], "clase_final": clase, "decision": decision,
         "veredicto_http": r.status_code, "auditoria_seq": veredicto.get("auditoria_seq"),
@@ -190,6 +199,10 @@ def main() -> int:
     parser.add_argument("--fog-url", default="http://localhost:8001")
     parser.add_argument("--redis-url", default=None, help="Redis de Cloud, para inferencia_ms")
     parser.add_argument("--salida", type=Path, required=True, help="JSON con los resultados")
+    parser.add_argument(
+        "--alias-obsoleto", action="store_true",
+        help="envía has_luz_A/B y t_tocado_ms (forma anterior a V02) en vez de t_luz_a_ms/t_luz_b_ms",
+    )
     args = parser.parse_args()
 
     luces = {fila["stem"]: fila for fila in csv.DictReader(LUZ_CSV.open(encoding="utf-8"))}

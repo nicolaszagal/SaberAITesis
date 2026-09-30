@@ -55,8 +55,8 @@ async def test_insertar_auditoria_sin_search_path_en_la_conexion(migrated_engine
         )
         tocado_id = await _insert_returning_id(
             conn,
-            "INSERT INTO sabre.tocado (combate_id, fuente, luz_a, luz_b, t_tocado_ms) "
-            "VALUES (:combate_id, 'simulado', true, false, 1000)",
+            "INSERT INTO sabre.tocado (combate_id, fuente, luz_a, luz_b, t_tocado_ms, t_luz_a_ms) "
+            "VALUES (:combate_id, 'simulado', true, false, 1000, 1000)",
             combate_id=combate_id,
         )
         revision_id = await _insert_returning_id(

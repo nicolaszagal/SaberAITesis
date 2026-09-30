@@ -104,11 +104,15 @@ CREATE TABLE tocado (
     luz_a         BOOLEAN NOT NULL,
     luz_b         BOOLEAN NOT NULL,
     t_tocado_utc  TIMESTAMPTZ,             -- señal Favero real
-    t_tocado_ms   INT,                     -- offset dentro del clip (simulado)
+    t_tocado_ms   INT,                     -- offset dentro del clip (simulado); = min(t_luz_a_ms, t_luz_b_ms)
+    t_luz_a_ms    INT CHECK (t_luz_a_ms >= 0),  -- instante de la luz A; NULL = luz apagada
+    t_luz_b_ms    INT CHECK (t_luz_b_ms >= 0),  -- instante de la luz B; NULL = luz apagada
     registrado_por UUID REFERENCES usuario(id),
     creado_en     TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (luz_a OR luz_b),
-    CHECK (t_tocado_utc IS NOT NULL OR t_tocado_ms IS NOT NULL)
+    CHECK (t_tocado_utc IS NOT NULL OR t_tocado_ms IS NOT NULL),
+    CONSTRAINT ck_tocado_luz_a_instante CHECK (luz_a = (t_luz_a_ms IS NOT NULL)),
+    CONSTRAINT ck_tocado_luz_b_instante CHECK (luz_b = (t_luz_b_ms IS NOT NULL))
 );
 CREATE INDEX ix_tocado_combate ON tocado(combate_id);
 

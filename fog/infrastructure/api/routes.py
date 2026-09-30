@@ -54,6 +54,7 @@ from fog.domain.errors import (
     VeredictoYaRegistrado,
 )
 from fog.domain.models import (
+    InstantesLuz,
     LuzSignal,
     MotivoNoDisponible,
     UnavailableResult,
@@ -379,9 +380,12 @@ def _respuesta_clip(
     description=(
         "Alternativa a POST /webrtc/offer para subir un clip ya grabado. "
         "Exige un combate creado con POST /matches/config (404 si no), "
-        "`t_tocado_ms` y al menos una luz encendida (422 si falta alguna, "
-        "CU-03 flujo 2a). `t_tocado_ms` debe estar entre 0 y la duración del "
-        "clip, ambos incluidos (422 si no). Registra `clip` (archivo por SHA-256, fps, ancho, "
+        "`t_luz_a_ms` y/o `t_luz_b_ms` (al menos uno, CU-03 flujo 2a; 422 si "
+        "no hay ninguno). Cada instante debe estar entre 0 y la duración del "
+        "clip, ambos incluidos (422 si no). La luz encendida se deduce de que "
+        "exista su instante y `t_tocado_ms` es el menor de los dos, calculado "
+        "en el servidor. `has_luz_A/B` con `t_tocado_ms` son alias obsoletos. "
+        "Registra `clip` (archivo por SHA-256, fps, ancho, "
         "alto, duración), `tocado` (fuente='simulado') y `revision_var` "
         "(aceptada); no registra qué tirador pidió la revisión (D-04). "
         "Corre pose+tracking, extracción de 192 features y publicación en "
@@ -400,8 +404,7 @@ def _respuesta_clip(
         404: {"description": "El combate no fue creado."},
         422: {
             "description": (
-                "Falta t_tocado_ms, está fuera de [0, duración del clip] o no hay "
-                "ninguna luz encendida."
+                "Ninguna luz con instante, o un instante fuera de [0, duración del clip]."
             )
         },
         503: {"description": "No hay versión de modelo activa."},
@@ -411,17 +414,30 @@ def _respuesta_clip(
 async def upload_clip(
     match_id: str,
     file: UploadFile = File(..., description="Clip de video del combate (MP4/MOV)."),
-    t_tocado_ms: int = Form(
-        ..., ge=0, description=(
-            "Instante del tocado simulado en ms desde el inicio del clip (RF-02). Obligatorio; "
-            "entre 0 y la duración del clip."
+    t_luz_a_ms: int | None = Form(
+        None, ge=0, description=(
+            "Instante de la luz Favero de A en ms desde el inicio del clip (RF-02); entre 0 y la "
+            "duración del clip. Omitido = luz de A apagada."
+        )
+    ),
+    t_luz_b_ms: int | None = Form(
+        None, ge=0, description=(
+            "Instante de la luz Favero de B en ms desde el inicio del clip (RF-02); entre 0 y la "
+            "duración del clip. Omitido = luz de B apagada."
+        )
+    ),
+    t_tocado_ms: int | None = Form(
+        None, ge=0, description=(
+            "[OBSOLETO] Instante único del tocado. Solo se usa si se omiten t_luz_a_ms y "
+            "t_luz_b_ms: queda como instante de cada luz encendida por has_luz_A/has_luz_B. "
+            "Con t_luz_a_ms/t_luz_b_ms se ignora: t_tocado_ms lo calcula el servidor."
         )
     ),
     has_luz_A: bool | None = Form(
-        None, description="True si se encendió la luz Favero del tirador A."
+        None, description="[OBSOLETO] True si se encendió la luz de A. Preferir t_luz_a_ms."
     ),
     has_luz_B: bool | None = Form(
-        None, description="True si se encendió la luz Favero del tirador B."
+        None, description="[OBSOLETO] True si se encendió la luz de B. Preferir t_luz_b_ms."
     ),
     luz_frame_a: int | None = Form(
         None,
@@ -458,18 +474,29 @@ async def upload_clip(
     if combate is None:
         raise _combate_no_creado(match_id)
 
-    # has_luz_A/has_luz_B (bool) es la forma vigente (DEF-14); luz_frame_a/b
-    # (índice de frame, reducido a booleano) queda como alias obsoleto para
-    # clientes viejos, y solo se usa si los campos nuevos vienen ambos vacíos.
-    if has_luz_A is None and has_luz_B is None:
-        luz = LuzSignal(has_luz_a=luz_frame_a is not None, has_luz_b=luz_frame_b is not None)
-    else:
-        luz = LuzSignal(has_luz_a=bool(has_luz_A), has_luz_b=bool(has_luz_B))
-    if not (luz.has_luz_a or luz.has_luz_b):
-        raise HTTPException(
-            status_code=422,
-            detail="el tocado simulado requiere al menos una luz encendida (has_luz_A o has_luz_B)",
-        )
+    # t_luz_a_ms/t_luz_b_ms es la forma vigente (V02). has_luz_A/B + t_tocado_ms
+    # y luz_frame_a/b (índice de frame, reducido a booleano) quedan como alias
+    # obsoletos para clientes viejos y solo se usan si ambos instantes vienen vacíos.
+    if t_luz_a_ms is None and t_luz_b_ms is None:
+        if has_luz_A is None and has_luz_B is None:
+            luz_a, luz_b = luz_frame_a is not None, luz_frame_b is not None
+        else:
+            luz_a, luz_b = bool(has_luz_A), bool(has_luz_B)
+        if not (luz_a or luz_b):
+            raise HTTPException(
+                status_code=422,
+                detail="el tocado simulado requiere al menos una luz (t_luz_a_ms o t_luz_b_ms)",
+            )
+        if t_tocado_ms is None:
+            raise HTTPException(
+                status_code=422,
+                detail="falta el instante de la luz encendida (t_luz_a_ms o t_luz_b_ms)",
+            )
+        t_luz_a_ms = t_tocado_ms if luz_a else None
+        t_luz_b_ms = t_tocado_ms if luz_b else None
+    instantes = InstantesLuz(t_luz_a_ms=t_luz_a_ms, t_luz_b_ms=t_luz_b_ms)
+    luz = instantes.luz
+    t_tocado_ms = instantes.t_tocado_ms
 
     try:
         await registrar_clasificacion.verificar_modelo_activo()
@@ -481,7 +508,12 @@ async def upload_clip(
     try:
         clip = await process_uploaded_clip(
             file, pose_estimator, executor, file_storage,
-            clip_max_mb=clip_max_mb, min_frames=min_frames, t_tocado_ms=t_tocado_ms,
+            clip_max_mb=clip_max_mb, min_frames=min_frames,
+            instantes_ms={
+                nombre: valor
+                for nombre, valor in (("t_luz_a_ms", t_luz_a_ms), ("t_luz_b_ms", t_luz_b_ms))
+                if valor is not None
+            },
         )
     except ClipTooLargeError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
@@ -500,8 +532,7 @@ async def upload_clip(
             alto_px=clip.alto_px,
             duracion_ms=clip.duracion_ms,
         ),
-        luz=luz,
-        t_tocado_ms=t_tocado_ms,
+        instantes=instantes,
     )
     revision_id = str(revision.revision.id)
     session = sessions.create(

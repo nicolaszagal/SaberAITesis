@@ -313,24 +313,29 @@ Campos del form (multipart):
 | campo | tipo | descripción |
 |---|---|---|
 | `file` | file | clip de video (MP4/MOV) |
-| `t_tocado_ms` | int | **obligatorio.** Instante del tocado simulado en ms desde el inicio del clip (RF-02), entre 0 y la duración del clip, ambos incluidos (**422** si no). No se usa para recortar el clip |
-| `has_luz_A` | bool | `true` si se encendió la luz Favero de A |
-| `has_luz_B` | bool | idem para B. **Al menos una de las dos luces debe estar encendida** (CU-03 flujo 2a; `tocado` lo exige con `CHECK (luz_a OR luz_b)`) |
+| `t_luz_a_ms` | int | Instante de la luz Favero de A, en ms desde el inicio del clip (RF-02), entre 0 y la duración del clip, ambos incluidos (**422** si no). Omitido = luz de A apagada |
+| `t_luz_b_ms` | int | idem para B. **Al menos uno de los dos instantes es obligatorio** (CU-03 flujo 2a; `tocado` lo exige con `CHECK (luz_a OR luz_b)`) |
+| `t_tocado_ms` | int | **[OBSOLETO]** instante único. Solo se usa si `t_luz_a_ms` y `t_luz_b_ms` vienen ambos ausentes: queda como instante de cada luz encendida por `has_luz_A/B`. Con los instantes por luz se ignora |
+| `has_luz_A` | bool | **[OBSOLETO]** `true` si se encendió la luz de A. Preferir `t_luz_a_ms` |
+| `has_luz_B` | bool | **[OBSOLETO]** idem para B |
 | `luz_frame_a` | int | **[OBSOLETO]** alias de `has_luz_A`: índice de frame (0-based) en que se prendió la luz de A. Solo se usa si `has_luz_A` y `has_luz_B` vienen ambos ausentes |
 | `luz_frame_b` | int | **[OBSOLETO]** alias de `has_luz_B`, misma regla que `luz_frame_a` |
 
-`has_luz_A/B` es la forma vigente (DEF-14): antes `luz_frame_a/b` se
-reducían a un booleano (`is not None`) y se perdía la posibilidad de
-reportar el instante del tocado por separado (RF-02 pide luz A, luz B e
-instante). `luz_frame_a/b` se mantiene solo como alias obsoleto para no
-romper clientes viejos.
+`t_luz_a_ms` y `t_luz_b_ms` son la forma vigente (V02): en un tocado doble las dos luces pueden
+encenderse con algunos fotogramas de diferencia, y la señal Favero de V2 también traerá un
+instante por luz. La luz encendida se deduce de que exista su instante, y el servidor calcula
+`t_tocado_ms` = el menor de los dos (`tocado.t_tocado_ms`; de él sale `frame_tocado`).
+`has_luz_A/B` con `t_tocado_ms` (DEF-14) y `luz_frame_a/b` se mantienen solo como alias obsoletos
+durante esta versión para no romper clientes viejos. Los instantes no entran a las features, a la
+ventana ni a la entrada del modelo: este solo usa si cada luz está encendida (filtro Favero), así
+que la sugerencia es la misma con la forma vigente y con los alias.
 
 **Errores (antes de procesar el video):**
 
 | código | causa |
 |---|---|
 | `404` | el combate no fue creado (sección 1.1) o `match_id` no es un uuid |
-| `422` | falta `t_tocado_ms`, ninguna luz encendida, o `t_tocado_ms` fuera de `[0, duración del clip]` |
+| `422` | ningún instante de luz (ni alias obsoleto), o un instante fuera de `[0, duración del clip]` |
 | `503` | no hay versión de modelo activa (`scripts/registrar_modelo.py`) |
 
 Un combate admite N clips: ya no hay `409` por segundo clip.
@@ -341,7 +346,7 @@ Un combate admite N clips: ya no hay `409` por segundo clip.
   menos de `MIN_FRAMES` frames (3 por defecto): `400` con `detail`.
 - Si el archivo pesa más de `CLIP_MAX_MB` (200 MB por defecto,
   configurable por entorno): `413` con `detail`.
-- Si `t_tocado_ms` es negativo o mayor que la duración del clip
+- Si `t_luz_a_ms` o `t_luz_b_ms` es negativo o mayor que la duración del clip
   (`round(frames/fps·1000)`): `422` con `detail`. La comprobación ocurre antes de guardar el
   clip y de abrir la revisión, así que no queda clip, tocado ni mensaje en Redis.
 
@@ -350,7 +355,7 @@ Un combate admite N clips: ya no hay `409` por segundo clip.
 1. Al recibir un clip válido, en una transacción: `clip` (`origen='carga'`, `camara='unica'`,
    `uri` + `sha256` del archivo en `STORAGE_DIR`, `fps`, `ancho_px`, `alto_px`,
    `duracion_ms = round(frames/fps·1000)`), `tocado` (`fuente='simulado'`, `luz_a/b`,
-   `t_tocado_ms`), `tocado_clip` (`frame_tocado = round(t_tocado_ms/1000·fps)`) y
+   `t_luz_a_ms`, `t_luz_b_ms` y `t_tocado_ms` = el menor de los dos), `tocado_clip` (`frame_tocado = round(t_tocado_ms/1000·fps)`) y
    `revision_var` (`aceptada=true`, `arbitro_id` = árbitro del combate). No se registra qué
    tirador pidió la revisión (D-04).
 2. Con el veredicto de Cloud, o con el "no disponible" (pose incompleta, timeout, o
@@ -606,7 +611,9 @@ ya registrado en la base. Campos, en este orden: `ts` (`veredicto.registrado_en`
 `clase_sugerida`, `confianza`, `latencia_ms`, `decision`, `clase_final_arbitro`,
 `concordancia` (`clase_sugerida == clase_final_arbitro`; `null` si no disponible
 o anulada), `hash_auditoria` y `latencia_inferencia_ms` (campo 17, al final;
-`clasificacion.latencia_inferencia_ms`, `null` si no disponible). Las clases usan los nombres del modelo. Si la
+`clasificacion.latencia_inferencia_ms`, `null` si no disponible), `t_luz_a_ms` (campo 18) y
+`t_luz_b_ms` (campo 19), de `tocado.t_luz_a_ms/t_luz_b_ms` (`null` = luz apagada), también en
+`revisiones.csv`. Las clases usan los nombres del modelo. Si la
 escritura falla, el veredicto ya registrado no se revierte; el error queda en el
 log técnico.
 

@@ -28,7 +28,7 @@ CAMPOS = [
     "ts", "evento_id", "revision_id", "validacion", "modelo", "luz_A", "luz_B",
     "disponible", "motivo", "clase_sugerida", "confianza", "latencia_ms",
     "decision", "clase_final_arbitro", "concordancia", "hash_auditoria",
-    "latencia_inferencia_ms",
+    "latencia_inferencia_ms", "t_luz_a_ms", "t_luz_b_ms",
 ]
 
 
@@ -40,7 +40,9 @@ def _lineas(app, evento_id) -> list[dict]:
 def test_revision_cerrada_produce_una_linea_con_los_campos_exactos(crear_app):
     app = crear_app()
     match_id = app.configurar()
-    clip = app.subir_clip(match_id, has_luz_A="true", has_luz_B="false").json()
+    clip = app.subir_clip(
+        match_id, has_luz_A=None, has_luz_B=None, t_tocado_ms=None, t_luz_a_ms="300"
+    ).json()
     revision_id = clip["revision_id"]
     assert not (app.evidencia_dir / f"{app.evento_id}.jsonl").exists()  # revisión abierta: nada
 
@@ -61,6 +63,7 @@ def test_revision_cerrada_produce_una_linea_con_los_campos_exactos(crear_app):
     assert linea["confianza"] == pytest.approx(0.74)
     assert linea["latencia_ms"] is not None
     assert linea["latencia_inferencia_ms"] == 12  # campo 17, el que informó Cloud
+    assert (linea["t_luz_a_ms"], linea["t_luz_b_ms"]) == (300, None)  # campos 18 y 19
     assert (linea["decision"], linea["clase_final_arbitro"]) == ("mantener", "AttackA")
     assert linea["concordancia"] is True
     # Fuente de verdad: la base
@@ -130,7 +133,7 @@ def test_fallo_de_escritura_no_revierte_el_veredicto(crear_app):
 def _entidades(fuente: str, disponible: bool = True):
     ahora = datetime(2026, 9, 29, 12, 0, tzinfo=timezone.utc)
     uid = uuid.uuid4
-    tocado = Tocado(uid(), uid(), fuente, True, True, None, 300, None, ahora)
+    tocado = Tocado(uid(), uid(), fuente, True, True, None, 300, None, ahora, 300, 300)
     modelo = ModeloVersion(uid(), "m-1", "u", "a" * 64, "yolov8x-pose", 192, 6, "FIE 2026",
                            None, None, None, True, ahora)
     clasificacion = Clasificacion(
@@ -155,16 +158,18 @@ def test_validacion_se_deriva_de_tocado_fuente(fuente, validacion):
     assert linea.concordancia is True
 
 
-def test_latencia_inferencia_es_el_campo_17_y_null_si_no_disponible():
+def test_latencia_inferencia_es_el_campo_17_y_las_luces_los_campos_18_y_19():
     disponible = construir_linea(evento_id=uuid.uuid4(), **_entidades("simulado"))
     no_disponible = construir_linea(
         evento_id=uuid.uuid4(), **_entidades("simulado", disponible=False)
     )
 
-    assert list(LineaEvidencia.__dataclass_fields__)[-1] == "latencia_inferencia_ms"
-    assert len(LineaEvidencia.__dataclass_fields__) == 17
+    campos = list(LineaEvidencia.__dataclass_fields__)
+    assert campos[16:] == ["latencia_inferencia_ms", "t_luz_a_ms", "t_luz_b_ms"]
+    assert len(campos) == 19
     assert disponible.latencia_inferencia_ms == 18
     assert no_disponible.latencia_inferencia_ms is None
+    assert (disponible.t_luz_a_ms, disponible.t_luz_b_ms) == (300, 300)
 
 
 def test_concordancia_es_null_si_no_disponible():

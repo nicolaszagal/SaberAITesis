@@ -188,7 +188,7 @@ python scripts/exportar_evidencia.py --evento <evento_id>
 ```
 
 El script sale con código 1 si algún veredicto no se registra. Las convenciones (luces del CSV,
-`t_tocado_ms` = primer frame de luz / fps, brazo armado de Label Studio, veredicto con la clase
+`t_luz_a_ms` / `t_luz_b_ms` = frame de cada luz / fps, brazo armado de Label Studio, veredicto con la clase
 real del clip) están en su docstring. Resultados de la última corrida:
 `docs/evidencia/prueba_humo_Q02.md`.
 
@@ -414,8 +414,8 @@ frames.
 - Sin CI configurado (decisión explícita: las pruebas corren manualmente).
 - `InMemoryMatchRepository` solo guarda las sesiones de procesamiento de Fog (se pierden al
   reiniciar); lo que se audita (combates, clips, clasificaciones, veredictos) está en PostgreSQL.
-- Sin integración física con la luz Favero real: la Validación 1 la simula con `has_luz_A/B` y
-  `t_tocado_ms` en la carga del clip (Validación 2 usa el aparato real).
+- Sin integración física con la luz Favero real: la Validación 1 la simula con `t_luz_a_ms` y
+  `t_luz_b_ms` en la carga del clip (Validación 2 usa el aparato real).
 - Cloud precalienta el modelo al arrancar (F-027): una inferencia con ceros (T = `MIN_FRAMES`, 192
   features) cuyo resultado se descarta, con una línea INFO "modelo precalentado en N ms". Si falla,
   Cloud no arranca. Antes la primera inferencia tomó 950 ms (ver `docs/evidencia/prueba_humo_Q02.md`).

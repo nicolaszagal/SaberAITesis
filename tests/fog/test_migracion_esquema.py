@@ -77,7 +77,7 @@ async def test_migracion_aplica_sobre_base_limpia(alembic_cfg, engine):
         version = (
             await conn.execute(text("SELECT version_num FROM public.alembic_version"))
         ).scalar_one()
-        assert version == "0005"
+        assert version == "0006"
 
 
 async def test_downgrade_y_reaplicacion(alembic_cfg, engine):
@@ -186,3 +186,53 @@ async def test_0005_precarga_eventos_y_usuarios_y_es_idempotente(alembic_cfg, en
     assert await leer(
         "SELECT activo FROM sabre.usuario WHERE nombre = 'Árbitro de prueba'"
     ) == [(False,)]
+
+
+async def test_0006_instante_por_luz_rellena_filas_existentes_y_aplica_los_check(alembic_cfg, engine):
+    """0006 (V02): las filas existentes toman `t_tocado_ms` en cada luz encendida;
+    `luz_x` es verdadera si y solo si `t_luz_x_ms` no es NULL."""
+    import asyncio
+
+    from sqlalchemy.exc import IntegrityError
+
+    await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
+    await asyncio.to_thread(command.downgrade, alembic_cfg, "0005")
+    async with engine.begin() as conn:
+        await conn.execute(text(
+            "INSERT INTO sabre.usuario (nombre, rol) VALUES ('u0006', 'arbitro')"))
+        await conn.execute(text(
+            "INSERT INTO sabre.tirador (alias, brazo_habitual, es_menor) "
+            "VALUES ('a0006', 'diestro', TRUE), ('b0006', 'zurdo', TRUE)"))
+        await conn.execute(text(
+            "INSERT INTO sabre.combate (pista, tirador_a_id, tirador_b_id, brazo_a, brazo_b, "
+            "arbitro_id, configurado_por) "
+            "SELECT 'P0006', a.id, b.id, 'diestro', 'zurdo', u.id, u.id "
+            "FROM sabre.tirador a, sabre.tirador b, sabre.usuario u "
+            "WHERE a.alias = 'a0006' AND b.alias = 'b0006' AND u.nombre = 'u0006'"))
+        await conn.execute(text(
+            "INSERT INTO sabre.tocado (combate_id, fuente, luz_a, luz_b, t_tocado_ms) "
+            "SELECT id, 'simulado', TRUE, FALSE, 700 FROM sabre.combate WHERE pista = 'P0006'"))
+
+    await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
+
+    async def fila():
+        async with engine.connect() as conn:
+            return tuple((await conn.execute(text(
+                "SELECT t.luz_a, t.luz_b, t.t_luz_a_ms, t.t_luz_b_ms, t.t_tocado_ms "
+                "FROM sabre.tocado t JOIN sabre.combate c ON c.id = t.combate_id "
+                "WHERE c.pista = 'P0006'"))).one())
+
+    assert await fila() == (True, False, 700, None, 700)
+
+    # CHECK: una luz encendida exige su instante y una apagada no puede tenerlo.
+    insertar = (
+        "INSERT INTO sabre.tocado (combate_id, fuente, luz_a, luz_b, t_tocado_ms, t_luz_a_ms, t_luz_b_ms) "
+        "SELECT id, 'simulado', {a}, {b}, 100, {ta}, {tb} FROM sabre.combate WHERE pista = 'P0006'"
+    )
+    for a, b, ta, tb in (("TRUE", "FALSE", "NULL", "NULL"), ("TRUE", "TRUE", "100", "NULL"),
+                         ("TRUE", "FALSE", "100", "100"), ("TRUE", "FALSE", "-1", "NULL")):
+        with pytest.raises(IntegrityError):
+            async with engine.begin() as conn:
+                await conn.execute(text(insertar.format(a=a, b=b, ta=ta, tb=tb)))
+    async with engine.begin() as conn:  # y la combinación válida pasa
+        await conn.execute(text(insertar.format(a="TRUE", b="TRUE", ta="100", tb="150")))
