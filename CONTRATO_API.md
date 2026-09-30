@@ -354,7 +354,8 @@ Un combate admite N clips: ya no hay `409` por segundo clip.
    La API y el dominio usan los nombres del modelo; solo el adaptador de persistencia los
    traduce a los del esquema al guardar (`AttackA` → `AtaqueA`, `ContrattackA` →
    `ContraataqueA`, `RiposteA` → `RiposteA`; igual en las llaves de `probabilidades`) y de
-   vuelta al leer. Respeta `UNIQUE (tocado_id, modelo_version_id)` (un tocado por clip, así
+   vuelta al leer. `latencia_inferencia_ms` (sección 6) llega a Fog pero **no se persiste**:
+   `clasificacion` no tiene columna para ella. Respeta `UNIQUE (tocado_id, modelo_version_id)` (un tocado por clip, así
    que cada revisión tiene su propia clasificación). La revisión queda abierta
    (`cerrada_en` nulo) hasta el veredicto de la sección 7.1.
 
@@ -513,10 +514,11 @@ este mismo WebSocket:
 
 `motivo` es uno de `clasificacion.motivo_no_disp`
 (`sabre_ai_schema.sql`): `pose_incompleta`, `confianza_baja`,
-`clase_fuera_mvp`, `timeout`, `sin_senal_favero`, `mensaje_invalido`. Hoy Fog solo puede
-producir `pose_incompleta` (los dos únicos errores que devuelve
+`clase_fuera_mvp`, `timeout`, `sin_senal_favero`, `mensaje_invalido`. Por este WebSocket
+Fog produce `pose_incompleta` (los dos únicos errores que devuelve
 `FeatureExtractorPort.extract` — sin lock A/B, o secuencia bajo
-`min_frames` — mapean a ese motivo); `confianza_baja` y
+`min_frames` — mapean a ese motivo) y, en la carga de clip (sección 4), `timeout` cuando
+Cloud no responde a tiempo; `confianza_baja` y
 `clase_fuera_mvp` son responsabilidad de Cloud y no están implementados
 todavía (el umbral de confianza no está documentado). `mensaje_invalido`
 (DEF-09) lo produce Cloud cuando una entrada de `fog:features` no respeta
@@ -640,20 +642,41 @@ log técnico.
   operador identificado). La transacción única del veredicto usa
   `fog/ports/unidad_de_trabajo.py`.
 
-## 9. Pendiente del lado del front (fuera de esta entrega)
+## 8.1 Almacenamiento y evidencia en disco
 
-Carlos necesita agregar en `var-esg`:
-1. Captura del video subido manualmente como `MediaStreamTrack` y armado del
-   `RTCPeerConnection` (oferta SDP) hacia `POST /webrtc/offer`.
-2. Envío de `weapon_side_A/B` **siempre** (UI obligatoria para configurarlos; no hay valor
-   por defecto) y del resto de campos de `POST /matches/config` (sección 1.1: `evento_id`,
-   `pista`, `arbitro_id`, alias y `es_menor` de cada tirador; las opciones de `evento_id` y
-   `arbitro_id` salen de `GET /eventos` y `GET /usuarios?rol=arbitro`, sección 1.2); llamada a
-   `POST /revisiones/{revision_id}/veredicto` (sección 7.1), con el `revision_id` de la
-   respuesta del clip, desde los botones de veredicto (`clase_final` obligatoria con
-   mantener y cambiar).
-3. Captura/reporte de la luz Favero vía `POST /webrtc/{match_id}/luz` antes de que
-   expire `FAVERO_LUZ_TIMEOUT_S` (sección 3).
-4. Cliente WebSocket a `/ws/veredicto/{revision_id}` y mapeo de `action`/`fencer`/
-   `confidence` a los componentes existentes (`ActionPanel`, `HistorialPanel`, etc.),
-   reemplazando los datos de `mock.ts`.
+Archivos que Fog escribe fuera de la base (rutas fijadas por `STORAGE_DIR` y `EVIDENCE_DIR`,
+`GUIA_EJECUCION.md` sección 3). La base solo guarda URI y hash.
+
+| Ruta | Contenido | Escribe |
+|---|---|---|
+| `STORAGE_DIR/clips/<sha[:2]>/<sha>.<ext>` | clip subido; el nombre es el SHA-256 del archivo, así que el mismo clip no se duplica. `clip.uri` = `local://clips/...`, `clip.sha256` | `POST /matches/{match_id}/clip` |
+| `STORAGE_DIR/keypoints/<sha[:2]>/<sha>.npz` | keypoints crudos comprimidos (`{a,b}_xy`, `_conf`, `_box`, `_detected`, `frame_w/h`, `locked`, `lock_frame`); `clasificacion.keypoints_uri` y `keypoints_sha256` | al registrar la clasificación |
+| `EVIDENCE_DIR/<evento_id>.jsonl` | una línea por revisión cerrada (campos de la sección 7.1, L01); solo adición, no se corrige | cierre de la revisión |
+| `EVIDENCE_DIR/<evento_id>/resumen.json`, `revisiones.csv`, `resumen.md` | exportación de la sesión de validación (L02); se sobrescriben al reejecutar | `scripts/exportar_evidencia.py --evento <id>` |
+
+`EVIDENCE_DIR` es obligatorio al arrancar Fog; `STORAGE_DIR` y `DATABASE_URL` se exigen al
+primer uso (carga de clip, catálogos, consultas y `/health`): con Fog arrancado sin
+`DATABASE_URL`, esas rutas responden 500 (`/health` incluido, no 503) con
+"Falta la variable de entorno DATABASE_URL" en el log.
+La evidencia de la sesión no incluye nombres de atletas: se usa el alias de `tirador`. La
+evidencia del modelo va dentro de `resumen.json` (`modelo`), no en una carpeta aparte.
+
+## 9. Uso desde el frontend y pendientes
+
+Estado de `SaberAISoftware` (Validación 1). Solo usa REST; **no** abre WebRTC ni el WebSocket
+de veredicto ni reporta la luz por `POST /webrtc/{match_id}/luz` (esas secciones quedan como
+contrato del flujo WebRTC, fuera de la Validación 1):
+
+| Pantalla / acción | Endpoint |
+|---|---|
+| Configurar combate (CU-01) | `GET /eventos`, `GET /usuarios?rol=arbitro`, `POST /matches/config`; al cargar la app valida el combate con `GET /matches/{match_id}` |
+| Subir clip con luces e instante del tocado (CU-02, CU-03) | `POST /matches/{match_id}/clip` (la respuesta trae la sugerencia o "no disponible") |
+| Veredicto (CU-10) | `POST /revisiones/{revision_id}/veredicto` (`clase_final` obligatoria con mantener y cambiar; sin ella con anular) |
+| Historial y detalle (CU-12) | `GET /revisiones?evento_id=`, `GET /revisiones/{id}` |
+| Resumen y exportación de la validación (L02) | `GET /validaciones/{evento_id}/resumen` |
+| Estado del sistema y modelo | `GET /health`, `GET /modelo/activo` |
+
+La traducción de `action`/`fencer` a las etiquetas de la interfaz está en la sección 7.
+
+Pendiente (Validación 2, fuera de esta entrega): captura de las dos cámaras y señal Favero
+real; consumo del WebSocket de veredicto si se retoma el flujo WebRTC.
