@@ -100,7 +100,7 @@ Resultado esperado: el comando termina sin errores y crea los contenedores `sabr
 docker compose ps
 ```
 
-Resultado esperado: `postgres`, `redis`, `fog` y `frontend` en `healthy`, y `cloud` en `Up`. Fog puede figurar como `health: starting` hasta un minuto. Al arrancar, Fog aplica las migraciones y registra el modelo desplegado solo si no hay uno activo. No hay pasos manuales.
+Resultado esperado: `postgres`, `redis`, `fog` y `frontend` en `healthy`, y `cloud` en `Up`. Fog puede figurar como `health: starting` durante los primeros 20 segundos. Al arrancar, Fog aplica las migraciones y registra el modelo desplegado solo si no hay uno activo. No hay pasos manuales.
 
 Cada servicio se puede levantar por separado con `docker compose up -d <servicio>` (`postgres`, `redis`, `cloud`, `fog`, `frontend`). Sus dependencias se levantan con él.
 
