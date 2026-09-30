@@ -259,6 +259,34 @@ rm -rf datos-humo
 | `/health` responde 503 | Un componente está en `"error"`. | Lea el cuerpo: `redis` o `postgres` indican cuál. Revise `docker compose ps` y los logs de ese servicio. |
 | Aviso `objc: Class AVFFrameReceiver is implemented in both` en los logs de Fog | Bibliotecas duplicadas en la imagen. | Es un aviso. No impide el funcionamiento. |
 
+## 8. Modo piloto: Fog nativo
+
+Para un equipo con Apple Silicon donde el análisis en Docker es lento. Fog corre fuera de Docker, con el entorno virtual de `GUIA_EJECUCION.md` (sección 2); PostgreSQL, Redis, Cloud y el frontend siguen en Docker. Usa las mismas carpetas `backend/datos` que el modo Docker, pero no se ejecuta a la vez que el Fog de Docker (ambos usan el puerto 8001). El flujo de las secciones 2 a 7 no cambia.
+
+1. Levante todo menos Fog. PostgreSQL y Redis quedan publicados solo en `127.0.0.1` (puertos 5436 y 6380; cámbielos con `POSTGRES_HOST_PORT` y `REDIS_HOST_PORT` en `.env`).
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.nativo.yml up -d
+```
+
+2. Arranque Fog nativo. El script fija las variables, aplica `alembic upgrade head`, registra el modelo si no hay uno activo y arranca `uvicorn` en el puerto 8001. Se detiene con Ctrl+C.
+
+```bash
+sh scripts/fog_nativo.sh
+```
+
+Resultado esperado: `Application startup complete` y `curl -s http://localhost:8001/health` responde `{"fog":"ok","redis":"ok","postgres":"ok"}`.
+
+Medición (`prueba_humo.py`, 6 clips, tiempo `ms_clip` de la carga del clip, cliente en el equipo; mediana y p95 por rango superior de 6 valores):
+
+| Modo | Mediana | p95 |
+|---|---|---|
+| Docker, Colima con 2 CPU y 4 GiB | 43.9 s | 48.9 s |
+| Docker, Colima con 4 CPU y 4 GiB | 42.2 s | 45.7 s |
+| Fog nativo (Python 3.14) | 5.4 s | 5.9 s |
+
+Las seis sugerencias coincidieron entre Docker y nativo. En modo nativo la pose usa la CPU: el código no fija `device`, el log de Fog no muestra el dispositivo (`ultralytics` queda en WARNING) y una carga del mismo modelo con la llamada por defecto reporta `cpu`, aunque MPS está disponible en el equipo. Usar MPS no se ha probado. Para volver al flujo principal, detenga `fog_nativo.sh` y ejecute `docker compose up -d`.
+
 ## Anexo. Fuera de la Validación 1
 
 | Tema | Dónde |
