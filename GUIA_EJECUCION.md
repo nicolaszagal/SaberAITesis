@@ -1,5 +1,7 @@
 # Guía de ejecución — Backend SABRE.AI
 
+Manuales de la Validación 1: [Manual de usuario](docs/manuales/MANUAL_USUARIO.md) y [Guía de instalación](docs/manuales/GUIA_INSTALACION.md).
+
 ## 1. Requisitos previos
 
 - Python 3.10+ (verificado con 3.10 y 3.14; las imágenes Docker usan 3.12).

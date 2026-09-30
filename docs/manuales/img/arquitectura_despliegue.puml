@@ -1,0 +1,39 @@
+@startuml arquitectura_despliegue
+!include ../../uml/skin.iuml
+left to right direction
+title Arquitectura desplegada de SABRE.AI (Validación 1)
+
+rectangle "Equipo local" as LOCAL {
+  node "Navegador" as NAV
+  component "Frontend\nExpo web :8081" as FRONT
+  component "Fog\nFastAPI :8001" as FOG
+  database "PostgreSQL 16\nDocker :5433\nesquema sabre" as PG
+  queue "Redis\n:6379" as REDIS
+  folder "STORAGE_DIR\nclips y keypoints" as STO
+  folder "EVIDENCE_DIR\nlog y exportación" as EVI
+  component "Cloud (local)\npython -m cloud.main" as CLOUDL
+}
+
+rectangle "Render (opcional, no verificado)" as RENDER {
+  component "Cloud\nBackground Worker" as CLOUDR
+}
+
+rectangle "Solo Validación 2" as V2 {
+  node "Cámaras USB\ny aparato Favero" as CAM
+  component "MediaMTX\n:1935 y :8554" as MTX
+  component "Edge\nWebSocket :8002" as EDGE
+}
+
+NAV --> FRONT : HTTP
+FRONT --> FOG : REST (POST /matches/{id}/clip,\nPOST /revisiones/{id}/veredicto)
+FOG --> PG : SQL (asyncpg)
+FOG --> STO : escribe
+FOG --> EVI : escribe
+FOG --> REDIS : fog:features
+REDIS --> CLOUDL : consume
+CLOUDL --> REDIS : cloud:verdicts:{revision_id}
+REDIS ..> CLOUDR : Upstash si Cloud\ncorre en Render
+CAM ..> MTX : RTMP
+MTX ..> EDGE : RTSP
+EDGE ..> FRONT : video por WebSocket
+@enduml
