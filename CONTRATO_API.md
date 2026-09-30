@@ -48,13 +48,8 @@ Body (JSON):
   "arbitro_id": "uuid",
   "alias_A": "Rojo",
   "weapon_side_A": "right",
-  "es_menor_A": false,
-  "consentimiento_firmado_A": false,
-  "consentimiento_fecha_A": null,
-  "firmante_A": null,
   "alias_B": "Verde",
-  "weapon_side_B": "left",
-  "es_menor_B": false
+  "weapon_side_B": "left"
 }
 ```
 
@@ -63,12 +58,14 @@ Body (JSON):
 | `evento_id` | sí | debe existir en `sabre.evento` (404 si no) |
 | `pista` | sí | texto no vacío |
 | `arbitro_id` | sí | debe existir en `sabre.usuario` (404 si no). Se guarda también como `configurado_por` (no hay login ni operador identificado) |
-| `alias_A/B` | sí | alias del tirador (minimización de datos) |
+| `alias_A/B` | no | alias del tirador (minimización de datos). Vacío u omitido: `"Tirador A"` / `"Tirador B"` |
 | `weapon_side_A/B` | **sí, sin valor por defecto** | `"right"` → `diestro`, `"left"` → `zurdo`. Se guarda en `combate.brazo_a/b` y `tirador.brazo_habitual`. Sin él: 422 y no se crea nada |
-| `es_menor_A/B` | sí | `tirador.es_menor` es NOT NULL |
-| `consentimiento_firmado_A/B` | no (`false`) | RNF-16 |
-| `consentimiento_fecha_A/B` | si está firmado | 422 si falta (CHECK del esquema) |
-| `firmante_A/B` | si es menor y firmó | 422 si falta (CHECK del esquema) |
+
+Menor de edad y consentimiento ya no se reciben (V01): el backend guarda ambos tiradores con
+`es_menor = false` y `consentimiento_firmado = true`, valor conservador porque en V1 los
+consentimientos se gestionan en papel fuera del sistema. `consentimiento_fecha` es la fecha de
+registro del combate (el esquema la exige con el consentimiento firmado) y `firmante` queda nulo.
+Los campos antiguos (`es_menor_*`, `consentimiento_*`, `firmante_*`) se ignoran si llegan.
 
 Cada configuración crea sus dos tiradores nuevos (el alias no es único en el esquema).
 
@@ -99,12 +96,12 @@ no existe o `match_id` no es uuid (`POST`/`PUT`/`DELETE` responden 404/405).
 `rol` es opcional y admite `arbitro`, `operador` o `administrador` (**422** con otro valor); sin
 `rol` devuelve todos. El `id` de un árbitro se envía como `arbitro_id` de la sección 1.1.
 
-Ninguno de los dos crea ni modifica nada (`POST`/`PUT`/`DELETE` responden 404/405). Los datos se
-siembran fuera de la API con `scripts/crear_sesion_validacion.py --evento "<nombre>" --fecha
-YYYY-MM-DD --arbitro "<nombre>" --operador "<nombre>"`: crea el evento (tipo `piloto`) y los
-usuarios árbitro y operador (roles del esquema), y muestra sus ids. Es idempotente por nombre
-(reutiliza lo que ya existe) y responde con código 1 si el evento existe con un tipo distinto de
-`piloto`.
+Ninguno de los dos crea ni modifica nada (`POST`/`PUT`/`DELETE` responden 404/405). Los datos iniciales los
+precarga la migración Alembic 0005 (V01), idempotente por nombre: eventos "Evento de prueba"
+(`formativo`, ensayos) y "Validación 1" (`piloto`, sesión real), y usuarios "Árbitro de prueba"
+(`arbitro`) y "Operador de prueba" (`operador`). Para uso técnico, `scripts/crear_sesion_validacion.py
+--evento "<nombre>" --fecha YYYY-MM-DD --arbitro "<nombre>" --operador "<nombre>"` crea otros
+(evento `piloto`, idempotente por nombre; código 1 si el evento existe con otro tipo).
 
 ## 1.3 Consultas de solo lectura (CU-07, CU-12)
 
@@ -648,8 +645,8 @@ log técnico.
 - **Mapeo A/B ↔ ROJ/VER**: fijo (`A=ROJ`, `B=VER`) para v1, confirmado por Nicolas. No
   configurable por combate todavía.
 - **Persistencia (D03)**: requiere `DATABASE_URL`, `STORAGE_DIR`, filas de `usuario` y
-  `evento` sembradas fuera de la API con `scripts/crear_sesion_validacion.py` (no hay login,
-  RF-26 es COULD; sección 1.2) y una versión de modelo activa
+  `evento` (las precarga la migración 0005; `scripts/crear_sesion_validacion.py` crea más; no hay
+  login, RF-26 es COULD; sección 1.2) y una versión de modelo activa
   (`scripts/registrar_modelo.py`). La base del compose publica el puerto
   `POSTGRES_HOST_PORT` (5433 por defecto, solo loopback; ver `GUIA_EJECUCION.md`). `tocado.registrado_por` queda nulo (no hay
   operador identificado). La transacción única del veredicto usa

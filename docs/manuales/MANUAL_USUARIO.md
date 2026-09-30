@@ -53,15 +53,15 @@ El flujo tiene siete pasos: configurar el combate, cargar el clip, analizar, rev
 ### 4.1 Configurar el combate (CU-01, F-039)
 
 1. Seleccione "Combate" en el encabezado. El título de la pantalla es "Configurar combate".
-2. En "Evento", seleccione la sesión de validación. Cada opción muestra el nombre y la fecha.
-3. En "Pista", escriba la pista (por ejemplo, P1).
-4. En "Árbitro", seleccione el árbitro del combate.
-5. En la tarjeta "Tirador A · ROJ", escriba el alias en "Alias". Use siempre alias, nunca nombres de atletas.
+2. "Evento" viene con "Validación 1" seleccionado. Para ensayar, seleccione "Evento de prueba". Cada opción muestra el nombre y la fecha.
+3. "Pista" viene con "P1". Edítela si es otra.
+4. "Árbitro" viene seleccionado si hay uno solo. Si hay varios, seleccione el del combate.
+5. En la tarjeta "Tirador A · ROJ", "Alias" es opcional. Si lo deja vacío, se usa "Tirador A". Use siempre alias, nunca nombres de atletas.
 6. En "Brazo armado", seleccione "Diestro" o "Zurdo". Es obligatorio y no tiene valor por defecto: las características del movimiento se calculan sobre ese brazo.
-7. En "Menor de edad", seleccione "No" o "Sí".
-8. En "Consentimiento firmado", seleccione "No" o "Sí". Con "Sí" aparece "Fecha del consentimiento (AAAA-MM-DD)". Si además el tirador es menor de edad, aparece "Firmante (apoderado)". Complete los campos que aparezcan.
-9. Repita los pasos 5 a 8 en la tarjeta "Tirador B · VER".
-10. Pulse "Crear combate" (atajo Ctrl+Intro). Resultado esperado: aparece la tarjeta "Combate activo" con la pista, el árbitro y los alias, y el encabezado muestra "Pista" y "Árbitro:".
+7. Repita los pasos 5 y 6 en la tarjeta "Tirador B · VER" (alias por defecto "Tirador B").
+8. Pulse "Crear combate" (atajo Ctrl+Intro). Resultado esperado: aparece la tarjeta "Combate activo" con la pista, el árbitro y los alias, y el encabezado muestra "Pista" y "Árbitro:".
+
+Con un clic en el brazo de cada tirador y "Crear combate" el combate queda listo. El consentimiento informado se gestiona en papel fuera del sistema.
 
 ![Formulario del combate](img/03-combate-formulario.png)
 
@@ -78,11 +78,7 @@ Si falta un dato, la pantalla no crea el combate y muestra un mensaje con la ind
 | "Falta seleccionar el evento" | No eligió un evento. |
 | "Falta la pista" | El campo "Pista" está vacío. |
 | "Falta seleccionar el árbitro" | No eligió un árbitro. |
-| "Falta el alias del tirador A" (o B) | El alias está vacío. |
 | "Falta el brazo armado del tirador A" (o B) | No eligió "Diestro" o "Zurdo". |
-| "Indica si el tirador A es menor de edad" (o B) | No eligió "No" o "Sí". |
-| "Falta la fecha del consentimiento del tirador A" (o B) | Consentimiento firmado sin fecha. |
-| "Falta el firmante del tirador A (menor de edad)" (o B) | Menor con consentimiento firmado sin firmante. |
 
 Si la lista de eventos o de árbitros no carga, la pantalla muestra "No se pudo cargar el catálogo" con el botón "Reintentar", o bien "No hay eventos registrados", "No hay árbitros registrados" o "No hay eventos ni árbitros registrados" con el botón "Recargar". En ambos casos no se puede crear el combate hasta que el catálogo cargue.
 
