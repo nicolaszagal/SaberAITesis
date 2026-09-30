@@ -1,0 +1,88 @@
+@startuml
+!include skin.iuml
+title Secuencia - Carga de clip con persistencia, veredicto de Cloud y decisión del árbitro (Validación 1)
+actor Árbitro
+participant "Frontend\n(fogApi)" as FE
+box "Nodo Fog"
+participant "routes" as R
+participant "process_uploaded_clip" as PC
+participant "YoloV8PoseAdapter\n(sesión BoT-SORT)" as Y
+participant "LocalFileStorage" as ST
+participant "AbrirRevisionVar" as AR
+participant "ProcessIncomingMatch" as PM
+participant "New192FeatureExtractor" as FX
+participant "ForwardVerdictToClient" as FV
+participant "RegistrarClasificacion" as RC
+participant "RegistrarVeredicto" as RV
+end box
+database "PostgreSQL\n(esquema sabre)" as DB
+queue "Redis" as RD
+box "Nodo Cloud"
+participant "ClassifyAndPublish" as CP
+participant "LSTM6ClassAdapter" as L
+participant "NullArbitrationPolicy" as M
+end box
+
+Árbitro -> FE : clip + luces + instante del tocado
+FE -> R : POST /matches/{id}/clip (multipart)
+R -> DB : combate existe?
+alt combate inexistente
+  R --> FE : 404
+end
+alt sin luz encendida
+  R --> FE : 422
+end
+R -> DB : ¿hay modelo activo?
+alt sin modelo activo
+  R --> FE : 503
+end
+R -> PC : process_uploaded_clip(file, t_tocado_ms)
+PC -> PC : valida tamaño (413), video (400)\ny t_tocado_ms en [0, duración] (422)
+loop por cada frame (cv2.VideoCapture)
+  PC -> Y : add_frame(frame)
+end
+PC -> Y : finish()
+Y --> PC : TrackedSequence
+PC -> ST : save_clip(archivo)
+ST --> PC : uri + sha256
+PC --> R : ClipProcesado
+R -> AR : execute(combate, video, luz, t_tocado_ms)
+AR -> DB : tx: clip, tocado (simulado),\ntocado_clip, revision_var (abierta)
+AR --> R : revision_id
+R -> PM : execute(match_id, revision_id, tracked, lados, luz)
+PM -> FX : extract() en executor
+FX --> PM : (T x 192) o error
+alt extracción válida
+  PM -> RD : XADD fog:features
+  PM --> R : None
+  R -> FV : execute(revision_id) con timeout 30 s
+  FV -> RD : XREAD cloud:verdicts:{revision_id}
+  CP -> RD : XREADGROUP fog:features
+  CP -> L : classify(sequence, luz)
+  L --> CP : RawVerdict (softmax 6 clases,\nfiltro Favero sobre logits)
+  CP -> M : resolve(raw, luz)
+  M --> CP : RawVerdict sin cambios
+  CP -> RD : XADD cloud:verdicts:{revision_id}
+  CP -> RD : XACK
+  RD --> FV : veredicto (o "no disponible")
+  FV --> R : sesión con veredicto
+  note right of R : Si vence el timeout:\nUnavailableResult(timeout)
+else pose incompleta
+  PM --> R : UnavailableResult(pose_incompleta)\n(no se publica en Redis)
+end
+R -> RC : execute(tocado_id, revision_id, tracked,\nresultado, latencia_ms)
+RC -> ST : save_keypoints(.npz)
+RC -> DB : tx: clasificacion (modelo activo)\n+ revision.clasificacion_id
+R --> FE : 200 {revision_id, disponible, motivo,\nfencer, action, confidence, timed_out}
+FE --> Árbitro : sugerencia o "Clasificación no disponible"
+
+Árbitro -> FE : decisión (mantener / cambiar / anular)
+FE -> R : POST /revisiones/{revision_id}/veredicto
+R -> RV : execute(revision_id, decision, clase_final, arbitro_id)
+RV -> DB : tx: veredicto + cierra revision_var\n+ registro_auditoria (hash en la base)
+alt ya tiene veredicto / sin clasificación
+  RV --> R : 409
+end
+RV -> RV : línea en EVIDENCE_DIR/<evento_id>.jsonl
+R --> FE : 200 {veredicto_id, auditoria_seq, auditoria_hash, ...}
+@enduml

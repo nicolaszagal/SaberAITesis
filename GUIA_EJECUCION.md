@@ -2,9 +2,14 @@
 
 ## 1. Requisitos previos
 
-- Python 3.10+ (verificado con 3.10).
+- Python 3.10+ (verificado con 3.10 y 3.14; las imágenes Docker usan 3.12).
 - Redis corriendo y accesible (broker entre Fog y Cloud). Sin Redis, ni Fog ni
   Cloud arrancan.
+- PostgreSQL 16 con el esquema `sabre` migrado (sección 6.1): registra clips, tocados,
+  clasificaciones, veredictos y la auditoría. Sin `DATABASE_URL`, Fog arranca pero las rutas
+  con persistencia responden 500 (incluido `/health`).
+- Directorios de trabajo de Fog: `STORAGE_DIR` (clips y keypoints) y `EVIDENCE_DIR` (log y
+  exportación de evidencia); ver la tabla de la sección 3.
 - `dataset/yolov8x-pose.pt` presente en el repo (ruta por defecto en
   `shared/config.py`, override-able con `YOLO_POSE_MODEL_PATH`).
 - **Variables de entorno obligatorias, sin default (DEF-15):**
@@ -71,7 +76,7 @@ C/Fortran/meson instalado. Alcanza con: (a) actualizar pip
 algo más madura (3.12/3.13) con más wheels publicados. Ver el comentario
 sobre `numpy==2.3.4` en `requirements.txt` para un caso concreto ya resuelto.
 
-## 3. Variables de entorno (todas opcionales, ver `shared/config.py`)
+## 3. Variables de entorno (ver `shared/config.py`; las obligatorias se marcan)
 
 | variable                | default                                         | uso |
 |-------------------------|-------------------------------------------------|-----|
@@ -81,11 +86,18 @@ sobre `numpy==2.3.4` en `requirements.txt` para un caso concreto ya resuelto.
 | `FEATURE_STATS_PATH`    | — (obligatoria, DEF-15)                         | mean/std de estandarización (Fog) |
 | `FEATURE_PREPROCESSING_PROFILE` | — (obligatoria)                         | perfil de recorte/ablación por versión de modelo (Fog) |
 | `FEATURE_PREPROCESSING_PROFILES_PATH` | JSON junto a `preprocessing_profile.py` | archivo de perfiles alternativo (Fog) |
-| `DATABASE_URL`          | — (sin default; credenciales)                   | PostgreSQL 16, `postgresql+asyncpg://usuario:clave@host:puerto/base` (Fog); con el compose, puerto `POSTGRES_HOST_PORT` (5433) |
+| `DATABASE_URL`          | — (sin default; las rutas con persistencia la exigen) | PostgreSQL 16, `postgresql+asyncpg://usuario:clave@host:puerto/base` (Fog); con el compose, puerto `POSTGRES_HOST_PORT` (5433) |
 | `POSTGRES_HOST_PORT`    | `5433`                                          | puerto del host donde `fog/docker-compose.yml` publica PostgreSQL (solo loopback) |
-| `STORAGE_DIR`           | — (sin default)                                 | raíz del almacenamiento local de clips y keypoints `.npz` por SHA-256 (Fog); en Docker, `/data/storage` |
-| `EVIDENCE_DIR`          | — (obligatoria en Fog)                          | log de evidencia (L01): una línea JSON por revisión cerrada en `EVIDENCE_DIR/<evento_id>.jsonl` (logger `sabre.evidencia`); en Docker, `/data/evidencia` |
+| `STORAGE_DIR`           | — (sin default; la carga de clip lo exige)      | raíz del almacenamiento local: `clips/<sha[:2]>/<sha>.<ext>` y `keypoints/<sha[:2]>/<sha>.npz`, nombrados por SHA-256 (Fog); en Docker, `/data/storage`. Disposición completa en `CONTRATO_API.md` 8.1 |
+| `EVIDENCE_DIR`          | — (obligatoria al arrancar Fog)                 | log de evidencia (L01): una línea JSON por revisión cerrada en `EVIDENCE_DIR/<evento_id>.jsonl` (logger `sabre.evidencia`) y exportación L02 en `EVIDENCE_DIR/<evento_id>/`; en Docker, `/data/evidencia` |
 | `M01_EXPERIMENT_LOG`    | — (opcional)                                    | `dataset/lstm_6class/EXPERIMENT_LOG.md`: de ahí el resumen de validación (L02) copia la tabla resumen de M01; sin él, indica "no disponible" |
+| `CLIP_MAX_MB`           | `200`                                           | tamaño máximo del clip en `POST /matches/{id}/clip`; más de eso responde 413 (Fog) |
+| `CLIP_UPLOAD_VERDICT_TIMEOUT_S` | `30.0`                                  | espera del veredicto de Cloud en la carga de clip; vencida, responde `timed_out=true` y `motivo="timeout"` (Fog) |
+| `SESSION_TTL_S`         | `120.0`                                         | segundos que Fog conserva una sesión tras entregar el resultado (Fog) |
+| `SESSION_SWEEP_INTERVAL_S` | `30.0`                                       | cadencia del barrido que libera sesiones vencidas (Fog) |
+| `VERDICT_STREAM_TTL_S`  | `3600`                                          | `EXPIRE` del stream `cloud:verdicts:{revision_id}` (Cloud) |
+| `CLAIM_MIN_IDLE_S`      | `60.0`                                          | tiempo pendiente mínimo antes de que Cloud reclame con `XAUTOCLAIM` al arrancar (Cloud) |
+| `TEST_DATABASE_URL`     | — (solo pruebas)                                | base de pruebas para `pytest`; ver sección 5 |
 | `LOG_LEVEL`             | `INFO`                                          | nivel del log técnico (Fog y Cloud); `aioice`, `aiortc`, `uvicorn.access` y `ultralytics` quedan siempre en WARNING |
 | `FAVERO_LUZ_TIMEOUT_S`  | `2.0`                                           | espera máxima de la luz Favero antes de clasificar sin ella |
 | `CLOUD_CONSUMER_NAME`   | `cloud-worker-1`                                | nombre de consumidor en el grupo `cloud_workers` (relevante si se levanta más de una instancia de Cloud) |
@@ -140,39 +152,83 @@ sobrescriben los tres archivos y con los mismos datos solo cambia `generado_en`.
 contenido de `resumen.json` está en `GET /validaciones/{evento_id}/resumen`. Sale con código 1
 si falta configuración o el evento no existe.
 
+### 4.2 Prueba de humo con una base separada
+
+Recorre un clip por clase de `dataset/dataset trimmed/test_trimmed` hasta el veredicto. **Usa
+una base, un Redis y directorios distintos a los de la validación**: cada corrida agrega
+revisiones auditables que no se pueden borrar (append-only). Ejemplo con contenedores propios:
+
+```bash
+docker run -d --name sabre-humo-pg -e POSTGRES_USER=sabre -e POSTGRES_PASSWORD=humo_local \
+    -e POSTGRES_DB=sabre_humo -p 127.0.0.1:5434:5432 postgres:16-alpine
+redis-server --port 6390 --save "" --appendonly no --daemonize yes
+
+cd backend && source .venv/bin/activate
+export DATABASE_URL=postgresql+asyncpg://sabre:humo_local@localhost:5434/sabre_humo
+export REDIS_URL=redis://localhost:6390/0
+export STORAGE_DIR=/tmp/humo/storage EVIDENCE_DIR=/tmp/humo/evidencia
+DS=$(cd ../dataset && pwd)                                   # rutas absolutas al dataset
+export FEATURE_STATS_PATH=$DS/lstm_6class/feature_stats.npz
+export FEATURE_PREPROCESSING_PROFILE=lstm_6class
+export MODEL_RUN_DIR=$DS/lstm_6class/checkpoints/20260928_141021
+export M01_EXPERIMENT_LOG=$DS/lstm_6class/EXPERIMENT_LOG.md
+mkdir -p $STORAGE_DIR $EVIDENCE_DIR
+
+alembic upgrade head
+python scripts/registrar_modelo.py 20260928_141021
+python scripts/crear_sesion_validacion.py --evento "Humo" --fecha 2026-09-29 \
+    --arbitro "Arbitro Humo" --operador "Operador Humo"      # imprime evento_id y arbitro_id
+python -m cloud.main &
+python -m uvicorn fog.main:app --port 8001 &                 # esperar ~20 s (carga de YOLO)
+
+python scripts/prueba_humo.py --evento <evento_id> --arbitro <arbitro_id> \
+    --redis-url $REDIS_URL --salida humo.json
+python scripts/exportar_evidencia.py --evento <evento_id>
+```
+
+El script sale con código 1 si algún veredicto no se registra. Las convenciones (luces del CSV,
+`t_tocado_ms` = primer frame de luz / fps, brazo armado de Label Studio, veredicto con la clase
+real del clip) están en su docstring. Resultados de la última corrida:
+`docs/evidencia/prueba_humo_Q02.md`.
+
 ## 5. Tests
 
 ```bash
-cd backend
-python3 -m pytest tests/ -v
+cd backend && source .venv/bin/activate
+pytest tests/ -q
+ruff check fog cloud shared edge --select E,F,W
 ```
 
-95 tests (4 marcados `slow`, deseleccionados por default), la mayoría con
-fakes (sin Redis, sin modelos reales, sin `ultralytics` instalado) —
-cubren `application/` de Fog y Cloud, `InMemoryMatchRepository`,
-`New192FeatureExtractor`, `try_lock_ids` y `NullArbitrationPolicy`.
-`LSTM6ClassAdapter` se prueba con un run sintético (misma arquitectura,
-pesos aleatorios) para no depender del checkpoint real de producción en
-un test unitario; `tests/cloud/test_lstm6class_smoke.py` (`slow`) sí usa
-el checkpoint real y 6 clips reales, uno por clase.
+`pytest` excluye las pruebas `slow` (ver el final de esta guía). Con Docker disponible, las
+pruebas de PostgreSQL (migración, repositorios, flujo auditable, resumen) levantan un
+contenedor `postgres:16-alpine` por módulo con testcontainers (254 pruebas pasan); sin Docker
+ni `TEST_DATABASE_URL` se omiten (~100 pruebas omitidas). Con Colima hay que exportar
+`TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`.
 
-No cubierto por estos tests (pendiente, ver tarea "Smoke test end-to-end"):
-`YoloV8PoseAdapter` (requiere `ultralytics` + modelo real) y el flujo
-completo WebRTC -> Redis -> Cloud -> WebSocket con un clip real del dataset.
+**`TEST_DATABASE_URL` sirve para ejecutar un solo módulo de pruebas a la vez.** Es una única
+base compartida por todos los módulos y algunas pruebas exigen base vacía y cadena de
+auditoría propia (`test_migracion_esquema`, `test_flujo_auditable`,
+`test_search_path_funciones`): con `pytest tests/` completo contra esa base fallan 7
+pruebas por interferencia entre módulos, no por el código. Usar una base vacía por módulo
+(`pytest tests/fog/test_flujo_auditable.py`, recreando la base entre ejecuciones) o testcontainers.
 
-`tests/smoke_manual.py` cubre ese flujo end-to-end contra Fog+Cloud+Redis
-ya levantados, pero es una herramienta manual, no parte de la suite: su
-nombre evita a propósito los patrones `test_*.py` / `*_test.py` para que
-`pytest tests/ -q` no lo recolecte (antes se llamaba `manual_smoke_test.py`,
-que sí matcheaba `*_test.py` y rompía la recolección si `websockets` —
-dependencia extra solo de este script, fuera de `requirements.txt` — no
-estaba instalado; ver DEF-17). Requiere `pip install websockets` y se
-ejecuta con:
+La prueba de κ contra `sklearn` (`tests/fog/test_resumen_validacion.py`) se omite si
+`scikit-learn` no está instalado; no está en `requirements.txt`.
+
+`ruff` con las reglas `E,F,W` reporta hoy 139 hallazgos previos, casi todos `E501` (línea larga
+sobre el límite por defecto de 88 caracteres); no hay configuración de `ruff` en el repo.
+
+`tests/smoke_manual.py` es una herramienta manual para el flujo WebRTC contra Fog+Cloud+Redis
+ya levantados; no es parte de la suite (su nombre evita los patrones `test_*.py` para que
+`pytest` no lo recolecte, DEF-17). Requiere `pip install websockets`:
 
 ```bash
 python tests/smoke_manual.py ../dataset/test/RiposteB/RiposteB_0018.mp4 \
     --fog-url http://localhost:8001 --luz-b
 ```
+
+El flujo vigente de la Validación 1 (carga de clip, sin WebRTC) se prueba de punta a punta
+con `scripts/prueba_humo.py` (sección 4.2).
 
 ## 6. Docker
 
@@ -430,16 +486,17 @@ frames.
 
 ## 7. Limitaciones conocidas de esta entrega
 
-- Sin CI configurado (decisión explícita: tests corren manualmente).
-- `MatchRepositoryPort` solo tiene implementación en memoria
-  (`InMemoryMatchRepository`) — no persiste entre restarts de Fog.
-- Sin integración física con la luz Favero real; el front debe simularla y
-  reportarla vía `POST /webrtc/{match_id}/luz` (ver `CONTRATO_API.md`).
-- Smoke test end-to-end con clip real del dataset todavía pendiente.
-- Edge no tiene tests automatizados ni conexión con Fog/Cloud (solo
-  redistribuye video crudo al front); su healthcheck de Docker verifica
-  que el servidor WebSocket responda, no que las cámaras RTSP estén
-  conectadas — para eso hay que mirar los logs (ver sección 6.4).
+- Sin CI configurado (decisión explícita: las pruebas corren manualmente).
+- `InMemoryMatchRepository` solo guarda las sesiones de procesamiento de Fog (se pierden al
+  reiniciar); lo que se audita (combates, clips, clasificaciones, veredictos) está en PostgreSQL.
+- Sin integración física con la luz Favero real: la Validación 1 la simula con `has_luz_A/B` y
+  `t_tocado_ms` en la carga del clip (Validación 2 usa el aparato real).
+- Cloud no calienta el modelo al arrancar: la primera inferencia tras iniciarlo tomó 950 ms
+  (frente a 10–34 ms en caliente; presupuesto F-027 ≤ 50 ms), ver `docs/evidencia/prueba_humo_Q02.md`.
+- `latencia_inferencia_ms` de Cloud no se persiste en la base.
+- Edge no tiene tests automatizados ni conexión con Fog/Cloud (solo redistribuye video crudo al
+  front); su healthcheck de Docker verifica que el servidor WebSocket responda, no que las cámaras
+  RTSP estén conectadas — para eso hay que mirar los logs (ver sección 6.4).
 
 ## Pruebas lentas (paridad entrenamiento ↔ Fog)
 

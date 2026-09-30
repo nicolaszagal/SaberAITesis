@@ -1,0 +1,120 @@
+@startuml
+!include skin.iuml
+title Diagrama de clases - Nodo Fog (persistencia, auditoría y evidencia)
+left to right direction
+
+package "application" {
+  class ListarEventos
+  class ListarUsuarios
+  class ObtenerCombate
+  class ListarRevisiones
+  class ObtenerRevision
+  class VerificarAuditoria
+  class ObtenerModeloActivo
+  class ConsultarSalud
+  class ResumirValidacion {
+    +execute(evento_id): ResumenValidacion
+  }
+}
+
+package "ports" {
+  abstract class UnidadDeTrabajoPort {
+    +transaccion(): Transaccion
+  }
+  class Transaccion <<dataclass>> {
+    eventos, usuarios, tiradores, combates
+    clips, tocados, modelos
+    clasificaciones, revisiones
+    veredictos, auditoria
+  }
+  abstract class "Repositorios (11 puertos)" as Repos <<EventoRepositoryPort, UsuarioRepositoryPort,\nTiradorRepositoryPort, CombateRepositoryPort,\nClipRepositoryPort, TocadoRepositoryPort,\nModeloVersionRepositoryPort, ClasificacionRepositoryPort,\nRevisionRepositoryPort, VeredictoRepositoryPort,\nAuditoriaRepositoryPort>>
+  abstract class ConsultaRevisionRepositoryPort
+  abstract class ConsultaEvidenciaRepositoryPort
+  abstract class VerificadorAuditoriaPort {
+    +verificar(): list[RegistroAlterado]
+  }
+  abstract class SondaSaludPort {
+    +responde(): bool
+  }
+  abstract class LectorEvidenciaPort {
+    +leer(evento_id): LecturaEvidencia
+  }
+  abstract class FuenteEvidenciaModeloPort {
+    +tabla_resumen_m01(): str | None
+  }
+}
+
+package "infrastructure.persistence.postgres" {
+  class PostgresUnidadDeTrabajo
+  class "Postgres*Repository (11)" as PgRepos
+  class PostgresConsultaRevisionRepository
+  class PostgresConsultaEvidenciaRepository
+  class PostgresVerificadorAuditoria {
+    sabre.fn_verificar_auditoria()
+  }
+  class PostgresSonda
+}
+package "infrastructure" {
+  class RedisSonda
+  class LectorEvidenciaJsonl
+  class FuenteModeloM01 {
+    M01_EXPERIMENT_LOG
+  }
+  class ExportadorEvidencia {
+    resumen.json, revisiones.csv, resumen.md
+  }
+}
+
+package "domain" {
+  class Combate
+  class Clip
+  class Tocado
+  class Clasificacion
+  class Revision
+  class Veredicto
+  class Auditoria
+  class ModeloVersion
+  class LineaEvidencia
+  class "resumen_validacion <<funciones>>" as RV {
+    cohen_kappa, matriz_confusion
+    resumen_latencia, resumir_validacion
+  }
+}
+
+UnidadDeTrabajoPort <|.. PostgresUnidadDeTrabajo
+UnidadDeTrabajoPort ..> Transaccion : entrega
+Transaccion o-- Repos
+Repos <|.. PgRepos
+PostgresUnidadDeTrabajo ..> PgRepos : crea por transacción
+ConsultaRevisionRepositoryPort <|.. PostgresConsultaRevisionRepository
+ConsultaEvidenciaRepositoryPort <|.. PostgresConsultaEvidenciaRepository
+VerificadorAuditoriaPort <|.. PostgresVerificadorAuditoria
+SondaSaludPort <|.. PostgresSonda
+SondaSaludPort <|.. RedisSonda
+LectorEvidenciaPort <|.. LectorEvidenciaJsonl
+FuenteEvidenciaModeloPort <|.. FuenteModeloM01
+
+ListarEventos --> UnidadDeTrabajoPort
+ListarUsuarios --> UnidadDeTrabajoPort
+ObtenerCombate --> UnidadDeTrabajoPort
+ListarRevisiones --> ConsultaRevisionRepositoryPort
+ObtenerRevision --> ConsultaRevisionRepositoryPort
+VerificarAuditoria --> VerificadorAuditoriaPort
+ObtenerModeloActivo --> Repos
+ConsultarSalud --> SondaSaludPort : Redis y PostgreSQL
+ResumirValidacion --> ConsultaEvidenciaRepositoryPort
+ResumirValidacion --> LectorEvidenciaPort
+ResumirValidacion --> VerificadorAuditoriaPort
+ResumirValidacion --> FuenteEvidenciaModeloPort
+ResumirValidacion --> Repos
+ResumirValidacion ..> RV
+ExportadorEvidencia ..> ResumirValidacion : lo usa scripts/exportar_evidencia.py
+Revision --> Clasificacion
+Revision --> Tocado
+Veredicto --> Revision
+Auditoria --> Revision
+Clasificacion --> ModeloVersion
+Tocado --> Combate
+Clip --> Combate
+note bottom of PostgresUnidadDeTrabajo : Una transacción por caso de uso; el veredicto\ncierra la revisión y escribe la auditoría (append-only)\nen la misma transacción.
+@enduml

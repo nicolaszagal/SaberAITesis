@@ -1,0 +1,101 @@
+@startuml
+!include skin.iuml
+title Diagrama de clases - Edge y Frontend
+left to right direction
+package "Edge (backend/edge)" {
+  class ws_bridge <<módulo>> {
+    RTSP_URLS: {front, top}
+    WS_PORT = 8002 (env)
+    +handle_connection(ws, path)
+    +stream_loop(camera, url, executor)
+    -_broadcast(camera, frame)
+  }
+  class CameraCapture {
+    +read_frame(): bytes | None
+  }
+  ws_bridge --> "2" CameraCapture
+}
+package "Frontend (SaberAISoftware, Expo / React Native web)" {
+  package "presentation" {
+    class App {
+      screen: dashboard | live | config | history
+    }
+    class AppHeader
+    class DashboardScreen
+    class LiveScreen
+    class ConfigScreen
+    class HistoryScreen
+    class ClipPlayer
+    class "PasoClip / PasoSugerencia / PasoDecision" as PanelRevision
+    class StateMessage
+    class Button
+    class CombatProvider <<Context>> {
+      combate: CombateActivo | null
+      +setCombate() +finalizarCombate()
+      +reintentarValidacion()
+    }
+    class SessionProvider <<Context>> {
+      revision, sessionStatus
+      veredicto, veredictoStatus
+      +submitClip(clip)
+      +registrarVeredicto(decision, claseFinal)
+      +resetSession()
+    }
+    class useHealth <<hook>>
+  }
+  package "application" {
+    class analyzeClip <<función>> {
+      LIMITE_ANALISIS_MS = 60000
+    }
+    class actionMapper <<módulo>>
+  }
+  package "infrastructure" {
+    class fogApi <<módulo>> {
+      +configureMatch() +uploadClip() +postVeredicto()
+      +getCombate() +getEventos() +getArbitros()
+      +getRevisiones() +getRevision()
+      +getResumenSesion() +getResumenValidacionTexto()
+      +getModeloActivo() +getHealth()
+    }
+  }
+  package "domain.entities" {
+    class CombateActivo
+    class RevisionAnalizada
+    class Sugerencia
+    class VeredictoRegistrado
+  }
+  App --> AppHeader
+  App --> DashboardScreen
+  App --> LiveScreen
+  App --> ConfigScreen
+  App --> HistoryScreen
+  LiveScreen --> ClipPlayer
+  LiveScreen --> PanelRevision
+  LiveScreen ..> SessionProvider
+  PanelRevision ..> SessionProvider
+  ConfigScreen ..> CombatProvider
+  ConfigScreen --> fogApi
+  DashboardScreen --> fogApi
+  HistoryScreen --> fogApi
+  AppHeader ..> useHealth
+  useHealth --> fogApi
+  CombatProvider --> fogApi : getCombate
+  SessionProvider --> analyzeClip
+  SessionProvider --> fogApi : postVeredicto
+  SessionProvider ..> CombatProvider
+  analyzeClip --> fogApi : uploadClip
+  analyzeClip --> actionMapper
+  RevisionAnalizada --> Sugerencia
+  SessionProvider ..> RevisionAnalizada
+  SessionProvider ..> VeredictoRegistrado
+  CombatProvider ..> CombateActivo
+}
+fogApi ..> "Fog API (REST)" : HTTP JSON / multipart
+note bottom of fogApi : No usa WebRTC ni el WebSocket de veredicto.
+note as N1
+  Sin uso desde ninguna pantalla (código presente):
+  LiveCameraView, CameraView, StickFigurePose, useCameraStream
+  (cámaras por WebSocket del Edge) y las entidades
+  Camera, Match, System, FencerProfile.
+end note
+@enduml

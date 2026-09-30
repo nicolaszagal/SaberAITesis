@@ -1,0 +1,39 @@
+skinparam defaultFontName DejaVu Sans
+skinparam defaultFontSize 12
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+skinparam class {
+  BackgroundColor #F2F7FC
+  BorderColor #1F4E79
+  HeaderBackgroundColor #DDEBF7
+  ArrowColor #2E75B6
+}
+skinparam package {
+  BorderColor #2E75B6
+  BackgroundColor #FAFCFE
+  FontColor #1F4E79
+}
+skinparam sequence {
+  ArrowColor #2E75B6
+  LifeLineBorderColor #1F4E79
+  ParticipantBorderColor #1F4E79
+  ParticipantBackgroundColor #DDEBF7
+  ActorBorderColor #1F4E79
+  ActorBackgroundColor #DDEBF7
+  GroupBorderColor #2E75B6
+  GroupBackgroundColor #F2F7FC
+  BoxBorderColor #2E75B6
+}
+skinparam activity {
+  BackgroundColor #F2F7FC
+  BorderColor #1F4E79
+  ArrowColor #2E75B6
+  DiamondBackgroundColor #DDEBF7
+  DiamondBorderColor #1F4E79
+}
+skinparam note {
+  BackgroundColor #FFF8E1
+  BorderColor #C9A227
+}
+skinparam titleFontColor #1F4E79
+skinparam titleFontSize 16
