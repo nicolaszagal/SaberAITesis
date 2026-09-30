@@ -4,7 +4,7 @@ Destinatario: la persona que instala y pone en marcha el sistema. Versión cubie
 
 Método: Docker Compose. No requiere Python, Node, entorno virtual, Alembic ni variables exportadas a mano. Los comandos son para una terminal de macOS o Linux.
 
-Validación de esta guía: se siguió en un clon limpio de ambos repositorios desde GitHub, con `docker compose build --no-cache` y sin volúmenes, sobre macOS 27.0 (arm64) con Colima.
+Validación de esta guía: se siguió en un clon limpio de ambos repositorios desde GitHub, con `docker compose build --no-cache` y sin volúmenes, sobre macOS 27.0 (arm64) con Colima (2 CPU y 4 GiB).
 
 ## 1. Requisitos
 
@@ -25,25 +25,45 @@ Las versiones de Python, PostgreSQL, Redis, Node y nginx van dentro de las imág
 
 | Recurso | Mínimo verificado | Medición |
 |---|---|---|
-| CPU | 2 | Con 2 CPU se completó la prueba de humo (un clip por clase). Con 4 CPU también. |
-| Memoria para Docker | 2 GiB | Con 2 GiB se completó la prueba de humo con los cinco servicios activos y sin `OOMKilled`. Pico de Fog: 750 MiB. Pico de Cloud: 292 MiB. |
-| Disco libre | [[DISCO]] | Imágenes: Fog 3 GB, Cloud 1.43 GB, frontend 94 MB, más PostgreSQL 411 MB y Redis 59 MB. |
+| CPU | 2 | La prueba de humo y el flujo completo de revisión pasaron con 2 CPU. |
+| Memoria para Docker | 4 GiB | Con 4 GiB el flujo completo, la exportación y la prueba de humo pasaron. Con 2 GiB la prueba de humo pasó, pero una exportación de evidencia terminó con código 137 (falta de memoria). |
+| Disco libre | No medido como mínimo | Imágenes: Fog 3 GB, Cloud 1.43 GB, frontend 94 MB, PostgreSQL 411 MB, Redis 59 MB (unos 5 GB), más la caché de construcción. Con 7 GB libres en el equipo el build se completó. Con menos de 1 GB libres falló (sección 7). |
+
+Memoria de cada contenedor (`docker stats`, equipo con 4 CPU y 8 GiB en Colima):
+
+| Servicio | En reposo | Durante el análisis de clips (pico) |
+|---|---|---|
+| Fog | 647 MiB | 669 MiB, 125 % de CPU |
+| Cloud | 274 MiB | 162 MiB, 52 % de CPU |
+| PostgreSQL | 35 MiB | 32 MiB |
+| Redis | 3.5 MiB | 4 MiB |
+| Frontend | 7 MiB | 7 MiB |
+
+Fog crece hasta unos 850 MiB tras varios análisis. `exportar_evidencia.py` y los demás scripts de `docker compose exec fog` inician otro proceso de Python que importa torch y llega a 447 MiB: por eso 2 GiB no bastan.
 
 Con Colima, cree la máquina virtual con los recursos mínimos antes de instalar:
 
 ```bash
-colima start --cpu 2 --memory 2
+colima start --cpu 2 --memory 4
 ```
 
-Si la memoria es menor, Fog se queda sin memoria al cargar la pose YOLOv8x (sección 7).
+Si la memoria es insuficiente, Fog se queda sin memoria al cargar la pose YOLOv8x (sección 7).
 
-Tiempos medidos (equipo de 10 núcleos, 16 GB, 4 CPU y 8 GiB en Colima): [[TIEMPOS]]
+Tiempos medidos:
 
-El análisis de un clip tarda entre 23 y 47 segundos en CPU (`ms_clip` de `prueba_humo.py`, con 2 y con 4 CPU). Cloud responde en unos 5 ms. El tiempo lo domina la pose en Fog.
+| Paso | Tiempo |
+|---|---|
+| `docker compose build --no-cache` (las tres imágenes, con descargas) | 82 s y 85 s en dos corridas |
+| `docker compose up -d --build` con las imágenes construidas, hasta Fog `healthy` | 17 s |
+| Análisis de un clip en CPU (`ms_clip` de `prueba_humo.py`) | 23 a 47 s, con 2 y con 4 CPU |
+
+Cloud responde en unos 5 ms por clip. El tiempo de análisis lo domina la pose en Fog.
 
 ### Carpetas
 
 `backend` y `SaberAISoftware` deben ser carpetas hermanas. El compose construye el frontend desde `../SaberAISoftware`.
+
+Con Colima, coloque las carpetas dentro de su carpeta de usuario (`/Users/<usuario>`): Colima solo comparte esa ruta con Docker. En otra ubicación, la evidencia queda dentro de la máquina virtual y no aparece en `backend/datos`.
 
 ## 2. Instalación
 
@@ -201,7 +221,7 @@ docker compose exec -T postgres psql -U sabre -d sabre_restaurada \
     -c "select count(*) from sabre.veredicto" -c "select * from sabre.fn_verificar_auditoria()"
 ```
 
-Resultado esperado: la cuenta de veredictos coincide con la base original y `fn_verificar_auditoria()` devuelve 0 filas. Para restaurar los archivos, extraiga `respaldo_archivos.tgz` en la carpeta `backend`.
+Resultado esperado: el primer comando imprime `set_config` y `setval`, que son normales. La cuenta de veredictos coincide con la base original y `fn_verificar_auditoria()` devuelve 0 filas. Para restaurar los archivos, extraiga `respaldo_archivos.tgz` en la carpeta `backend`.
 
 ## 6. Prueba de humo
 
@@ -225,9 +245,11 @@ rm -rf datos-humo
 | Síntoma | Causa | Acción |
 |---|---|---|
 | `required variable POSTGRES_PASSWORD is missing a value: copiar .env.example a .env` | Falta `backend/.env`. | Ejecute `cp .env.example .env` (sección 2, paso 2). |
-| `unable to prepare context: path ".../SaberAISoftware" not found` | El frontend no es carpeta hermana de `backend`, o tiene otro nombre. | Clone el frontend como `SaberAISoftware` junto a `backend` (sección 2, paso 1). |
+| `unable to prepare context: path "<ruta>/SaberAISoftware" not found` | El frontend no es carpeta hermana de `backend`, o tiene otro nombre. | Clone el frontend como `SaberAISoftware` junto a `backend` (sección 2, paso 1). |
 | `Bind for 0.0.0.0:8081 failed: port is already allocated` (o 8001) | Otro proceso usa el puerto. | Cambie `FRONTEND_HOST_PORT` o `FOG_HOST_PORT` en `.env` y repita `docker compose up -d --build`. |
-| Fog se reinicia sin llegar a `healthy`; `docker compose logs fog` termina en `Cargando modelo YOLO y extractor de features` | Falta de memoria (`OOMKilled`). | Confirme con `docker inspect -f '{{.State.OOMKilled}}' sabre-fog-1` (`true` tras el corte). Con Colima: `colima stop` y `colima start --cpu 2 --memory 2` como mínimo. |
+| Fog se reinicia sin llegar a `healthy`; `docker compose logs fog` termina en `Cargando modelo YOLO y extractor de features` | Falta de memoria (`OOMKilled`). | Confirme con `docker inspect -f '{{.RestartCount}}' sabre-fog-1`: un número mayor que 0 indica reinicios (`OOMKilled` solo es `true` justo después del corte). Con Colima: `colima stop` y `colima start --cpu 2 --memory 4`. |
+| Un comando de `docker compose exec fog python scripts/...` termina con código 137 | Falta de memoria: el script carga torch (447 MiB) sobre Fog. | Suba la memoria a 4 GiB (`colima stop` y `colima start --cpu 2 --memory 4`) y repita. |
+| `backend/datos` queda vacía aunque hay revisiones | Con Colima, las carpetas están fuera de `/Users/<usuario>` y Docker escribe dentro de la máquina virtual. | Mueva `backend` y `SaberAISoftware` a su carpeta de usuario y repita. |
 | El build de Fog falla con `SHA-256 de yolov8x-pose.pt no coincide` | El archivo descargado no es el usado en el entrenamiento. | No continúe. Avise al equipo de desarrollo. |
 | El build falla con `input/output error` o `no space left on device` | Disco del equipo lleno. | Libere espacio en el equipo y repita. Con Colima, reinicie con `colima stop` y `colima start`. |
 | `Cannot connect to the Docker daemon` | Docker o Colima no están en marcha. | Ejecute `colima start` (o abra Docker Desktop). |
