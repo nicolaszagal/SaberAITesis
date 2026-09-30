@@ -1,0 +1,196 @@
+@startuml
+!include skin.iuml
+title Diagrama de clases - Nodo Fog (procesamiento del clip)
+left to right direction
+
+package "infrastructure.api" {
+  class routes <<FastAPI router>> {
+    +configure_match(body): MatchConfigResponse
+    +upload_clip(match_id, file, t_tocado_ms, has_luz_A, has_luz_B): ClipUploadResponse
+    +registrar_veredicto(revision_id, body): VeredictoResponse
+    +webrtc_offer(body): OfferResponse
+    +webrtc_luz(match_id, body): LuzAck
+    +ws_veredicto(ws, revision_id)
+    +health(): dict
+  }
+}
+
+package "application" {
+  class ConfigurarCombate {
+    +execute(evento_id, pista, arbitro_id, tirador_a, tirador_b)
+  }
+  class AbrirRevisionVar {
+    +execute(combate, video, luz, t_tocado_ms): RevisionAbierta
+  }
+  class ProcessIncomingMatch {
+    -_min_frames: int
+    +execute(match_id, revision_id, tracked, side_a, side_b, luz): UnavailableResult | None
+  }
+  class ForwardVerdictToClient {
+    +execute(revision_id)
+  }
+  class RegistrarClasificacion {
+    +verificar_modelo_activo()
+    +execute(tocado_id, revision_id, tracked, resultado, latencia_ms): Clasificacion
+  }
+  class RegistrarVeredicto {
+    +execute(revision_id, decision, clase_final, arbitro_id): VeredictoRegistrado
+  }
+}
+
+package "ports" {
+  abstract class PoseEstimatorPort {
+    +start_session(): PoseTrackingSession
+  }
+  abstract class PoseTrackingSession {
+    +add_frame(frame)
+    +finish(): TrackedSequence
+  }
+  abstract class FeatureExtractorPort {
+    +extract(tracked, side_a, side_b, min_frames): ExtractedFeatures
+  }
+  abstract class FeatureStreamPublisherPort {
+    +publish(match_id, revision_id, features, luz, side_a, side_b)
+  }
+  abstract class VerdictStreamSubscriberPort {
+    +wait_for_verdict(revision_id): VerdictView | UnavailableResult
+  }
+  abstract class MatchRepositoryPort {
+    +save(match)
+    +get(match_id): Match
+  }
+  abstract class FileStoragePort {
+    +save_clip(source): (uri, sha256)
+    +save_keypoints(arrays): (uri, sha256)
+  }
+  abstract class UnidadDeTrabajoPort {
+    +transaccion(): Transaccion
+  }
+  abstract class RegistroEvidenciaPort {
+    +registrar(linea: LineaEvidencia)
+  }
+}
+
+package "infrastructure" {
+  class YoloV8PoseAdapter {
+    -_model: YOLO (yolov8x-pose)
+    -_predict_lock: Lock
+  }
+  class _YoloTrackingSession {
+    -_tracker: BOTSORT
+  }
+  class New192FeatureExtractor {
+    -_mean, _std: ndarray(192)
+    -_profile: PreprocessingProfile
+    +extract_raw(tracked, side_a, side_b)
+    +normalize(raw)
+  }
+  class PreprocessingProfile {
+    name, clamp_sigma
+    clamp_indices, ablate_indices
+  }
+  class RedisFeaturePublisher {
+    stream fog:features
+  }
+  class RedisVerdictSubscriber {
+    stream cloud:verdicts:<revision_id>
+  }
+  class InMemoryMatchRepository
+  class LocalFileStorage {
+    clips/ y keypoints/ por SHA-256
+  }
+  class PostgresUnidadDeTrabajo
+  class RegistroEvidenciaJsonl {
+    EVIDENCE_DIR/<evento_id>.jsonl
+  }
+  class SessionRegistry {
+    +create(match_id, revision_id, side_a, side_b)
+    +get(revision_id)
+    +latest_for_match(match_id)
+    +remove(revision_id)
+    +sweep_expired(ttl_s)
+    +sweep_forever(ttl_s, interval_s)
+  }
+  class MatchSession {
+    pc, ws, luz, t_tocado_ms
+    verdict, unavailable
+    +set_luz() +set_verdict()
+    +set_unavailable()
+  }
+  class process_uploaded_clip <<función>>
+  class consume_track <<función>>
+}
+
+package "domain" {
+  class Match
+  class TrackedSequence
+  class ExtractedFeatures
+  class LuzSignal {
+    has_luz_a, has_luz_b
+  }
+  class VerdictView {
+    fencer, action, confidence
+    probs, latencia_inferencia_ms, modelo
+  }
+  class UnavailableResult {
+    motivo: MotivoNoDisponible
+  }
+  enum MotivoNoDisponible {
+    POSE_INCOMPLETA
+    CONFIANZA_BAJA
+    CLASE_FUERA_MVP
+    TIMEOUT
+    SIN_SENAL_FAVERO
+    MENSAJE_INVALIDO
+  }
+  enum WeaponSide {
+    RIGHT
+    LEFT
+  }
+}
+
+routes --> ConfigurarCombate
+routes --> AbrirRevisionVar
+routes --> ProcessIncomingMatch
+routes --> ForwardVerdictToClient
+routes --> RegistrarClasificacion
+routes --> RegistrarVeredicto
+routes --> SessionRegistry
+routes --> process_uploaded_clip
+routes --> consume_track : solo WebRTC
+process_uploaded_clip --> PoseEstimatorPort
+process_uploaded_clip --> FileStoragePort
+consume_track --> PoseEstimatorPort
+
+ConfigurarCombate --> UnidadDeTrabajoPort
+AbrirRevisionVar --> UnidadDeTrabajoPort
+RegistrarClasificacion --> UnidadDeTrabajoPort
+RegistrarClasificacion --> FileStoragePort
+RegistrarVeredicto --> UnidadDeTrabajoPort
+RegistrarVeredicto --> RegistroEvidenciaPort
+ProcessIncomingMatch --> FeatureExtractorPort
+ProcessIncomingMatch --> FeatureStreamPublisherPort
+ProcessIncomingMatch --> MatchRepositoryPort
+ProcessIncomingMatch --> SessionRegistry
+ForwardVerdictToClient --> VerdictStreamSubscriberPort
+ForwardVerdictToClient --> SessionRegistry
+
+SessionRegistry "1" o-- "*" MatchSession
+PoseEstimatorPort <|.. YoloV8PoseAdapter
+PoseTrackingSession <|.. _YoloTrackingSession
+YoloV8PoseAdapter ..> _YoloTrackingSession : crea
+FeatureExtractorPort <|.. New192FeatureExtractor
+New192FeatureExtractor --> PreprocessingProfile
+FeatureStreamPublisherPort <|.. RedisFeaturePublisher
+VerdictStreamSubscriberPort <|.. RedisVerdictSubscriber
+MatchRepositoryPort <|.. InMemoryMatchRepository
+FileStoragePort <|.. LocalFileStorage
+UnidadDeTrabajoPort <|.. PostgresUnidadDeTrabajo
+RegistroEvidenciaPort <|.. RegistroEvidenciaJsonl
+
+UnavailableResult --> MotivoNoDisponible
+Match --> WeaponSide
+Match --> LuzSignal
+note bottom of InMemoryMatchRepository : Guarda el Match por match_id en memoria (se pierde\nal reiniciar). Lo que se audita está en PostgreSQL\n(ver UML1b).
+note bottom of consume_track : Flujo WebRTC: no abre revision_var\nni persiste (la Validación 1 usa la carga de clip).
+@enduml

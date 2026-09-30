@@ -1,0 +1,37 @@
+@startuml
+!include skin.iuml
+title Secuencia - Flujo WebRTC con luz Favero y WebSocket (sin persistencia)
+participant "Cliente" as C
+box "Nodo Fog"
+participant "routes" as R
+participant "SessionRegistry" as S
+participant "consume_track" as T
+participant "PoseTrackingSession" as P
+participant "ProcessIncomingMatch" as PM
+participant "ForwardVerdictToClient" as FV
+end box
+queue Redis
+C -> R : POST /webrtc/offer {sdp, match_id, weapon_side_A/B}
+R -> S : create(match_id, revision_id)
+R -> R : RTCPeerConnection, answer
+R ->> FV : ensure_future(execute(revision_id))
+R --> C : SDP answer + revision_id (uuid efímero, sin fila en la base)
+C -> R : WS /ws/veredicto/{revision_id}
+par pista de video
+  loop frames RTP
+    T -> P : add_frame (executor, cola máx. 16)
+  end
+  T -> P : finish()
+else luz Favero
+  C -> R : POST /webrtc/{match_id}/luz
+  R -> S : session.set_luz()
+end
+T -> T : espera la luz (FAVERO_LUZ_TIMEOUT_S)
+T -> PM : execute(...)
+PM -> Redis : XADD fog:features
+FV -> Redis : XREAD cloud:verdicts:{revision_id}
+Redis --> FV : veredicto
+FV -> C : WS send_json(veredicto)
+note over S : Un barrido periódico libera las sesiones\nvencidas (SESSION_TTL_S, SESSION_SWEEP_INTERVAL_S).
+note over C : El frontend actual no usa este flujo.
+@enduml

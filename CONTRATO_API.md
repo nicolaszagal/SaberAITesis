@@ -615,11 +615,11 @@ log técnico.
 - **RNF-03 no se cumple con el checkpoint vigente**: F1 macro ≥ 0.65 requerido; media
   documentada de la serie baseline 0.4856 ± 0.0322 (N=10, ver
   docs_claude/contexto_sabre.md sección 8). Decisión pendiente con el asesor.
-- **Tracker**: se usa ByteTrack vía `model.track(..., persist=True)` de Ultralytics
-  (igual que `dataset/05_extract_features.py`), no DeepSORT como indica el
-  diagrama de capas. Motivo: consistencia con el pipeline que generó los datos de
-  entrenamiento — cambiar de tracker puede cambiar el comportamiento de asignación de
-  IDs A/B.
+- **Tracker**: BoT-SORT, una instancia por sesión de clip (`BOTSORT` de Ultralytics, ver
+  `fog/infrastructure/pose/yolo_pose_adapter.py`), no ByteTrack ni DeepSORT como decían el
+  diagrama de capas y versiones anteriores de este contrato. `dataset/05_extract_features.py`
+  usó `model.track(..., persist=True)` con el tracker por defecto de la versión de Ultralytics
+  instalada entonces, sin registro de versión: que coincida con BoT-SORT no está confirmado.
 - **Detector de pose**: YOLOv8x-pose (no YOLOv8n-pose como indica el diagrama), decisión
   confirmada por Nicolas para mantener fidelidad con el entrenamiento. Sin requisito de
   tiempo real en v1, el costo de latencia es aceptable.

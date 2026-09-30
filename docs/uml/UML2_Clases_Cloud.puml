@@ -1,0 +1,107 @@
+@startuml
+!include skin.iuml
+title Diagrama de clases - Nodo Cloud
+package "application" {
+  class ClassifyAndPublish {
+    -_modelo_version_name: str
+    +run_forever()
+  }
+}
+package "ports" {
+  abstract class FeatureStreamConsumerPort {
+    +consume(): AsyncIterator[(entry_id, FeatureSequence | InvalidFeatureMessage)]
+    +ack(entry_id)
+  }
+  abstract class ActionClassifierPort {
+    +classify(sequence, luz): RawVerdict
+  }
+  abstract class ArbitrationPolicyPort {
+    +resolve(raw, luz): RawVerdict
+  }
+  abstract class VerdictPublisherPort {
+    +publish(verdict: Verdict)
+  }
+}
+package "infrastructure" {
+  class RedisFeatureConsumer {
+    grupo cloud_workers en fog:features
+    valida el mensaje; inválidos a fog:features:dead
+    reclama pendientes con XAUTOCLAIM
+  }
+  class LSTM6ClassAdapter {
+    -_model: LSTMClassifier
+    -_device
+    +model_version_name(run_dir): str
+    -_apply_favero_logit_mask(logits, luz)
+  }
+  class NullArbitrationPolicy {
+    devuelve el veredicto sin cambios
+  }
+  class RedisVerdictPublisher {
+    XADD cloud:verdicts:<revision_id> + EXPIRE
+  }
+}
+package "shared" {
+  class LSTMClassifier <<nn.Module>> {
+    BiLSTM(input 192, hidden_size y num_layers de run_config.json)
+    atención aditiva opcional
+    fc(2·hidden + luz_size -> n_classes)
+    +forward(x, lengths, luz)
+  }
+}
+package "domain" {
+  enum ActionClass {
+    AttackA
+    AttackB
+    ContrattackA
+    ContrattackB
+    RiposteA
+    RiposteB
+  }
+  class FeatureSequence {
+    match_id, revision_id
+    sequence (T x 192), luz
+    weapon_side_a, weapon_side_b
+  }
+  class InvalidFeatureMessage {
+    match_id, revision_id
+    motivo, detalle
+  }
+  class RawVerdict {
+    action_class, confidence, probs
+  }
+  class Verdict {
+    match_id, revision_id, disponible
+    action_class, confidence, fencer, probs
+    latencia_inferencia_ms, modelo
+    motivo_no_disp
+  }
+  enum MotivoNoDisponible {
+    POSE_INCOMPLETA
+    CONFIANZA_BAJA
+    CLASE_FUERA_MVP
+    TIMEOUT
+    SIN_SENAL_FAVERO
+    MENSAJE_INVALIDO
+  }
+  class LuzSignal {
+    has_luz_a, has_luz_b
+  }
+}
+ClassifyAndPublish --> FeatureStreamConsumerPort
+ClassifyAndPublish --> ActionClassifierPort
+ClassifyAndPublish --> ArbitrationPolicyPort
+ClassifyAndPublish --> VerdictPublisherPort
+FeatureStreamConsumerPort <|.. RedisFeatureConsumer
+ActionClassifierPort <|.. LSTM6ClassAdapter
+ArbitrationPolicyPort <|.. NullArbitrationPolicy
+VerdictPublisherPort <|.. RedisVerdictPublisher
+LSTM6ClassAdapter *-- LSTMClassifier
+RedisFeatureConsumer ..> FeatureSequence : produce
+RedisFeatureConsumer ..> InvalidFeatureMessage : produce
+InvalidFeatureMessage --> MotivoNoDisponible
+FeatureSequence --> LuzSignal
+RawVerdict --> ActionClass
+Verdict --> ActionClass
+note bottom of NullArbitrationPolicy : Las reglas FIE t.101-t.106 (scoring híbrido)\nno están implementadas: solo existe el puerto.\nEl filtro Favero se aplica en LSTM6ClassAdapter,\nsobre los logits antes del softmax.
+@enduml
