@@ -6,8 +6,8 @@
 - Redis corriendo y accesible (broker entre Fog y Cloud). Sin Redis, ni Fog ni
   Cloud arrancan.
 - PostgreSQL 16 con el esquema `sabre` migrado (sección 6.1): registra clips, tocados,
-  clasificaciones, veredictos y la auditoría. Sin `DATABASE_URL`, Fog arranca pero las rutas
-  con persistencia responden 500 (incluido `/health`).
+  clasificaciones, veredictos y la auditoría. Sin `DATABASE_URL`, Fog no arranca (igual que
+  sin `EVIDENCE_DIR`).
 - Directorios de trabajo de Fog: `STORAGE_DIR` (clips y keypoints) y `EVIDENCE_DIR` (log y
   exportación de evidencia); ver la tabla de la sección 3.
 - `dataset/yolov8x-pose.pt` presente en el repo (ruta por defecto en
@@ -86,7 +86,7 @@ sobre `numpy==2.3.4` en `requirements.txt` para un caso concreto ya resuelto.
 | `FEATURE_STATS_PATH`    | — (obligatoria, DEF-15)                         | mean/std de estandarización (Fog) |
 | `FEATURE_PREPROCESSING_PROFILE` | — (obligatoria)                         | perfil de recorte/ablación por versión de modelo (Fog) |
 | `FEATURE_PREPROCESSING_PROFILES_PATH` | JSON junto a `preprocessing_profile.py` | archivo de perfiles alternativo (Fog) |
-| `DATABASE_URL`          | — (sin default; las rutas con persistencia la exigen) | PostgreSQL 16, `postgresql+asyncpg://usuario:clave@host:puerto/base` (Fog); con el compose, puerto `POSTGRES_HOST_PORT` (5433) |
+| `DATABASE_URL`          | — (obligatoria al arrancar Fog)                 | PostgreSQL 16, `postgresql+asyncpg://usuario:clave@host:puerto/base` (Fog); con el compose, puerto `POSTGRES_HOST_PORT` (5433) |
 | `POSTGRES_HOST_PORT`    | `5433`                                          | puerto del host donde `fog/docker-compose.yml` publica PostgreSQL (solo loopback) |
 | `STORAGE_DIR`           | — (sin default; la carga de clip lo exige)      | raíz del almacenamiento local: `clips/<sha[:2]>/<sha>.<ext>` y `keypoints/<sha[:2]>/<sha>.npz`, nombrados por SHA-256 (Fog); en Docker, `/data/storage`. Disposición completa en `CONTRATO_API.md` 8.1 |
 | `EVIDENCE_DIR`          | — (obligatoria al arrancar Fog)                 | log de evidencia (L01): una línea JSON por revisión cerrada en `EVIDENCE_DIR/<evento_id>.jsonl` (logger `sabre.evidencia`) y exportación L02 en `EVIDENCE_DIR/<evento_id>/`; en Docker, `/data/evidencia` |
@@ -144,7 +144,7 @@ export M01_EXPERIMENT_LOG=../dataset/lstm_6class/EXPERIMENT_LOG.md
 python scripts/exportar_evidencia.py --evento <evento_id>
 ```
 
-Genera en `EVIDENCE_DIR/<evento_id>/`: `resumen.json`, `revisiones.csv` (los 16 campos de L01,
+Genera en `EVIDENCE_DIR/<evento_id>/`: `resumen.json`, `revisiones.csv` (los 17 campos de L01,
 armados desde la base) y `resumen.md` (métricas por V1 y V2, umbrales, conciliación con
 `EVIDENCE_DIR/<evento_id>.jsonl` e integridad de la auditoría). Todo se calcula desde
 PostgreSQL; el JSONL solo se concilia y no se modifica. Es idempotente: al reejecutarlo se
@@ -286,7 +286,7 @@ set -a; source fog/.env; set +a        # exporta DATABASE_URL (y las demás)
 alembic upgrade head
 ```
 
-El esquema `sabre` lo crea Alembic (migraciones `0001` a `0003`; la `0001`
+El esquema `sabre` lo crea Alembic (migraciones `0001` a `0004`; la `0001`
 ejecuta `docs_claude/sabre_ai_schema.sql` tal cual). Si Fog corre en Docker,
 también sirve `docker compose exec fog alembic upgrade head`.
 
@@ -491,9 +491,9 @@ frames.
   reiniciar); lo que se audita (combates, clips, clasificaciones, veredictos) está en PostgreSQL.
 - Sin integración física con la luz Favero real: la Validación 1 la simula con `has_luz_A/B` y
   `t_tocado_ms` en la carga del clip (Validación 2 usa el aparato real).
-- Cloud no calienta el modelo al arrancar: la primera inferencia tras iniciarlo tomó 950 ms
-  (frente a 10–34 ms en caliente; presupuesto F-027 ≤ 50 ms), ver `docs/evidencia/prueba_humo_Q02.md`.
-- `latencia_inferencia_ms` de Cloud no se persiste en la base.
+- Cloud precalienta el modelo al arrancar (F-027): una inferencia con ceros (T = `MIN_FRAMES`, 192
+  features) cuyo resultado se descarta, con una línea INFO "modelo precalentado en N ms". Si falla,
+  Cloud no arranca. Antes la primera inferencia tomó 950 ms (ver `docs/evidencia/prueba_humo_Q02.md`).
 - Edge no tiene tests automatizados ni conexión con Fog/Cloud (solo redistribuye video crudo al
   front); su healthcheck de Docker verifica que el servidor WebSocket responda, no que las cámaras
   RTSP estén conectadas — para eso hay que mirar los logs (ver sección 6.4).

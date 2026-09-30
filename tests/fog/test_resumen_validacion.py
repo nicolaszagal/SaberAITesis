@@ -23,6 +23,7 @@ from fog.domain.resumen_validacion import (
     cohen_kappa,
     matriz_confusion,
     resumen_latencia,
+    resumen_latencia_inferencia,
     resumir_validacion,
 )
 from fog.domain.models import ExtractedFeatures
@@ -38,13 +39,14 @@ CAMPOS_L01 = [
     "ts", "evento_id", "revision_id", "validacion", "modelo", "luz_A", "luz_B",
     "disponible", "motivo", "clase_sugerida", "confianza", "latencia_ms",
     "decision", "clase_final_arbitro", "concordancia", "hash_auditoria",
+    "latencia_inferencia_ms",
 ]
 LOG_M01 = Path(__file__).resolve().parents[3] / "dataset/lstm_6class/EXPERIMENT_LOG.md"
 
 
 def _linea(
     sugerida, final, *, validacion="V1", disponible=True, motivo=None,
-    decision="mantener", latencia=100,
+    decision="mantener", latencia=100, inferencia=None,
 ) -> LineaEvidencia:
     return LineaEvidencia(
         ts="2026-09-29T12:00:00+00:00", evento_id="e", revision_id=str(uuid.uuid4()),
@@ -52,7 +54,7 @@ def _linea(
         disponible=disponible, motivo=motivo, clase_sugerida=sugerida,
         confianza=0.7 if disponible else None, latencia_ms=latencia,
         decision=decision, clase_final_arbitro=final,
-        concordancia=None, hash_auditoria="h",
+        concordancia=None, hash_auditoria="h", latencia_inferencia_ms=inferencia,
     )
 
 
@@ -165,6 +167,57 @@ def test_latencia_mediana_p95_maximo_y_porcentaje():
     assert r["max_ms"] == 70_000
     assert r["pct_le_60s"] == 95.0
     assert r["cumple"] is True  # p95 ≤ 60 s (RNF-04)
+
+
+def test_latencia_inferencia_mediana_p95_maximo_y_porcentaje():
+    # 20 valores: 11 ... 30 ms, más uno por encima de 50 ms en la cola.
+    latencias = list(range(11, 31))
+    latencias[-1] = 80
+    r = resumen_latencia_inferencia(latencias)
+
+    assert r["n_disponibles"] == 20 and r["n_medidas"] == 20 and r["sin_medicion"] == 0
+    assert r["mediana_ms"] == 20.5  # promedio de los dos centrales (20 y 21)
+    assert r["p95_ms"] == 29  # rango más cercano: ceil(0.95 * 20) = 19.º valor
+    assert r["max_ms"] == 80
+    assert r["pct_le_50ms"] == 95.0
+    assert r["umbral_ms"] == 50
+    assert r["cumple"] is True
+
+
+def test_latencia_inferencia_p95_sobre_50ms_no_cumple():
+    r = resumen_latencia_inferencia([10] * 18 + [60, 950])  # el 19.º es 60
+
+    assert r["p95_ms"] == 60
+    assert r["cumple"] is False
+    assert r["pct_le_50ms"] == 90.0
+
+
+def test_latencia_inferencia_sin_medicion_queda_fuera_y_sin_datos_es_nula():
+    r = resumen_latencia_inferencia([12, None, 14])
+
+    assert (r["n_disponibles"], r["n_medidas"], r["sin_medicion"]) == (3, 2, 1)
+    assert r["mediana_ms"] == 13 and r["max_ms"] == 14 and r["p95_ms"] == 14
+
+    vacio = resumen_latencia_inferencia([None, None])
+    assert (vacio["n_medidas"], vacio["sin_medicion"]) == (0, 2)
+    assert vacio["mediana_ms"] is None and vacio["p95_ms"] is None
+    assert vacio["max_ms"] is None and vacio["pct_le_50ms"] is None
+    assert vacio["cumple"] is None
+    assert resumen_latencia_inferencia([])["cumple"] is None
+
+
+def test_resumen_separa_la_latencia_de_inferencia_por_validacion():
+    v1 = [_linea("AttackA", "AttackA", inferencia=x) for x in (10, 20, 30)]
+    v1.append(_linea(None, "AttackB", disponible=False, motivo="timeout", inferencia=None))
+    v2 = [_linea("AttackA", "AttackA", validacion="V2", inferencia=x) for x in (40, 70)]
+
+    m1 = resumir_validacion(v1)["latencia_inferencia"]
+    m2 = resumir_validacion(v2)["latencia_inferencia"]
+
+    assert (m1["n_disponibles"], m1["mediana_ms"], m1["max_ms"]) == (3, 20, 30)
+    assert m1["cumple"] is True and m1["pct_le_50ms"] == 100.0
+    assert (m2["n_disponibles"], m2["mediana_ms"], m2["max_ms"]) == (2, 55, 70)
+    assert m2["cumple"] is False and m2["pct_le_50ms"] == 50.0
 
 
 def test_latencia_p95_sobre_60s_no_cumple_y_sin_datos_es_nula():
@@ -475,6 +528,19 @@ def test_evidencia_del_modelo_sin_recalcular_f1(sesion):
     assert m["modelos_en_revisiones"] == [m["activo"]["nombre"]]
     assert "test set" in m["nota"]
     assert "tabla_m01" in m  # None: la prueba no configura M01_EXPERIMENT_LOG
+    # La cifra del checkpoint se rotula; la reportable es la media de la serie.
+    assert m["activo"]["f1_macro_test_rotulo"] == "checkpoint desplegado (test)"
+    assert "media de la serie" in m["nota"]
+
+
+def test_md_rotula_el_f1_como_checkpoint_y_remite_a_la_media_de_la_serie(sesion):
+    sesion.sql.ejecutar(
+        "UPDATE sabre.modelo_version SET f1_macro_test = 0.5249 WHERE activo"
+    )
+    md = renderizar_md(_resumen(sesion))
+
+    assert "F1 macro checkpoint desplegado (test) 0.5249" in md
+    assert "cifra reportable de RNF-03: media de la serie (N = 10)" in md
 
 
 def _resumidor(app, ahora: datetime) -> ResumirValidacion:
@@ -549,6 +615,7 @@ async def test_resumen_md_cabe_en_una_pantalla_y_lleva_los_umbrales(sesion):
     for esperado in (
         "## V1", "## V2", "κ de Cohen", "umbral 0.61", "p95 ≤ 60000 ms: cumple",
         "Conciliación", "Faltantes en JSONL: ninguno", "sabre.fn_verificar_auditoria: ok",
+        "Latencia de inferencia", "umbral p95 ≤ 50 ms",
     ):
         assert esperado in md
 

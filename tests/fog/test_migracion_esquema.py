@@ -77,7 +77,7 @@ async def test_migracion_aplica_sobre_base_limpia(alembic_cfg, engine):
         version = (
             await conn.execute(text("SELECT version_num FROM public.alembic_version"))
         ).scalar_one()
-        assert version == "0003"
+        assert version == "0004"
 
 
 async def test_downgrade_y_reaplicacion(alembic_cfg, engine):
@@ -115,3 +115,43 @@ async def test_0003_redefine_la_etiqueta_de_la_vista_y_es_reversible(alembic_cfg
 
     await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
     assert await definicion() == vigente
+
+
+async def test_0004_agrega_latencia_inferencia_con_check_y_es_reversible(alembic_cfg, engine):
+    """0004: `clasificacion.latencia_inferencia_ms` es INT NULL con CHECK >= 0;
+    la bajada la quita y volver a subir la deja igual que el esquema."""
+    import asyncio
+
+    from sqlalchemy.exc import DBAPIError
+
+    consulta = text(
+        "SELECT data_type, is_nullable FROM information_schema.columns "
+        "WHERE table_schema = 'sabre' AND table_name = 'clasificacion' "
+        "AND column_name = 'latencia_inferencia_ms'"
+    )
+
+    async def columna():
+        async with engine.connect() as conn:
+            return (await conn.execute(consulta)).one_or_none()
+
+    await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
+    fila = await columna()
+    assert fila is not None
+    assert tuple(fila) == ("integer", "YES")
+
+    async with engine.connect() as conn:
+        restricciones = (
+            await conn.execute(
+                text(
+                    "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                    "WHERE conrelid = 'sabre.clasificacion'::regclass AND contype = 'c'"
+                )
+            )
+        ).scalars().all()
+    assert any("latencia_inferencia_ms >= 0" in r for r in restricciones)
+
+    await asyncio.to_thread(command.downgrade, alembic_cfg, "0003")
+    assert await columna() is None
+
+    await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
+    assert tuple(await columna()) == ("integer", "YES")

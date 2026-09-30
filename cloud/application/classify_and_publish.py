@@ -46,6 +46,19 @@ class ClassifyAndPublish:
         self._publisher = publisher
         self._modelo_version_name = modelo_version_name
 
+    def precalentar(self) -> None:
+        """Precalienta el clasificador antes de consumir el stream (F-027).
+
+        La salida se descarta: no se publica, no se persiste y no entra en
+        ninguna métrica. Registra "modelo precalentado" con su duración.
+
+        Raises:
+            Exception: si el precalentamiento falla; Cloud no debe arrancar.
+        """
+        inicio = time.perf_counter()
+        self._classifier.precalentar()
+        log.info("modelo precalentado en %d ms", (time.perf_counter() - inicio) * 1000)
+
     async def run_forever(self) -> None:
         async for entry_id, item in self._consumer.consume():
             try:

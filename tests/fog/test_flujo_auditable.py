@@ -100,6 +100,7 @@ def test_flujo_completo_persiste_y_audita(crear_app):
     assert float(clasif["confianza"]) == pytest.approx(0.74)
     assert clasif["probabilidades"]["ContraataqueA"] == pytest.approx(0.16)
     assert clasif["latencia_ms"] >= 0
+    assert clasif["latencia_inferencia_ms"] == VEREDICTO_DEFAULT.latencia_inferencia_ms == 12
     activo = app.sql.escalar("SELECT id FROM sabre.modelo_version WHERE activo")
     assert clasif["modelo_version_id"] == activo
     ruta_kp = app.storage_dir / clasif["keypoints_uri"].removeprefix("local://")
@@ -312,6 +313,7 @@ def test_pose_incompleta_registra_clasificacion_no_disponible(crear_app):
     assert clasif["disponible"] is False
     assert clasif["motivo_no_disp"] == "pose_incompleta"
     assert clasif["clase"] is None
+    assert clasif["latencia_inferencia_ms"] is None  # no hubo inferencia
     assert (app.storage_dir / clasif["keypoints_uri"].removeprefix("local://")).exists()
     # Sin sugerencia la regla es la misma: mantener/cambiar exigen clase_final...
     for decision in ("mantener", "cambiar"):
@@ -340,6 +342,10 @@ def test_timeout_de_cloud_registra_motivo_timeout(crear_app):
         "SELECT c.motivo_no_disp FROM sabre.clasificacion c JOIN sabre.tocado t ON t.id = c.tocado_id "
         "WHERE t.combate_id = :i", i=match_id,
     ) == "timeout"
+    assert app.sql.escalar(
+        "SELECT c.latencia_inferencia_ms FROM sabre.clasificacion c "
+        "JOIN sabre.tocado t ON t.id = c.tocado_id WHERE t.combate_id = :i", i=match_id,
+    ) is None
 
 
 def test_no_disponible_de_cloud_registra_su_motivo(crear_app):
@@ -363,6 +369,10 @@ def test_no_disponible_de_cloud_registra_su_motivo(crear_app):
         "SELECT c.motivo_no_disp FROM sabre.clasificacion c JOIN sabre.tocado t ON t.id = c.tocado_id "
         "WHERE t.combate_id = :i", i=match_id,
     ) == "mensaje_invalido"
+    assert app.sql.escalar(
+        "SELECT c.latencia_inferencia_ms FROM sabre.clasificacion c "
+        "JOIN sabre.tocado t ON t.id = c.tocado_id WHERE t.combate_id = :i", i=match_id,
+    ) is None
 
 
 def test_clasificacion_es_unica_por_tocado_y_modelo(crear_app):

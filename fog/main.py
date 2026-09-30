@@ -46,7 +46,10 @@ configurar_logging_tecnico()
 log = logging.getLogger("fog")
 
 config.require_paths(
-    "FEATURE_STATS_PATH", "FEATURE_PREPROCESSING_PROFILE", "EVIDENCE_DIR"
+    "FEATURE_STATS_PATH",
+    "FEATURE_PREPROCESSING_PROFILE",
+    "EVIDENCE_DIR",
+    "DATABASE_URL",
 )
 
 container = Container()

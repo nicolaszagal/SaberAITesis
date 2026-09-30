@@ -19,6 +19,7 @@ from fog.domain.models import CLASES_MODELO
 
 # Umbrales documentados.
 UMBRAL_LATENCIA_MS = 60_000  # D-08, RNF-04 (p95)
+UMBRAL_INFERENCIA_MS = 50  # F-027: tiempo del clasificador por clip
 UMBRAL_KAPPA = 0.61  # RNF-06
 
 # Valores de `clasificacion.motivo_no_disp` (CHECK de sabre_ai_schema.sql).
@@ -218,6 +219,57 @@ def resumen_latencia(
     return resultado
 
 
+def resumen_latencia_inferencia(
+    latencias_disponibles_ms: Sequence[int | None],
+) -> dict[str, Any]:
+    """Estadísticos de la latencia de inferencia del clasificador (F-027).
+
+    Se calcula sobre las revisiones disponibles (las no disponibles no
+    tuvieron inferencia). Una disponible sin `latencia_inferencia_ms`
+    (por ejemplo, registrada antes de la migración 0004) no se puede medir:
+    queda fuera de todos los cálculos y se cuenta en `sin_medicion`.
+
+    Args:
+        latencias_disponibles_ms: `latencia_inferencia_ms` de cada revisión
+            disponible (None si no se registró).
+
+    Returns:
+        `n_disponibles`, `n_medidas`, `sin_medicion`, `mediana_ms`, `p95_ms`
+        (rango más cercano), `max_ms`, `pct_le_50ms` (sobre las medidas),
+        `umbral_ms` y `cumple` (p95 ≤ 50 ms). Sin medidas, los valores son
+        None: nunca NaN ni 0.
+    """
+    medidas = sorted(x for x in latencias_disponibles_ms if x is not None)
+    resultado: dict[str, Any] = {
+        "n_disponibles": len(latencias_disponibles_ms),
+        "n_medidas": len(medidas),
+        "sin_medicion": len(latencias_disponibles_ms) - len(medidas),
+        "mediana_ms": None,
+        "p95_ms": None,
+        "max_ms": None,
+        "pct_le_50ms": None,
+        "umbral_ms": UMBRAL_INFERENCIA_MS,
+        "cumple": None,
+    }
+    if not medidas:
+        return resultado
+    mitad = len(medidas) // 2
+    if len(medidas) % 2:
+        mediana = medidas[mitad]
+    else:
+        mediana = (medidas[mitad - 1] + medidas[mitad]) / 2
+    p95 = _percentil_nearest_rank(medidas, 95)
+    dentro = sum(1 for x in medidas if x <= UMBRAL_INFERENCIA_MS)
+    resultado.update(
+        mediana_ms=mediana,
+        p95_ms=p95,
+        max_ms=medidas[-1],
+        pct_le_50ms=round(100 * dentro / len(medidas), 2),
+        cumple=p95 <= UMBRAL_INFERENCIA_MS,
+    )
+    return resultado
+
+
 def resumir_validacion(lineas: Sequence[LineaEvidencia]) -> dict[str, Any]:
     """Métricas de un grupo de revisiones de una misma validación.
 
@@ -226,7 +278,8 @@ def resumir_validacion(lineas: Sequence[LineaEvidencia]) -> dict[str, Any]:
 
     Returns:
         `n_revisiones`, `disponibles`, `no_disponibles` (con `por_motivo`),
-        `latencia`, `kappa`, `concordancia` y `matriz_confusion`. κ,
+        `latencia`, `latencia_inferencia`, `kappa`, `concordancia` y
+        `matriz_confusion`. κ,
         concordancia y matriz usan solo las revisiones disponibles y no
         anuladas.
     """
@@ -251,6 +304,9 @@ def resumir_validacion(lineas: Sequence[LineaEvidencia]) -> dict[str, Any]:
         "no_disponibles": {"n": len(no_disponibles), "por_motivo": por_motivo},
         "latencia": resumen_latencia(
             [x.latencia_ms for x in disponibles], len(no_disponibles)
+        ),
+        "latencia_inferencia": resumen_latencia_inferencia(
+            [x.latencia_inferencia_ms for x in disponibles]
         ),
         "kappa": cohen_kappa(sistema, arbitro),
         "concordancia": {

@@ -137,6 +137,7 @@ clasificacion = sa.Table(
     sa.Column("keypoints_sha256", sa.String(64), nullable=False),
     sa.Column("features_uri", sa.Text),
     sa.Column("latencia_ms", sa.Integer),
+    sa.Column("latencia_inferencia_ms", sa.Integer),
     sa.Column("creado_en", sa.TIMESTAMP(timezone=True), nullable=False),
 )
 

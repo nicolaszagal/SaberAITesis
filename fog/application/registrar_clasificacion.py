@@ -1,6 +1,7 @@
 """RegistrarClasificacion — CU-06: guarda la sugerencia de Cloud, o el
 "no disponible", contra el modelo activo, con los keypoints crudos de la
-TrackedSequence en .npz (uri + sha256) y la latencia medida por Fog.
+TrackedSequence en .npz (uri + sha256), la latencia medida por Fog y, en las
+disponibles, la latencia de inferencia que informa Cloud (NULL si no hay).
 
 La clase y las probabilidades se pasan con los nombres del modelo
 (`AttackA`, ...); el adaptador de persistencia las traduce al esquema.
@@ -120,6 +121,7 @@ class RegistrarClasificacion:
                     tirador=resultado.action[-1],
                     confianza=resultado.confidence,
                     probabilidades=resultado.probs,
+                    latencia_inferencia_ms=resultado.latencia_inferencia_ms,
                     **comunes,
                 )
             else:

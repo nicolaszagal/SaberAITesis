@@ -157,6 +157,7 @@ CREATE TABLE clasificacion (
     keypoints_sha256   sha256_hex NOT NULL,
     features_uri       TEXT,
     latencia_ms        INT CHECK (latencia_ms >= 0),
+    latencia_inferencia_ms INT CHECK (latencia_inferencia_ms >= 0),  -- BiLSTM en Cloud (F-027); NULL si no disponible
     creado_en          TIMESTAMPTZ NOT NULL DEFAULT now(),
     -- Determinismo (F-036): un resultado por tocado y versión de modelo
     UNIQUE (tocado_id, modelo_version_id),

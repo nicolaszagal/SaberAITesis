@@ -1,7 +1,7 @@
 """Exportación de la evidencia de una sesión de validación (L02).
 
 Escribe en `EVIDENCE_DIR/<evento_id>/`: `resumen.json`, `revisiones.csv`
-(los 16 campos de L01, mismo orden, armados desde la base) y `resumen.md`
+(los 17 campos de L01, mismo orden, armados desde la base) y `resumen.md`
 (como máximo una pantalla). Idempotente: reescribe los tres archivos y, con
 los mismos datos, solo cambia `generado_en`.
 """
@@ -62,6 +62,7 @@ def _bloque_validacion(nombre: str, m: dict[str, Any]) -> list[str]:
         texto_p95 = "> 60 s"
     else:
         texto_p95 = f"{_numero(lat['p95_ms'])} ms"
+    inf = m["latencia_inferencia"]
     kappa = m["kappa"]
     if kappa["calculable"]:
         texto_kappa = (
@@ -83,6 +84,12 @@ def _bloque_validacion(nombre: str, m: dict[str, Any]) -> list[str]:
         f"p95 {texto_p95} · ≤ 60 s {_numero(lat['pct_le_60s'])} % "
         "(sobre todas; no disponible = > 60 s)",
         f"- Umbral p95 ≤ {lat['umbral_ms']} ms: {_cumple(lat['cumple'])}",
+        f"- Latencia de inferencia (disponibles={inf['n_disponibles']} · "
+        f"sin medición={inf['sin_medicion']}): "
+        f"mediana {_numero(inf['mediana_ms'])} ms · "
+        f"p95 {_numero(inf['p95_ms'])} ms · máx {_numero(inf['max_ms'])} ms · "
+        f"≤ {inf['umbral_ms']} ms {_numero(inf['pct_le_50ms'])} % · "
+        f"umbral p95 ≤ {inf['umbral_ms']} ms: {_cumple(inf['cumple'])}",
         f"- κ de Cohen: {texto_kappa}",
         f"- Concordancia: {_numero(pct)} % (n={m['concordancia']['n']})",
     ]
@@ -143,11 +150,13 @@ def renderizar_md(resumen: dict[str, Any]) -> str:
             "sin versión activa"
             if activo is None
             else f"{activo['nombre']} · {activo['num_clases']} clases · "
-            f"F1 macro test {_numero(activo['f1_macro_test'])} · "
+            f"F1 macro {activo['f1_macro_test_rotulo']} "
+            f"{_numero(activo['f1_macro_test'])} · "
             f"κ piloto {_numero(activo['kappa_piloto'])} (registrados)"
         ),
         f"- Usado en las revisiones: {usados}",
-        f"- Tabla M01: {tabla_m01}",
+        f"- Tabla M01: {tabla_m01} · cifra reportable de RNF-03: media de la "
+        "serie (N = 10), no la del checkpoint",
     ]
     return "\n".join(lineas) + "\n"
 

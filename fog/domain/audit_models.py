@@ -121,6 +121,8 @@ class Clasificacion:
     features_uri: str | None
     latencia_ms: int | None
     creado_en: datetime
+    # Tiempo del clasificador en Cloud (F-027); None si no hubo inferencia.
+    latencia_inferencia_ms: int | None = None
 
 
 @dataclass(frozen=True)

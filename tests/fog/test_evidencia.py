@@ -20,7 +20,7 @@ from fog.domain.audit_models import (
     Tocado,
     Veredicto,
 )
-from fog.domain.evidencia import construir_linea
+from fog.domain.evidencia import LineaEvidencia, construir_linea
 from fog.infrastructure.evidencia.registro_jsonl import RegistroEvidenciaJsonl
 from shared.logging_config import configurar_logging_tecnico
 
@@ -28,6 +28,7 @@ CAMPOS = [
     "ts", "evento_id", "revision_id", "validacion", "modelo", "luz_A", "luz_B",
     "disponible", "motivo", "clase_sugerida", "confianza", "latencia_ms",
     "decision", "clase_final_arbitro", "concordancia", "hash_auditoria",
+    "latencia_inferencia_ms",
 ]
 
 
@@ -59,6 +60,7 @@ def test_revision_cerrada_produce_una_linea_con_los_campos_exactos(crear_app):
     assert linea["clase_sugerida"] == "AttackA"
     assert linea["confianza"] == pytest.approx(0.74)
     assert linea["latencia_ms"] is not None
+    assert linea["latencia_inferencia_ms"] == 12  # campo 17, el que informó Cloud
     assert (linea["decision"], linea["clase_final_arbitro"]) == ("mantener", "AttackA")
     assert linea["concordancia"] is True
     # Fuente de verdad: la base
@@ -136,6 +138,7 @@ def _entidades(fuente: str, disponible: bool = True):
         None if disponible else "confianza_baja",
         "RiposteA" if disponible else None, "A" if disponible else None,
         0.5 if disponible else None, None, "k", "h", None, 40, ahora,
+        latencia_inferencia_ms=18 if disponible else None,
     )
     revision = Revision(uid(), tocado.id, True, uid(), clasificacion.id, ahora, ahora)
     veredicto = Veredicto(uid(), revision.id, "mantener", "RiposteA", uid(), ahora)
@@ -150,6 +153,18 @@ def test_validacion_se_deriva_de_tocado_fuente(fuente, validacion):
 
     assert linea.validacion == validacion
     assert linea.concordancia is True
+
+
+def test_latencia_inferencia_es_el_campo_17_y_null_si_no_disponible():
+    disponible = construir_linea(evento_id=uuid.uuid4(), **_entidades("simulado"))
+    no_disponible = construir_linea(
+        evento_id=uuid.uuid4(), **_entidades("simulado", disponible=False)
+    )
+
+    assert list(LineaEvidencia.__dataclass_fields__)[-1] == "latencia_inferencia_ms"
+    assert len(LineaEvidencia.__dataclass_fields__) == 17
+    assert disponible.latencia_inferencia_ms == 18
+    assert no_disponible.latencia_inferencia_ms is None
 
 
 def test_concordancia_es_null_si_no_disponible():
