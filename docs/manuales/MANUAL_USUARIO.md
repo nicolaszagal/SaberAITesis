@@ -130,28 +130,23 @@ Esta versión no muestra la superposición biomecánica sobre el video (CU-08) n
 
 ### 4.5 Registrar la decisión (CU-10, F-033)
 
-El "Paso 3 · Decisión del árbitro" tiene tres botones. Se activan cuando el análisis terminó y hay una revisión abierta.
-
-| Botón | Atajo | Qué registra |
-|---|---|---|
-| "Mantener" | M | La clase sugerida como clase final. Está activo solo si hay sugerencia. |
-| "Cambiar" | C | La clase final que usted elija. Puede usarse sin sugerencia. |
-| "Anular" | A | La anulación de la acción, sin clase final (acción simultánea, FIE t.106). |
+El "Paso 3 · Decisión del árbitro" se activa cuando el análisis terminó y hay una revisión abierta. Usted siempre declara la clase final entre las 6 clases, o anula la acción. La sugerencia del sistema aparece destacada con la marca "Sugerencia del sistema", pero nunca viene elegida.
 
 Procedimiento:
 
-1. Revise el video y la sugerencia.
-2. Pulse "Mantener", "Cambiar" o "Anular".
-3. Si pulsó "Cambiar", aparece "Elige la clase final" con las 6 clases. La clase sugerida lleva la marca "(sugerida)" y no está preseleccionada. Pulse la clase final. Para volver sin decidir, pulse "Cancelar" (atajo Esc).
-4. Resultado esperado: aparece "Veredicto registrado" con "Mantiene", "Cambia" o "Anula" y, si corresponde, la clase final.
+1. Revise el video y la sugerencia (sección 4.4).
+2. En "Clase final (elige una de las 6)", pulse la clase que usted decide. Puede coincidir o no con la sugerida. Con el botón aparte "Anular la acción" (atajo A) registra la anulación, sin clase final (acción simultánea, FIE t.106).
+3. Si eligió una clase, responda "¿Cambia la decisión original en pista?". "Sí" registra "Cambia" y "No" registra "Mantiene". La pregunta no tiene respuesta por defecto. Si anula, no aparece.
+4. Revise "Resumen antes de registrar" y pulse "Confirmar y registrar". El botón está desactivado mientras falte la clase (o Anular) o la respuesta; debajo aparece "Falta:" con lo que falta. "Borrar elección" (atajo Esc) deja todo sin elegir.
+5. Resultado esperado: aparece "Veredicto registrado" con "Mantiene", "Cambia" o "Anula" y, si corresponde, la clase final.
 
-![Selección de la clase final](img/09-revision-selector-clase.png)
+![Selección de la clase final, respuesta y resumen](img/09-revision-selector-clase.png)
 
 ![Veredicto registrado](img/08-revision-veredicto-registrado.png)
 
-Una vez registrada, la decisión no se puede editar: los botones quedan desactivados y el sistema rechaza un segundo veredicto sobre la misma revisión (error 409). Los registros son de solo adición.
+Si la sugerencia no estuvo disponible, el selector muestra las 6 clases sin marca y usted decide igual. Una vez registrada, la decisión no se puede editar: el selector desaparece y el sistema rechaza un segundo veredicto sobre la misma revisión (error 409). Los registros son de solo adición.
 
-Si el registro falla, aparece "No se pudo registrar el veredicto" con la indicación "Vuelve a elegir tu decisión." Si no hay revisión abierta, el paso indica "No hay revisión abierta: continúe con el procedimiento VAR habitual." Antes de terminar el análisis indica "Disponible cuando el análisis termine." Sin sugerencia y con revisión abierta indica "Sin sugerencia: puede Cambiar (elige la clase) o Anular."
+Si el registro falla, aparece "No se pudo registrar el veredicto" con la indicación "Revisa tu decisión y vuelve a confirmarla." Si no hay revisión abierta, el paso indica "No hay revisión abierta: continúe con el procedimiento VAR habitual." Antes de terminar el análisis indica "Disponible cuando el análisis termine."
 
 ### 4.6 Finalizar el combate
 
@@ -241,8 +236,8 @@ Los datos del resumen y del modelo se leen del sistema. Si no existen o la consu
 |---|---|
 | S | Elegir archivo. |
 | Intro | ANALIZAR, cuando están completos los requisitos. |
-| M, C, A | Mantener, Cambiar, Anular. |
-| Esc | Cancelar la selección de la clase final. |
+| A | Elegir "Anular la acción". |
+| Esc | Borrar la elección de la decisión. |
 | Coma y punto | Cuadro anterior y cuadro siguiente. |
 | Ctrl+Intro | Crear combate. |
 
@@ -254,7 +249,7 @@ Los atajos sin Ctrl no actúan mientras escribe en un campo de texto.
 
 | Motivo | Texto en pantalla | Qué significa | Qué hacer |
 |---|---|---|---|
-| `pose_incompleta` | "No se pudo detectar a ambos tiradores en el clip." | El sistema no detectó a los dos tiradores, o el clip tiene menos de 3 fotogramas. | Siga el procedimiento VAR habitual. Verifique que el clip muestre a ambos tiradores y vuelva a cargarlo. Puede registrar "Cambiar" o "Anular". |
+| `pose_incompleta` | "No se pudo detectar a ambos tiradores en el clip." | El sistema no detectó a los dos tiradores, o el clip tiene menos de 3 fotogramas. | Siga el procedimiento VAR habitual. Verifique que el clip muestre a ambos tiradores y vuelva a cargarlo. Puede elegir la clase final o anular. |
 | `confianza_baja` | "La confianza de la sugerencia quedó por debajo del umbral configurado." | La confianza no alcanzó el umbral. En esta versión el sistema no produce este motivo, porque el umbral no está definido. | Siga el procedimiento VAR habitual. |
 | `clase_fuera_mvp` | "La acción detectada queda fuera de las 6 clases del sistema." | La acción no corresponde a una de las 6 clases. En esta versión el sistema no produce este motivo. | Siga el procedimiento VAR habitual. |
 | `timeout` | "El análisis superó el límite de 60 s." | El sistema no respondió a tiempo. | Siga el procedimiento VAR habitual. Puede volver a cargar el clip. Si se repite, avise a quien instala el sistema. |
@@ -262,7 +257,7 @@ Los atajos sin Ctrl no actúan mientras escribe en un campo de texto.
 | `mensaje_invalido` | "El análisis recibió datos inválidos." | Un componente interno rechazó los datos del clip. | Vuelva a cargar el clip. Si persiste, avise a quien instala el sistema. |
 | Otro valor | "El sistema no pudo clasificar la acción." | Motivo no reconocido. | Siga el procedimiento VAR habitual y avise a quien instala el sistema. |
 
-En todos los casos la pantalla agrega "Continúe con el procedimiento VAR habitual." y usted puede registrar "Cambiar" o "Anular".
+En todos los casos la pantalla agrega "Continúe con el procedimiento VAR habitual." y usted puede elegir la clase final o anular.
 
 ### Errores de la interfaz
 
@@ -336,4 +331,3 @@ Estas definiciones describen la anotación del conjunto de datos con el que se e
 - CU-16 Alertas de baja calidad de video o desincronización (F-011).
 - Autenticación por rol (RF-26).
 - Reportes por sesión en PDF o CSV desde la interfaz (F-009): el CSV de la sesión se genera con `scripts/exportar_evidencia.py`.
-- Captura de la decisión con la pregunta "¿Cambia la decisión original en pista?" y clase final obligatoria también con "Mantener" (documentada en `docs_claude/contexto_sabre.md`, sección 8): la interfaz actual registra "Mantener" con la clase sugerida.
