@@ -29,11 +29,11 @@ La lista de árbitros de la pantalla "Combate" sale de la base de datos. Si no a
 
 1. Abra un navegador web de escritorio. Las capturas de este manual se tomaron con Google Chrome.
 2. Escriba la dirección de la interfaz. Con la instalación de la guía es `http://localhost:8081`.
-3. Verifique que aparezca el encabezado con el nombre SABRE.AI y la pantalla "Inicio".
+3. Verifique que aparezca el encabezado con el nombre SABRE.AI y la pantalla "Revisión VAR". La interfaz abre siempre en "Revisión VAR". Sin combate activo, la pantalla muestra "No hay combate activo" y el botón "Configurar combate".
 
-![Inicio sin combate activo](img/01-inicio-sin-combate.png)
+![Revisión VAR sin combate activo](img/01-revision-sin-combate.png)
 
-El encabezado contiene los botones "Inicio", "Revisión VAR", "Historial" y "Combate", el indicador de estado y el botón de tema ("Tema claro" o "Tema oscuro"). Con un combate activo agrega "Pista", "Árbitro:" y el botón "Finalizar combate".
+El encabezado contiene los botones "Revisión VAR", "Historial" y "Combate", el texto "Modelo activo:" con el nombre de la versión del modelo en uso, el indicador de estado y el botón de tema ("Tema claro" o "Tema oscuro"). Con un combate activo agrega "Pista", "Árbitro:" y el botón "Finalizar combate". El nombre del modelo se lee del sistema: si la consulta falla, no se muestra.
 
 ### Indicador de estado
 
@@ -63,9 +63,9 @@ El flujo tiene siete pasos: configurar el combate, cargar el clip, analizar, rev
 
 Con un clic en el brazo de cada tirador y "Crear combate" el combate queda listo. El consentimiento informado se gestiona en papel fuera del sistema.
 
-![Formulario del combate](img/03-combate-formulario.png)
+![Formulario del combate](img/02-combate-formulario.png)
 
-![Combate activo](img/04-combate-activo.png)
+![Combate activo](img/03-combate-activo.png)
 
 A es el tirador ROJ (izquierda en cámara) y B es el tirador VER (derecha en cámara). Esta asignación es fija.
 
@@ -90,7 +90,7 @@ Si la lista de eventos o de árbitros no carga, la pantalla muestra "No se pudo 
 4. En "Luz Favero simulada · instante de cada luz (al menos una)", pulse "Marcar luz A · ROJ aquí" (atajo R). Resultado esperado: junto al botón aparece el instante en milisegundos, por ejemplo "Luz A: 433 ms". Antes de marcar se lee "Luz A: sin marcar".
 5. Si también se encendió la luz de B, lleve el reproductor a su instante y pulse "Marcar luz B · VER aquí" (atajo V). En un tocado doble las dos luces pueden encenderse con algunos fotogramas de diferencia: marque cada una en su propio instante. Para deshacer una marca, pulse "Quitar luz A" o "Quitar luz B".
 
-![Clip listo para analizar](img/05-revision-clip-listo.png)
+![Clip listo para analizar](img/04-revision-clip-listo.png)
 
 Al elegir otro archivo, las dos luces vuelven a "sin marcar" y se descarta el resultado anterior. Una luz sin marcar se envía como apagada.
 
@@ -102,7 +102,7 @@ El botón "ANALIZAR" permanece desactivado hasta completar los requisitos. Debaj
 2. Espere. El botón cambia a "Analizando…" y aparece "Analizando… N s de 60 s". La latencia objetivo de la sugerencia es de 60 segundos como máximo.
 3. Resultado esperado: aparece "Listo" y el "Paso 2 · Sugerencia" muestra el resultado.
 
-![Análisis en curso](img/06-revision-analizando.png)
+![Análisis en curso](img/05-revision-analizando.png)
 
 Si pasan 60 segundos sin respuesta, la pantalla muestra "Clasificación no disponible" con el motivo `timeout` (sección 5) y usted sigue el procedimiento VAR habitual.
 
@@ -116,11 +116,11 @@ El "Paso 2 · Sugerencia" muestra, bajo el rótulo "Sugerencia del sistema":
 - El tirador atribuido: "A · ROJ" o "B · VER".
 - La "Confianza" en porcentaje, con una barra.
 
-![Sugerencia del sistema](img/07-revision-sugerencia.png)
+![Sugerencia del sistema](img/06-revision-sugerencia.png)
 
 Si el sistema no puede clasificar, el paso muestra "Clasificación no disponible", el motivo y la indicación "Continúe con el procedimiento VAR habitual." Los motivos están en la sección 5.
 
-![Clasificación no disponible](img/10-revision-no-disponible.png)
+![Clasificación no disponible](img/09-revision-no-disponible.png)
 
 Esta versión no muestra la superposición biomecánica sobre el video (CU-08) ni la justificación de la clasificación con los eventos clave (CU-09). Ambas están en el Anexo B.
 
@@ -136,9 +136,9 @@ Procedimiento:
 4. Revise "Resumen antes de registrar" y pulse "Confirmar y registrar". El botón está desactivado mientras falte la clase (o Anular) o la respuesta; debajo aparece "Falta:" con lo que falta. "Borrar elección" (atajo Esc) deja todo sin elegir.
 5. Resultado esperado: aparece "Veredicto registrado" con "Mantiene", "Cambia" o "Anula" y, si corresponde, la clase final.
 
-![Selección de la clase final, respuesta y resumen](img/09-revision-selector-clase.png)
+![Selección de la clase final, respuesta y resumen](img/08-revision-selector-clase.png)
 
-![Veredicto registrado](img/08-revision-veredicto-registrado.png)
+![Veredicto registrado](img/07-revision-veredicto-registrado.png)
 
 Si la sugerencia no estuvo disponible, el selector muestra las 6 clases sin marca y usted decide igual. Una vez registrada, la decisión no se puede editar: el selector desaparece y el sistema rechaza un segundo veredicto sobre la misma revisión (error 409). Los registros son de solo adición.
 
@@ -149,16 +149,19 @@ Si el registro falla, aparece "No se pudo registrar el veredicto" con la indicac
 1. Pulse "Finalizar combate" en el encabezado.
 2. Resultado esperado: la interfaz abre "Combate", sin combate activo. Las revisiones registradas se conservan.
 
-![Combate finalizado](img/15-combate-finalizado.png)
+![Combate finalizado](img/13-combate-finalizado.png)
 
 Sin combate activo, "Revisión VAR" muestra "No hay combate activo" y "Historial" muestra "No hay un evento activo". Para continuar, cree un combate nuevo (sección 4.1).
 
-![Revisión VAR sin combate](img/02-revision-sin-combate.png)
+![Revisión VAR sin combate](img/01-revision-sin-combate.png)
 
 ### 4.7 Historial (CU-12)
 
 1. Seleccione "Historial" en el encabezado. Con combate activo, el título es "Revisiones del evento" seguido del número de revisiones.
-2. Lea la lista, de la revisión más reciente a la más antigua. Muestra solo las revisiones del evento del combate activo.
+2. Lea la línea de resumen de la sesión, sobre la lista. Muestra una línea por validación con revisiones, por ejemplo "Validación 1 · 3 revisiones · κ 0.33 (aceptable) · latencia p95 48 ms".
+3. Lea la lista, de la revisión más reciente a la más antigua. Muestra solo las revisiones del evento del combate activo.
+
+La línea de resumen solo aparece si el evento del combate activo tiene revisiones con veredicto. Si κ no es calculable, la línea omite κ. Si el p95 supera los 60 s, la línea indica "latencia p95 > 60 s". Una revisión sin sugerencia cuenta como más de 60 s: basta con que más del 5 % de las revisiones no tenga sugerencia para que aparezca "latencia p95 > 60 s". Los datos se leen del sistema: si no existen o la consulta falla, la línea no se muestra.
 
 | Columna | Contenido |
 |---|---|
@@ -168,15 +171,15 @@ Sin combate activo, "Revisión VAR" muestra "No hay combate activo" y "Historial
 | "Veredicto del árbitro" | "Mantiene", "Cambia" o "Anula", con la clase final si existe, o "Pendiente". |
 | "Concordancia" | "Coincide" si la clase sugerida es igual a la clase final, "Difiere" si no. Vacío si la sugerencia no estuvo disponible, si no hay veredicto o si se anuló. |
 
-![Historial](img/11-historial.png)
+![Historial](img/10-historial.png)
 
-3. Pulse una fila para abrir el detalle. Pulse otra vez para cerrarlo. El detalle muestra:
+4. Pulse una fila para abrir el detalle. Pulse otra vez para cerrarlo. El detalle muestra:
    - "Sugerencia del sistema": la clase, el tirador y la confianza; o "Clasificación no disponible" con el motivo; o "Aún sin clasificación".
    - Las probabilidades de las 6 clases, cuando existen.
    - "Decisión del árbitro" y la fecha de registro ("Registrada:").
    - "Auditoría": "Registro n.º" y el código de integridad (hash) del registro.
 
-![Detalle de una revisión](img/12-historial-detalle.png)
+![Detalle de una revisión](img/11-historial-detalle.png)
 
 Si la carga falla, la pantalla muestra "No se pudo cargar el historial" o "No se pudo cargar el detalle de la revisión", con el botón "Reintentar". Sin revisiones muestra "Sin revisiones registradas" y el botón "Ir a Revisión VAR".
 
@@ -185,7 +188,7 @@ Si la carga falla, la pantalla muestra "No se pudo cargar el historial" o "No se
 1. En "Historial", pulse "Exportar evidencia".
 2. Resultado esperado: el navegador descarga el archivo `resumen-<evento_id>.json` y aparece "Evidencia exportada:" seguido del nombre del archivo.
 
-![Evidencia exportada](img/13-historial-exportado.png)
+![Evidencia exportada](img/12-historial-exportado.png)
 
 Si falla, aparece "No se pudo exportar la evidencia" y el botón "Reintentar".
 
@@ -210,27 +213,13 @@ Bandas de κ (Landis y Koch): menor que 0, pobre; 0 a 0.20, leve; 0.21 a 0.40, a
 
 Los archivos `revisiones.csv` y `resumen.md` de la evidencia los genera quien instala el sistema con un script (`GUIA_INSTALACION.md`, sección 4).
 
-### 4.9 Inicio
-
-"Inicio" muestra tres bloques y, cuando corresponde, un resumen y el modelo activo.
-
-| Elemento | Contenido |
-|---|---|
-| "Revisión VAR" | "Pista" y el número de pista, y los alias de A y B, con el combate activo. Sin combate: "Sin combate activo" y "Configura un combate para empezar." Abre "Revisión VAR". |
-| "Historial" | "Revisiones registradas". Abre "Historial". |
-| "Configuración del combate" | "Combate activo" o "Sin combate". Abre "Combate". |
-| "Resumen de la sesión" | Una línea por validación con revisiones, por ejemplo "Validación 1 · 3 revisiones · κ 0.33 (aceptable) · latencia p95 48 ms". Solo aparece si el evento del combate activo tiene revisiones con veredicto. Si κ no es calculable, la línea omite κ. Si el p95 supera los 60 s, la línea indica "latencia p95 > 60 s". Una revisión sin sugerencia cuenta como más de 60 s: basta con que más del 5 % de las revisiones no tenga sugerencia para que aparezca "latencia p95 > 60 s". |
-| "Modelo activo:" | Nombre de la versión del modelo en uso. |
-
-![Inicio con el resumen de la sesión](img/14-inicio-con-resumen.png)
-
-Los datos del resumen y del modelo se leen del sistema. Si no existen o la consulta falla, no se muestran.
-
-### 4.10 Atajos de teclado
+### 4.9 Atajos de teclado
 
 | Atajo | Acción |
 |---|---|
 | S | Elegir archivo. |
+| R | Marcar la luz A en el instante actual del reproductor, con un clip cargado. |
+| V | Marcar la luz B en el instante actual del reproductor, con un clip cargado. |
 | Intro | ANALIZAR, cuando están completos los requisitos. |
 | A | Elegir "Anular la acción". |
 | Esc | Borrar la elección de la decisión. |
@@ -307,7 +296,6 @@ Estas definiciones describen la anotación del conjunto de datos con el que se e
 | 4.6 Finalizar el combate | CU-01 | F-039 |
 | 4.7 Historial | CU-12 | F-034 |
 | 4.8 Exportar la evidencia | CU-12 | F-034 |
-| 4.9 Inicio | CU-12 | F-034 |
 | 5 Estados y mensajes | CU-06 | F-030 |
 | 6 Clases tácticas | CU-06 | F-005 |
 
