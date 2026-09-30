@@ -10,8 +10,8 @@ WORKDIR /app/backend
 # El run del checkpoint desplegado vive en
 # backend/dataset/lstm_6class/checkpoints/<run_id>/ (run_config.json +
 # best_model.pt, unos cientos de KB, comiteado en este repo — a diferencia
-# de dataset/yolov8x-pose.pt de Fog, 133 MB, que se queda afuera del repo y
-# se monta como volumen). El run_id vigente puede cambiar tras un
+# de yolov8x-pose.pt de Fog, 133 MB, que se descarga en el build de Fog).
+# El run_id vigente puede cambiar tras un
 # diagnóstico en curso (docs_claude/contexto_sabre.md sección 8): no se fija
 # en el código, se pasa como build arg (`--build-arg RUN_ID=<run_id>`).
 # Build remoto (Render clona el repo de GitHub): solo ve lo que está

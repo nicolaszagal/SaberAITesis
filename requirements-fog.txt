@@ -31,3 +31,7 @@ python-multipart
 sqlalchemy[asyncio]==2.1.1
 asyncpg==0.31.0
 alembic==1.20.0
+
+# Cliente HTTP de scripts/prueba_humo.py, que corre dentro del contenedor de Fog
+# (DOCK01). Misma versión que requirements.txt.
+httpx==0.28.1
