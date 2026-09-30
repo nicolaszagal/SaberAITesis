@@ -28,3 +28,17 @@ class ActionClassifierPort(ABC):
                  en ArbitrationPolicyPort.
         """
         raise NotImplementedError
+
+    @abstractmethod
+    def precalentar(self) -> None:
+        """Ejecuta una inferencia de precalentamiento con entrada de ceros.
+
+        La primera inferencia tras cargar el modelo es mucho más lenta que
+        las siguientes (F-027). El resultado se descarta: quien llama no
+        recibe nada y la implementación no debe publicar ni persistir.
+
+        Raises:
+            Exception: cualquier falla del modelo se propaga; Cloud no debe
+                arrancar con un modelo que no puede inferir.
+        """
+        raise NotImplementedError

@@ -37,6 +37,7 @@ async def main() -> None:
 
     log.info("Cargando %s ...", config.MODEL_RUN_DIR)
     use_case = container.classify_and_publish()
+    use_case.precalentar()  # F-027: si falla, la excepción impide arrancar
     log.info("Cloud escuchando '%s' como '%s'...", config.STREAM_FEATURES, config.CONSUMER_CLOUD)
     await use_case.run_forever()
 

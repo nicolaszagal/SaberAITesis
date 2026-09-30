@@ -31,6 +31,7 @@ import torch
 
 from cloud.domain.models import ActionClass, CLASSES, LuzSignal, RawVerdict
 from cloud.ports.action_classifier import ActionClassifierPort
+from shared import config
 from shared.lstm_classifier import LSTMClassifier
 
 RUN_CONFIG_FILENAME = "run_config.json"
@@ -41,6 +42,11 @@ RUN_CONFIG_FILENAME = "run_config.json"
 # convención de nombres que usa dataset/lstm_6class/train.py para todas
 # las corridas (best_model.pt / best_acc_model.pt / last_model.pt).
 CHECKPOINT_FILENAME = "best_model.pt"
+
+# Forma (T, 192) de la entrada del precalentamiento. 192 son las features por
+# frame; T = MIN_FRAMES es el mínimo de frames que Fog acepta para extraer
+# features (shared.config.MIN_FRAMES), así que es una secuencia válida.
+PRECALENTAMIENTO_FRAMES = config.MIN_FRAMES
 
 
 class LSTM6ClassAdapter(ActionClassifierPort):
@@ -78,6 +84,16 @@ class LSTM6ClassAdapter(ActionClassifierPort):
         quedar desincronizado del checkpoint realmente cargado."""
         run_id = os.path.basename(os.path.normpath(run_dir))
         return f"lstm_6class/{run_id}/{CHECKPOINT_FILENAME}"
+
+    def precalentar(self) -> None:
+        """Infiere una secuencia de ceros (T, 192) sin luz y descarta la salida.
+
+        Raises:
+            Exception: si el modelo falla al inferir.
+        """
+        self.classify(
+            np.zeros((PRECALENTAMIENTO_FRAMES, 192), dtype=np.float32), LuzSignal.none()
+        )
 
     def classify(self, sequence: np.ndarray, luz: LuzSignal | None) -> RawVerdict:
         """sequence: (T, 192) float32, ya estandarizada/recortada por

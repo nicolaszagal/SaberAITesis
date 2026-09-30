@@ -39,6 +39,12 @@ class FakeActionClassifier(ActionClassifierPort):
         self.result = result
         self.raises = raises
         self.calls: list[tuple] = []
+        self.precalentamientos = 0
+
+    def precalentar(self) -> None:
+        self.precalentamientos += 1
+        if self.raises is not None:
+            raise self.raises
 
     def classify(self, sequence: np.ndarray, luz: LuzSignal | None) -> RawVerdict:
         self.calls.append((sequence, luz))
