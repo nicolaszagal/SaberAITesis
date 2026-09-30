@@ -39,7 +39,7 @@ CAMPOS_L01 = [
     "ts", "evento_id", "revision_id", "validacion", "modelo", "luz_A", "luz_B",
     "disponible", "motivo", "clase_sugerida", "confianza", "latencia_ms",
     "decision", "clase_final_arbitro", "concordancia", "hash_auditoria",
-    "latencia_inferencia_ms",
+    "latencia_inferencia_ms", "t_luz_a_ms", "t_luz_b_ms",
 ]
 LOG_M01 = Path(__file__).resolve().parents[3] / "dataset/lstm_6class/EXPERIMENT_LOG.md"
 
@@ -55,6 +55,7 @@ def _linea(
         confianza=0.7 if disponible else None, latencia_ms=latencia,
         decision=decision, clase_final_arbitro=final,
         concordancia=None, hash_auditoria="h", latencia_inferencia_ms=inferencia,
+        t_luz_a_ms=300, t_luz_b_ms=None,
     )
 
 

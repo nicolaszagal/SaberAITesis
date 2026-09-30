@@ -18,6 +18,8 @@ dataset/05_extract_features.py para leer clips del dataset.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import asyncio
 import logging
 import os
@@ -46,8 +48,8 @@ class InvalidClipError(Exception):
 
 
 class TocadoFueraDelClipError(Exception):
-    """`t_tocado_ms` no está entre 0 y la duración del clip. El router lo
-    traduce a HTTP 422."""
+    """El instante de una luz (o `t_tocado_ms` obsoleto) no está entre 0 y la
+    duración del clip. El router lo traduce a HTTP 422."""
 
 
 @dataclass(frozen=True)
@@ -71,7 +73,7 @@ async def process_uploaded_clip(
     storage: FileStoragePort,
     clip_max_mb: float,
     min_frames: int,
-    t_tocado_ms: int | None = None,
+    instantes_ms: Mapping[str, int] | None = None,
 ) -> ClipProcesado:
     """Valida el clip subido, corre pose+tracking y lo guarda por SHA-256.
 
@@ -82,8 +84,9 @@ async def process_uploaded_clip(
         storage: almacén donde se guarda el clip (uri + sha256).
         clip_max_mb: tamaño máximo aceptado.
         min_frames: frames mínimos para aceptar el clip.
-        t_tocado_ms: instante del tocado simulado; si se indica, debe estar
-            entre 0 y la duración del clip (ambos incluidos).
+        instantes_ms: instantes simulados por nombre de campo (`t_luz_a_ms`,
+            `t_luz_b_ms`); cada uno debe estar entre 0 y la duración del clip
+            (ambos incluidos).
 
     Returns:
         Secuencia rastreada, uri/sha256 del archivo y metadatos de video.
@@ -92,7 +95,7 @@ async def process_uploaded_clip(
         ClipTooLargeError: si supera `clip_max_mb`.
         InvalidClipError: si no abre como video, no informa fps válidos o
             tiene menos de `min_frames` frames.
-        TocadoFueraDelClipError: si `t_tocado_ms` es negativo o supera la
+        TocadoFueraDelClipError: si algún instante es negativo o supera la
             duración del clip. El clip no se guarda.
     """
     suffix = os.path.splitext(file.filename or "")[1] or ".mp4"
@@ -144,11 +147,12 @@ async def process_uploaded_clip(
 
         n_frames, fps, ancho, alto = await loop.run_in_executor(executor, _read_all_frames)
         duracion_ms = max(1, round(n_frames / fps * 1000))
-        if t_tocado_ms is not None and not 0 <= t_tocado_ms <= duracion_ms:
-            raise TocadoFueraDelClipError(
-                f"t_tocado_ms={t_tocado_ms} está fuera del clip: debe estar entre 0 y "
-                f"{duracion_ms} ms (duración del clip {file.filename!r})"
-            )
+        for nombre, valor in (instantes_ms or {}).items():
+            if not 0 <= valor <= duracion_ms:
+                raise TocadoFueraDelClipError(
+                    f"{nombre}={valor} está fuera del clip: debe estar entre 0 y "
+                    f"{duracion_ms} ms (duración del clip {file.filename!r})"
+                )
         tracked = await loop.run_in_executor(executor, pose_session.finish)
         uri, sha256 = await storage.save_clip(Path(tmp_path))
         log.info("clip subido (%s): %d frames procesados", file.filename, n_frames)

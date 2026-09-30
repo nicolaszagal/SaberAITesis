@@ -277,3 +277,111 @@ def test_t_tocado_ms_en_los_extremos_del_clip_se_acepta(crear_app):
         "SELECT t_tocado_ms FROM sabre.tocado WHERE combate_id = :i ORDER BY t_tocado_ms", i=match_id
     )
     assert [g["t_tocado_ms"] for g in guardados] == [0, 500]
+
+
+# ---------------------------------------------------------------------------
+# V02: instante de cada luz Favero simulada
+# ---------------------------------------------------------------------------
+
+
+def _sin_legacy(**campos):
+    """Campos de carga con solo la forma vigente (sin has_luz ni t_tocado_ms)."""
+    return {"has_luz_A": None, "has_luz_B": None, "t_tocado_ms": None, **campos}
+
+
+def _tocado(app, match_id):
+    return app.sql.filas("SELECT * FROM sabre.tocado WHERE combate_id = :i", i=match_id)[0]
+
+
+def test_dos_luces_guardan_cada_instante_y_t_tocado_es_el_menor(crear_app):
+    app = crear_app()
+    match_id = app.configurar()
+
+    response = app.subir_clip(match_id, **_sin_legacy(t_luz_a_ms="400", t_luz_b_ms="200"))
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (body["has_luz_A"], body["has_luz_B"]) == (True, True)
+    tocado = _tocado(app, match_id)
+    assert (tocado["luz_a"], tocado["luz_b"]) == (True, True)
+    assert (tocado["t_luz_a_ms"], tocado["t_luz_b_ms"], tocado["t_tocado_ms"]) == (400, 200, 200)
+    assert app.container.sessions().get(body["revision_id"]).t_tocado_ms == 200
+    frame = app.sql.filas(
+        "SELECT frame_tocado FROM sabre.tocado_clip WHERE tocado_id = :t", t=tocado["id"]
+    )[0]["frame_tocado"]
+    assert frame == round(0.2 * 10)  # clip de prueba a 10 fps
+
+
+def test_una_luz_deja_la_otra_apagada_sin_instante(crear_app):
+    app = crear_app()
+    match_id = app.configurar()
+
+    response = app.subir_clip(match_id, **_sin_legacy(t_luz_b_ms="300"))
+
+    assert response.status_code == 200, response.text
+    tocado = _tocado(app, match_id)
+    assert (tocado["luz_a"], tocado["luz_b"]) == (False, True)
+    assert (tocado["t_luz_a_ms"], tocado["t_luz_b_ms"], tocado["t_tocado_ms"]) == (None, 300, 300)
+
+
+def test_sin_ningun_instante_de_luz_responde_422_y_no_persiste(crear_app):
+    app = crear_app()
+    match_id = app.configurar()
+
+    assert app.subir_clip(match_id, **_sin_legacy()).status_code == 422
+    _sin_rastro_del_clip(app, match_id)
+
+
+def test_instante_de_luz_fuera_del_clip_o_negativo_responde_422(crear_app):
+    # clip_de_prueba: 5 frames a 10 fps = 500 ms
+    app = crear_app()
+    match_id = app.configurar()
+
+    fuera = app.subir_clip(match_id, **_sin_legacy(t_luz_a_ms="300", t_luz_b_ms="501"))
+    negativo = app.subir_clip(match_id, **_sin_legacy(t_luz_a_ms="-1"))
+
+    assert fuera.status_code == negativo.status_code == 422
+    assert "t_luz_b_ms=501" in fuera.json()["detail"]
+    _sin_rastro_del_clip(app, match_id)
+
+
+def test_instantes_de_luz_en_los_extremos_del_clip_se_aceptan(crear_app):
+    app = crear_app()
+    match_id = app.configurar()
+
+    assert app.subir_clip(match_id, **_sin_legacy(t_luz_a_ms="0", t_luz_b_ms="500")).status_code == 200
+
+
+def test_alias_obsoleto_has_luz_y_t_tocado_ms_completa_el_instante_de_cada_luz(crear_app):
+    app = crear_app()
+    match_id = app.configurar()
+
+    response = app.subir_clip(match_id, has_luz_A="true", has_luz_B="true", t_tocado_ms="300")
+
+    assert response.status_code == 200
+    tocado = _tocado(app, match_id)
+    assert (tocado["t_luz_a_ms"], tocado["t_luz_b_ms"], tocado["t_tocado_ms"]) == (300, 300, 300)
+
+
+def test_alias_obsoleto_sin_instante_responde_422(crear_app):
+    app = crear_app()
+    match_id = app.configurar()
+
+    assert app.subir_clip(match_id, t_tocado_ms=None).status_code == 422
+    _sin_rastro_del_clip(app, match_id)
+
+
+def test_misma_luz_y_misma_sugerencia_con_los_instantes_que_con_el_alias_obsoleto(crear_app):
+    """V02 no toca la entrada del modelo: lo que llega a Redis (luz A/B) y la
+    sugerencia son idénticas con la forma vigente y con el alias obsoleto."""
+    app = crear_app()
+    match_id = app.configurar()
+
+    nuevo = app.subir_clip(match_id, **_sin_legacy(t_luz_a_ms="400", t_luz_b_ms="200")).json()
+    viejo = app.subir_clip(match_id, has_luz_A="true", has_luz_B="true", t_tocado_ms="200").json()
+
+    publicados = app.container.feature_publisher().published
+    assert publicados[-2][3] == publicados[-1][3]  # LuzSignal idéntico
+    assert publicados[-2][2].sequence.shape == publicados[-1][2].sequence.shape
+    for campo in ("action", "fencer", "confidence", "disponible", "motivo"):
+        assert nuevo[campo] == viejo[campo]

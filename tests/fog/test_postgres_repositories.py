@@ -110,6 +110,7 @@ async def test_flujo_completo_de_revision(session_factory, personas):
         luz_a=True,
         luz_b=False,
         t_tocado_ms=4200,
+        t_luz_a_ms=4200,
         registrado_por=personas["arbitro_id"],
     )
     await tocado_repo.vincular_clip(tocado.id, clip.id, frame_tocado=126)
@@ -217,6 +218,7 @@ async def test_actualizar_veredicto_falla(session_factory, personas):
         luz_a=True,
         luz_b=False,
         t_tocado_ms=1000,
+        t_luz_a_ms=1000,
     )
     revision = await PostgresRevisionRepository(session_factory).crear(
         tocado_id=tocado.id, aceptada=True, arbitro_id=personas["arbitro_id"]

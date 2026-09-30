@@ -28,6 +28,8 @@ def _fila_a_tocado(fila: Row) -> Tocado:
         t_tocado_ms=fila.t_tocado_ms,
         registrado_por=fila.registrado_por,
         creado_en=fila.creado_en,
+        t_luz_a_ms=fila.t_luz_a_ms,
+        t_luz_b_ms=fila.t_luz_b_ms,
     )
 
 
@@ -44,6 +46,8 @@ class PostgresTocadoRepository(TocadoRepositoryPort):
         luz_b: bool,
         t_tocado_utc: datetime | None = None,
         t_tocado_ms: int | None = None,
+        t_luz_a_ms: int | None = None,
+        t_luz_b_ms: int | None = None,
         registrado_por: uuid.UUID | None = None,
     ) -> Tocado:
         async with self._session_factory() as session, session.begin():
@@ -58,6 +62,8 @@ class PostgresTocadoRepository(TocadoRepositoryPort):
                         luz_b=luz_b,
                         t_tocado_utc=t_tocado_utc,
                         t_tocado_ms=t_tocado_ms,
+                        t_luz_a_ms=t_luz_a_ms,
+                        t_luz_b_ms=t_luz_b_ms,
                         registrado_por=registrado_por,
                     )
                     .returning(tocado_tabla)

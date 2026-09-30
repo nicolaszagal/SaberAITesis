@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from fog.domain.audit_models import Clip, Combate, Revision, Tocado
-from fog.domain.models import LuzSignal
+from fog.domain.models import InstantesLuz
 from fog.ports.unidad_de_trabajo import UnidadDeTrabajoPort
 
 
@@ -40,18 +40,17 @@ class AbrirRevisionVar:
         *,
         combate: Combate,
         video: VideoGuardado,
-        luz: LuzSignal,
-        t_tocado_ms: int,
+        instantes: InstantesLuz,
     ) -> RevisionAbierta:
         """Registra clip, tocado simulado y revisión abierta.
 
+        `t_tocado_ms` = el menor de los instantes de luz;
         `frame_tocado` = round(t_tocado_ms / 1000 · fps).
 
         Args:
             combate: combate activo al que pertenece el clip.
             video: archivo guardado y sus metadatos.
-            luz: luces Favero simuladas (al menos una encendida).
-            t_tocado_ms: instante del tocado desde el inicio del clip.
+            instantes: instante de cada luz Favero simulada (al menos una).
 
         Returns:
             Las tres filas creadas.
@@ -71,12 +70,14 @@ class AbrirRevisionVar:
             tocado = await tx.tocados.crear(
                 combate_id=combate.id,
                 fuente="simulado",
-                luz_a=luz.has_luz_a,
-                luz_b=luz.has_luz_b,
-                t_tocado_ms=t_tocado_ms,
+                luz_a=instantes.luz.has_luz_a,
+                luz_b=instantes.luz.has_luz_b,
+                t_tocado_ms=instantes.t_tocado_ms,
+                t_luz_a_ms=instantes.t_luz_a_ms,
+                t_luz_b_ms=instantes.t_luz_b_ms,
             )
             await tx.tocados.vincular_clip(
-                tocado.id, clip.id, round(t_tocado_ms / 1000 * video.fps)
+                tocado.id, clip.id, round(instantes.t_tocado_ms / 1000 * video.fps)
             )
             revision = await tx.revisiones.crear(
                 tocado_id=tocado.id, aceptada=True, arbitro_id=combate.arbitro_id

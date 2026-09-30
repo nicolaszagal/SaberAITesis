@@ -86,6 +86,8 @@ class Tocado:
     t_tocado_ms: int | None
     registrado_por: uuid.UUID | None
     creado_en: datetime
+    t_luz_a_ms: int | None = None  # instante de la luz A; None = apagada
+    t_luz_b_ms: int | None = None
 
 
 @dataclass(frozen=True)

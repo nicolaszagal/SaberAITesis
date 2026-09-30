@@ -127,6 +127,34 @@ class LuzSignal:
         return LuzSignal(has_luz_a=False, has_luz_b=False)
 
 
+@dataclass(frozen=True)
+class InstantesLuz:
+    """Instante (ms desde el inicio del clip) de cada luz Favero simulada.
+
+    La luz encendida se deduce de que exista su instante (`None` = apagada).
+    El modelo solo usa si cada luz está encendida (`luz`): los instantes no
+    entran a las features, a la ventana ni a la entrada del modelo.
+    """
+
+    t_luz_a_ms: int | None
+    t_luz_b_ms: int | None
+
+    def __post_init__(self) -> None:
+        if self.t_luz_a_ms is None and self.t_luz_b_ms is None:
+            raise ValueError("se requiere al menos una luz (t_luz_a_ms o t_luz_b_ms)")
+
+    @property
+    def luz(self) -> "LuzSignal":
+        return LuzSignal(
+            has_luz_a=self.t_luz_a_ms is not None, has_luz_b=self.t_luz_b_ms is not None
+        )
+
+    @property
+    def t_tocado_ms(self) -> int:
+        """El menor de los instantes encendidos (calculado en el servidor)."""
+        return min(t for t in (self.t_luz_a_ms, self.t_luz_b_ms) if t is not None)
+
+
 class MotivoNoDisponible(str, Enum):
     """Motivos de `clasificacion.motivo_no_disp` (docs_claude/sabre_ai_schema.sql).
     Fog solo produce POSE_INCOMPLETA: es el único caso que FeatureExtractorPort

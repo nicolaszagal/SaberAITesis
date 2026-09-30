@@ -20,6 +20,8 @@ class TocadoRepositoryPort(ABC):
         luz_b: bool,
         t_tocado_utc: datetime | None = None,
         t_tocado_ms: int | None = None,
+        t_luz_a_ms: int | None = None,
+        t_luz_b_ms: int | None = None,
         registrado_por: uuid.UUID | None = None,
     ) -> Tocado:
         raise NotImplementedError
