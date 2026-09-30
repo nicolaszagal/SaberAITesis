@@ -124,7 +124,7 @@ Resultado esperado: `{"nombre":"lstm6class-20260928_141021","num_clases":6,"f1_m
 
 3. Interfaz. Abra `http://localhost:8081` en el navegador.
 
-Resultado esperado: aparece el encabezado SABRE.AI con la pantalla "Inicio" y el indicador "Conectado". Si cambió los puertos en `.env`, use `http://localhost:<FRONTEND_HOST_PORT>`.
+Resultado esperado: aparece el encabezado SABRE.AI con la pantalla "Revisión VAR" (la interfaz abre directo en ella, sin pantalla de inicio), el texto "Modelo activo:" con el nombre del modelo y el indicador "Conectado". Si cambió los puertos en `.env`, use `http://localhost:<FRONTEND_HOST_PORT>`.
 
 4. Cloud listo.
 
@@ -138,18 +138,22 @@ Solo se publican el frontend (8081) y Fog (8001). PostgreSQL y Redis no se publi
 
 ## 4. Preparar sesión y exportar evidencia
 
-### Sesión, evento y árbitro
+### Datos precargados: eventos, árbitro y operador
 
-El evento y el árbitro ya vienen cargados: la migración de la base (`alembic upgrade head`, que el arranque ejecuta solo) precarga dos eventos y dos usuarios si no existen. No hay que crear nada a mano.
+No hay que registrar nada a mano: la migración `0005` de la base (`alembic upgrade head`, que el arranque de Fog ejecuta solo) precarga dos eventos y dos usuarios. Inserta solo los que no existen por nombre y no modifica los existentes, de modo que también completa una base creada con una versión anterior.
 
-| Dato | Nombre | Uso |
-|---|---|---|
-| Evento (`formativo`) | "Evento de prueba" | Ensayos. |
-| Evento (`piloto`) | "Validación 1" | Sesión real. |
-| Árbitro | "Árbitro de prueba" | Árbitro del combate. |
-| Operador | "Operador de prueba" | Operador técnico. |
+| Dato | Nombre | Tipo o rol | Uso |
+|---|---|---|---|
+| Evento | "Evento de prueba" | `formativo` | Ensayos. |
+| Evento | "Validación 1" | `piloto` | Sesión real. |
+| Usuario | "Árbitro de prueba" | `arbitro` | Árbitro del combate. |
+| Usuario | "Operador de prueba" | `operador` | Operador técnico. |
 
-Los ensayos y la sesión real usan eventos distintos para que no se mezclen en la evidencia. En la interfaz, "Combate" abre "Configurar combate" con "Validación 1" y el árbitro ya seleccionados. Si la lista aparece vacía, pulse "Recargar".
+La fecha de ambos eventos es la del día en que corrió la migración: no hay una fecha documentada para la sesión. Los ensayos y la sesión real usan eventos distintos para que no se mezclen en la evidencia y en el resumen de la sesión.
+
+En la interfaz, "Combate" abre "Configurar combate" con el evento "Validación 1", el árbitro único y la pista "P1" ya seleccionados. Los alias de los tiradores son opcionales ("Tirador A" y "Tirador B" por defecto) y el brazo armado de ambos es obligatorio. Para ensayar, seleccione "Evento de prueba". Si la lista aparece vacía, pulse "Recargar".
+
+El formulario no pide datos de consentimiento. El sistema guarda a los tiradores con `es_menor = true` y sin consentimiento registrado, un valor conservador: el consentimiento informado se gestiona en papel, fuera del sistema (RNF-16).
 
 Uso técnico (opcional): `scripts/crear_sesion_validacion.py` crea otro evento `piloto` u otros usuarios. Es idempotente por nombre.
 
@@ -263,7 +267,7 @@ rm -rf datos-humo
 | El build falla con `input/output error` o `no space left on device` | Disco del equipo lleno. | Libere espacio en el equipo y repita. Con Colima, reinicie con `colima stop` y `colima start`. |
 | `Cannot connect to the Docker daemon` | Docker o Colima no están en marcha. | Ejecute `colima start` (o abra Docker Desktop). |
 | La interfaz muestra "Sin conexión" | Fog no está sano, o `FOG_HOST_PORT` cambió sin reconstruir el frontend. | Revise `docker compose ps`. Si cambió el puerto, ejecute `docker compose up -d --build frontend`. |
-| La interfaz muestra "No hay eventos registrados" o "No hay árbitros registrados" | No hay sesión de validación. | Ejecute el comando de la sección 4 y pulse "Recargar". |
+| La interfaz muestra "No hay eventos registrados" o "No hay árbitros registrados" | La migración `0005` no se aplicó (Fog no reinició tras una actualización). | Ejecute `docker compose restart fog`: el arranque aplica las migraciones y precarga los datos (sección 4). Pulse "Recargar". |
 | La carga de un clip responde 503 | No hay una versión de modelo activa. | Ejecute `docker compose restart fog`: el arranque registra el modelo si falta. |
 | `/health` responde 503 | Un componente está en `"error"`. | Lea el cuerpo: `redis` o `postgres` indican cuál. Revise `docker compose ps` y los logs de ese servicio. |
 | Aviso `objc: Class AVFFrameReceiver is implemented in both` en los logs de Fog | Bibliotecas duplicadas en la imagen. | Es un aviso. No impide el funcionamiento. |
