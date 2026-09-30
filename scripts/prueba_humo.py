@@ -142,8 +142,8 @@ def correr_clip(
     t0 = time.perf_counter()
     r = cliente.post("/matches/config", json={
         "evento_id": args.evento, "pista": "P-humo", "arbitro_id": args.arbitro,
-        "alias_A": "Rojo", "weapon_side_A": lados["weapon_side_A"], "es_menor_A": False,
-        "alias_B": "Verde", "weapon_side_B": lados["weapon_side_B"], "es_menor_B": False,
+        "alias_A": "Rojo", "weapon_side_A": lados["weapon_side_A"],
+        "alias_B": "Verde", "weapon_side_B": lados["weapon_side_B"],
     })
     r.raise_for_status()
     match_id = r.json()["match_id"]

@@ -138,16 +138,25 @@ Solo se publican el frontend (8081) y Fog (8001). PostgreSQL y Redis no se publi
 
 ## 4. Preparar sesión y exportar evidencia
 
-### Crear la sesión
+### Sesión, evento y árbitro
 
-La interfaz lista los eventos y árbitros que existen en la base. El comando es idempotente por nombre.
+El evento y el árbitro ya vienen cargados: la migración de la base (`alembic upgrade head`, que el arranque ejecuta solo) precarga dos eventos y dos usuarios si no existen. No hay que crear nada a mano.
+
+| Dato | Nombre | Uso |
+|---|---|---|
+| Evento (`formativo`) | "Evento de prueba" | Ensayos. |
+| Evento (`piloto`) | "Validación 1" | Sesión real. |
+| Árbitro | "Árbitro de prueba" | Árbitro del combate. |
+| Operador | "Operador de prueba" | Operador técnico. |
+
+Los ensayos y la sesión real usan eventos distintos para que no se mezclen en la evidencia. En la interfaz, "Combate" abre "Configurar combate" con "Validación 1" y el árbitro ya seleccionados. Si la lista aparece vacía, pulse "Recargar".
+
+Uso técnico (opcional): `scripts/crear_sesion_validacion.py` crea otro evento `piloto` u otros usuarios. Es idempotente por nombre.
 
 ```bash
 docker compose exec fog python scripts/crear_sesion_validacion.py --evento "<nombre>" \
     --fecha AAAA-MM-DD --arbitro "<nombre>" --operador "<nombre>"
 ```
-
-Resultado esperado: tres líneas `evento_id`, `arbitro_id` y `operador_id`, cada una con `(creado)` o `(ya existía)`. Anote el `evento_id`. Termina con código 1 si el evento ya existe con un tipo distinto de `piloto`. En la interfaz, abra "Combate" y pulse "Recargar".
 
 ### Dónde queda la evidencia
 

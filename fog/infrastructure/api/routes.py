@@ -194,18 +194,10 @@ async def configure_match(
             tirador_a=DatosTirador(
                 alias=body.alias_A,
                 weapon_side=WeaponSide(body.weapon_side_A),
-                es_menor=body.es_menor_A,
-                consentimiento_firmado=body.consentimiento_firmado_A,
-                consentimiento_fecha=body.consentimiento_fecha_A,
-                firmante=body.firmante_A,
             ),
             tirador_b=DatosTirador(
                 alias=body.alias_B,
                 weapon_side=WeaponSide(body.weapon_side_B),
-                es_menor=body.es_menor_B,
-                consentimiento_firmado=body.consentimiento_firmado_B,
-                consentimiento_fecha=body.consentimiento_fecha_B,
-                firmante=body.firmante_B,
             ),
         )
     except RecursoNoEncontrado as exc:

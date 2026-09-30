@@ -291,3 +291,15 @@ JOIN veredicto v      ON v.revision_id = r.id
 JOIN clasificacion c  ON c.id = r.clasificacion_id
 JOIN modelo_version m ON m.id = c.modelo_version_id
 WHERE v.decision <> 'anular' AND c.disponible;
+
+-- ---------------------------------------------------------------------
+-- Datos iniciales de la Validación 1 (V01)
+-- Los inserta la migración Alembic 0005 (idempotente: solo si no existen por
+-- nombre; `fecha` = fecha en que corre la migración). No forman parte del DDL.
+--   INSERT INTO evento (nombre, fecha, tipo) VALUES
+--       ('Evento de prueba', CURRENT_DATE, 'formativo'),   -- ensayos
+--       ('Validación 1',     CURRENT_DATE, 'piloto');      -- sesión real
+--   INSERT INTO usuario (nombre, rol) VALUES
+--       ('Árbitro de prueba',  'arbitro'),
+--       ('Operador de prueba', 'operador');
+-- ---------------------------------------------------------------------

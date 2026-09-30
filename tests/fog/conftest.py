@@ -209,8 +209,8 @@ class AppAuditable:
     def body_config(self, **cambios) -> dict:
         body = {
             "evento_id": str(self.evento_id), "pista": "P1", "arbitro_id": str(self.arbitro_id),
-            "alias_A": "Rojo", "weapon_side_A": "right", "es_menor_A": False,
-            "alias_B": "Verde", "weapon_side_B": "left", "es_menor_B": False,
+            "alias_A": "Rojo", "weapon_side_A": "right",
+            "alias_B": "Verde", "weapon_side_B": "left",
         }
         body.update(cambios)
         return {k: v for k, v in body.items() if v is not None}

@@ -77,7 +77,7 @@ async def test_migracion_aplica_sobre_base_limpia(alembic_cfg, engine):
         version = (
             await conn.execute(text("SELECT version_num FROM public.alembic_version"))
         ).scalar_one()
-        assert version == "0004"
+        assert version == "0005"
 
 
 async def test_downgrade_y_reaplicacion(alembic_cfg, engine):
@@ -155,3 +155,34 @@ async def test_0004_agrega_latencia_inferencia_con_check_y_es_reversible(alembic
 
     await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
     assert tuple(await columna()) == ("integer", "YES")
+
+
+async def test_0005_precarga_eventos_y_usuarios_y_es_idempotente(alembic_cfg, engine):
+    """0005 (V01): inserta 2 eventos y 2 usuarios solo si no existen por nombre;
+    aplicarla dos veces no duplica filas ni toca las existentes."""
+    import asyncio
+
+    esperados_eventos = {("Evento de prueba", "formativo"), ("Validación 1", "piloto")}
+    esperados_usuarios = {("Árbitro de prueba", "arbitro"), ("Operador de prueba", "operador")}
+
+    async def leer(sql: str):
+        async with engine.connect() as conn:
+            return [tuple(r) for r in await conn.execute(text(sql))]
+
+    await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
+    assert set(await leer("SELECT nombre, tipo FROM sabre.evento")) == esperados_eventos
+    assert set(await leer("SELECT nombre, rol FROM sabre.usuario")) == esperados_usuarios
+
+    # Un dato ya existente no se toca: se desactiva un usuario y se reaplica.
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE sabre.usuario SET activo = FALSE WHERE nombre = 'Árbitro de prueba'")
+        )
+    await asyncio.to_thread(command.downgrade, alembic_cfg, "0004")
+    await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
+
+    assert len(await leer("SELECT 1 FROM sabre.evento")) == 2
+    assert len(await leer("SELECT 1 FROM sabre.usuario")) == 2
+    assert await leer(
+        "SELECT activo FROM sabre.usuario WHERE nombre = 'Árbitro de prueba'"
+    ) == [(False,)]
