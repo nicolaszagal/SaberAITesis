@@ -1,0 +1,126 @@
+# Validación 1 de SABRE.AI con Docker Compose (DOCK01).
+#
+# Uso (backend/ y SaberAISoftware/ como carpetas hermanas):
+#   cp .env.example .env
+#   docker compose up -d --build
+#
+# Cada servicio también se levanta por separado: docker compose up -d <servicio>
+# (sus dependencias se levantan con él).
+#
+# Solo se publican el frontend y Fog (puertos configurables en .env).
+# PostgreSQL y Redis quedan en la red interna de Compose.
+name: sabre
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: sabre
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?copiar .env.example a .env}
+      POSTGRES_DB: sabre
+    volumes:
+      - sabre_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sabre -d sabre"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # Worker: consume Redis Streams, clasifica con el LSTM y publica la sugerencia.
+  # El checkpoint (MODEL_RUN_DIR) va dentro de la imagen.
+  cloud:
+    image: sabre-cloud:local
+    build:
+      context: .
+      dockerfile: cloud/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # API: migra la base, registra el modelo si no hay uno activo y arranca
+  # (fog/docker-entrypoint.sh).
+  fog:
+    image: sabre-fog:local
+    build:
+      context: .
+      dockerfile: fog/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://sabre:${POSTGRES_PASSWORD}@postgres:5432/sabre
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_DIR: /data/storage
+      EVIDENCE_DIR: /data/evidencia
+    ports:
+      - "${FOG_HOST_PORT:-8001}:8001"
+    volumes:
+      - ${DATOS_DIR:-./datos}/storage:/data/storage
+      - ${DATOS_DIR:-./datos}/evidencia:/data/evidencia
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      cloud:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8001/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+    restart: unless-stopped
+
+  # Build estático de producción servido por nginx (../SaberAISoftware/Dockerfile).
+  # EXPO_PUBLIC_FOG_URL se fija en el build: es la dirección de Fog que usa el
+  # navegador, no la de la red interna de Compose.
+  frontend:
+    image: sabre-frontend:local
+    build:
+      context: ../SaberAISoftware
+      args:
+        EXPO_PUBLIC_FOG_URL: http://localhost:${FOG_HOST_PORT:-8001}
+    ports:
+      - "${FRONTEND_HOST_PORT:-8081}:8081"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    restart: unless-stopped
+
+  # Perfil v2 (Validación 2, sin verificar): captura de cámaras.
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    profiles: ["v2"]
+    ports:
+      - "1935:1935"
+      - "8554:8554"
+    restart: unless-stopped
+
+  edge:
+    build:
+      context: ./edge
+    profiles: ["v2"]
+    environment:
+      RTSP_FRONT_URL: rtsp://mediamtx:8554/live/front
+      RTSP_TOP_URL: rtsp://mediamtx:8554/live/top
+    ports:
+      - "8002:8002"
+    depends_on:
+      - mediamtx
+    restart: unless-stopped
+
+volumes:
+  sabre_pgdata:

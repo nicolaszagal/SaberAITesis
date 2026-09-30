@@ -16,7 +16,9 @@ Uso:
 
 Activa la versión registrada por defecto (desactivando la anterior en la
 misma transacción, ver ModeloVersionRepositoryPort.registrar); usar
---no-activar para solo dejarla registrada.
+--no-activar para solo dejarla registrada. Con --solo-si-no-hay-activo no
+hace nada si ya existe una versión activa (lo usa el entrypoint de Fog en
+Docker, para que reiniciar el contenedor no duplique el registro).
 """
 
 from __future__ import annotations
@@ -66,8 +68,13 @@ def _leer_json(ruta: Path) -> dict:
 
 
 async def registrar_modelo(
-    run_id: str, *, dataset_dir: Path, pose_modelo: str, activar: bool
-) -> None:
+    run_id: str,
+    *,
+    dataset_dir: Path,
+    pose_modelo: str,
+    activar: bool,
+    solo_si_no_hay_activo: bool = False,
+) -> bool:
     """Registra `run_id` como fila de `sabre.modelo_version`.
 
     Args:
@@ -77,6 +84,12 @@ async def registrar_modelo(
         pose_modelo: valor de la columna `pose_modelo`.
         activar: si True, activa la versión registrada y desactiva la
             anterior en la misma transacción.
+        solo_si_no_hay_activo: si True y ya hay una versión activa, no
+            registra nada (idempotente).
+
+    Returns:
+        True si registró la versión; False si omitió el registro porque ya
+        había una versión activa.
 
     Raises:
         FileNotFoundError: si falta run_config.json, metrics.json o el
@@ -98,6 +111,11 @@ async def registrar_modelo(
     try:
         session_factory = build_session_factory(engine)
         repo = PostgresModeloVersionRepository(session_factory)
+        if solo_si_no_hay_activo:
+            activo = await repo.obtener_activo()
+            if activo is not None:
+                print(f"Ya hay un modelo activo ({activo.nombre}); no se registra {run_id}.")
+                return False
         modelo = await repo.registrar(
             nombre=f"lstm6class-{run_id}",
             checkpoint_uri=str(checkpoint_path),
@@ -115,6 +133,7 @@ async def registrar_modelo(
         f"Registrado modelo_version {modelo.id} ({modelo.nombre}): "
         f"f1_macro_test={modelo.f1_macro_test} activo={modelo.activo}"
     )
+    return True
 
 
 def main() -> None:
@@ -133,6 +152,11 @@ def main() -> None:
         dest="activar",
         help="Registra sin activar (por defecto activa y desactiva la anterior).",
     )
+    parser.add_argument(
+        "--solo-si-no-hay-activo",
+        action="store_true",
+        help="No registra nada si ya existe una versión activa (idempotente).",
+    )
     args = parser.parse_args()
 
     asyncio.run(
@@ -141,6 +165,7 @@ def main() -> None:
             dataset_dir=args.dataset_dir,
             pose_modelo=args.pose_modelo,
             activar=args.activar,
+            solo_si_no_hay_activo=args.solo_si_no_hay_activo,
         )
     )
 

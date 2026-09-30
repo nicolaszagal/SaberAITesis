@@ -23,7 +23,7 @@ El esquema de la base define tres roles: `arbitro`, `operador` y `administrador`
 | Operador | Configura el combate, carga el clip y marca las luces y el instante del tocado. | No. Usa "Combate" y "Revisión VAR". |
 | Administrador | Consulta el historial y exporta la evidencia. | No. Usa "Historial". La gestión de versiones del modelo se hace con scripts (Anexo B). |
 
-La lista de árbitros de la pantalla "Combate" sale de la base de datos. Si no aparece un árbitro, pida a quien instala el sistema que lo registre (`GUIA_INSTALACION.md`, sección 8).
+La lista de árbitros de la pantalla "Combate" sale de la base de datos. Si no aparece un árbitro, pida a quien instala el sistema que lo registre (`GUIA_INSTALACION.md`, sección 4).
 
 ## 3. Acceso
 
@@ -43,7 +43,7 @@ El indicador consulta el estado del sistema cada 10 segundos (`GET /health`).
 |---|---|---|
 | "Verificando" | Aún no hay respuesta. | Espere unos segundos. |
 | "Conectado" | El servicio Fog, Redis y PostgreSQL responden. | Continúe. |
-| "Degradado" | Al menos uno de los tres componentes falla. | No inicie una sesión. Avise a quien instala el sistema (`GUIA_INSTALACION.md`, sección 12). |
+| "Degradado" | Al menos uno de los tres componentes falla. | No inicie una sesión. Avise a quien instala el sistema (`GUIA_INSTALACION.md`, sección 7). |
 | "Sin conexión" | El servicio Fog no responde. | Compruebe que Fog esté en marcha y avise a quien instala el sistema. |
 
 ## 4. Flujo de una sesión
@@ -212,7 +212,7 @@ El archivo contiene el resumen de la sesión de validación, con el bloque `V1` 
 
 Bandas de κ (Landis y Koch): menor que 0, pobre; 0 a 0.20, leve; 0.21 a 0.40, aceptable; 0.41 a 0.60, moderada; 0.61 a 0.80, sustancial; 0.81 a 1.00, casi perfecta.
 
-Los archivos `revisiones.csv` y `resumen.md` de la evidencia los genera quien instala el sistema con un script (`GUIA_INSTALACION.md`, sección 10).
+Los archivos `revisiones.csv` y `resumen.md` de la evidencia los genera quien instala el sistema con un script (`GUIA_INSTALACION.md`, sección 4).
 
 ### 4.9 Inicio
 

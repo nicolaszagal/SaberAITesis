@@ -18,3 +18,12 @@ __pycache__/
 # que está en el repo de GitHub — ver GUIA_EJECUCION.md sección 6.2 y
 # cloud/Dockerfile. Solo el run vigente, no toda la carpeta checkpoints/
 # (las demás corridas del diagnóstico en curso no se despliegan).
+
+# Datos de la Validación 1 en bind mounts (docker-compose.yml): clips,
+# keypoints y evidencia. Se versionan solo los .gitkeep.
+datos/*/*
+!datos/*/.gitkeep
+datos-humo/
+
+# Excepción: plantilla de configuración del despliegue con Docker.
+!.env.example

@@ -1,0 +1,8 @@
+# Prueba de humo en Docker (DOCK01): se combina con docker-compose.yml bajo otro
+# nombre de proyecto (-p sabre-humo), con base, Redis y datos propios. Monta
+# ../dataset en solo lectura solo para este uso (clips de test y anotaciones).
+# Se ejecuta con scripts/prueba_humo_docker.sh.
+services:
+  fog:
+    volumes:
+      - ../dataset:/app/dataset:ro

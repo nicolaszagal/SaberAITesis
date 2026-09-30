@@ -2,257 +2,119 @@
 
 Destinatario: la persona que instala y pone en marcha el sistema. Versión cubierta: Validación 1 (carga de clip y tocado simulado). El uso de la interfaz está en `MANUAL_USUARIO.md`.
 
-Convenciones: los comandos son para una terminal de macOS o Linux. `<raíz>` es la carpeta que contiene los repositorios. Los pasos marcados como "No verificado en esta versión" no se ejecutaron durante la validación de esta guía.
+Método: Docker Compose. No requiere Python, Node, entorno virtual, Alembic ni variables exportadas a mano. Los comandos son para una terminal de macOS o Linux.
 
-Validación de esta guía: se siguió en un clon limpio, con una base nueva, almacenamiento y evidencia temporales, sobre macOS (arm64) con Python 3.14.5, Node v22.22.0, Docker con Colima y Redis 8.8.0.
+Validación de esta guía: se siguió en un clon limpio de ambos repositorios desde GitHub, con `docker compose build --no-cache` y sin volúmenes, sobre macOS 27.0 (arm64) con Colima (2 CPU y 4 GiB).
 
-## 1. Arquitectura desplegada
-
-![Arquitectura desplegada](img/arquitectura_despliegue.png)
-
-| Componente | Función | Dónde corre | Puerto |
-|---|---|---|---|
-| Frontend (`SaberAISoftware`) | Interfaz web de árbitro y operador | Local | 8081 |
-| Fog (`backend/fog`) | API, pose, features, carga de clip, persistencia | Local (venv o Docker) | 8001 |
-| Cloud (`backend/cloud`) | Worker que clasifica con el modelo y publica la sugerencia | Local, o Render como Background Worker | Sin puerto |
-| Redis | Cola entre Fog y Cloud | Local, o Upstash si Cloud corre en Render | 6379 |
-| PostgreSQL 16 | Registro auditable, esquema `sabre` | Local, en Docker | 5433 |
-| Almacenamiento (`STORAGE_DIR`) | Clips y keypoints por SHA-256 | Local, disco de Fog | No aplica |
-| Evidencia (`EVIDENCE_DIR`) | Log de evidencia y exportaciones | Local, disco de Fog | No aplica |
-| Edge (`backend/edge`) | Retransmite video de cámaras (solo V2) | Local, en Docker | 8002 |
-| MediaMTX | Recibe el video de las cámaras (solo V2) | Local, en Docker | 1935 y 8554 |
-
-En la Validación 1 se instalan Frontend, Fog, Cloud, Redis y PostgreSQL. Edge y MediaMTX no se usan.
-
-## 2. Requisitos
+## 1. Requisitos
 
 ### Software
 
-| Elemento | Versión | Origen |
-|---|---|---|
-| Python | 3.10 o superior. Verificado con 3.14.5. Las imágenes Docker usan 3.12. | `GUIA_EJECUCION.md`, `fog/Dockerfile` |
-| torch | 2.12.1 | `constraints.txt` |
-| torchvision | 0.27.1 | `constraints.txt` |
-| ultralytics | 8.4.75 | `constraints.txt` |
-| fastapi, uvicorn, pydantic | 0.138.0, 0.49.0, 2.13.4 | `requirements.txt` |
-| numpy, opencv-python | 2.3.4, 4.13.0.92 | `requirements.txt` |
-| redis (cliente), dependency-injector | 8.0.0, 4.49.1 | `requirements.txt` |
-| sqlalchemy, asyncpg, alembic | 2.1.1, 0.31.0, 1.20.0 | `requirements.txt` |
-| aiortc, av | 1.14.0, 16.1.0 | `requirements.txt` |
-| Docker | Necesario para PostgreSQL | `fog/docker-compose.yml` |
-| PostgreSQL | 16 (imagen `postgres:16-alpine`) | `fog/docker-compose.yml` |
-| Redis (servidor) | Imagen `redis:7-alpine` en el compose. Verificado con el servidor local 8.8.0. | `fog/docker-compose.yml` |
-| Node.js | Imagen `node:20-alpine` en el Dockerfile del frontend. Verificado con v22.22.0. | `SaberAISoftware/Dockerfile` |
-| expo, react, react-native | ^56.0.11, 19.2.3, 0.85.3 | `SaberAISoftware/package.json` |
-| Navegador | Google Chrome (usado en la validación) | |
-
-`torch` y `torchvision` no están en `requirements.txt` porque el wheel correcto depende de la plataforma. Se instalan aparte (sección 5).
-
-### Hardware
-
-El repositorio no documenta requisitos de CPU, RAM ni disco. La imagen de Cloud usa torch solo para CPU. Las dos cámaras y el aparato Favero (Validación 2) exigen video H.264 de 720p o más a 30 fps o más por cámara y conexión serie RJ11 (RNF-13).
-
-| Necesidad | Validación 1 | Validación 2 (se agrega) |
-|---|---|---|
-| Equipo con Docker | Sí | Sí |
-| Cámaras USB (frontal y cenital) | No | Sí |
-| Aparato Favero por RJ11 | No | Sí |
-| Edge y MediaMTX | No | Sí |
-
-### Archivos que no están en los repositorios
-
-Los repositorios `backend` y `SaberAISoftware` no incluyen la carpeta `dataset/`. Debe existir como carpeta hermana de `backend/`, con:
-
-| Ruta dentro de `dataset/` | Uso |
+| Elemento | Versión verificada |
 |---|---|
-| `yolov8x-pose.pt` | Modelo de pose de Fog |
-| `lstm_6class/feature_stats.npz` | Estadísticas de estandarización (`FEATURE_STATS_PATH`) |
-| `lstm_6class/checkpoints/20260928_141021/` | Checkpoint desplegado: `run_config.json` y `best_model.pt` (`MODEL_RUN_DIR`) |
-| `lstm_6class/results/20260928_141021_metrics.json` | Métrica que registra `registrar_modelo.py` |
-| `lstm_6class/EXPERIMENT_LOG.md` | Opcional (`M01_EXPERIMENT_LOG`) |
-| `dataset trimmed/test_trimmed/` y `labels/` | Solo para la prueba de humo (sección 9) |
+| Docker Engine (servidor) | 29.5.2 |
+| Docker CLI | 28.2.2 |
+| Docker Compose | 5.5.1 |
+| Colima (solo macOS sin Docker Desktop) | 0.10.3 |
+| Git | Cualquier versión reciente |
+| Navegador | Google Chrome |
 
-## 3. Obtención del código
+Las versiones de Python, PostgreSQL, Redis, Node y nginx van dentro de las imágenes y no se instalan en el equipo.
 
-1. Cree la carpeta raíz y clone los dos repositorios. El frontend debe quedar en una carpeta llamada `SaberAISoftware`.
+### Recursos
+
+| Recurso | Mínimo verificado | Medición |
+|---|---|---|
+| CPU | 2 | La prueba de humo y el flujo completo de revisión pasaron con 2 CPU. |
+| Memoria para Docker | 4 GiB | Con 4 GiB el flujo completo, la exportación y la prueba de humo pasaron. Con 2 GiB la prueba de humo pasó, pero una exportación de evidencia terminó con código 137 (falta de memoria). |
+| Disco libre | No medido como mínimo | Imágenes: Fog 3 GB, Cloud 1.43 GB, frontend 94 MB, PostgreSQL 411 MB, Redis 59 MB (unos 5 GB), más la caché de construcción. Con 7 GB libres en el equipo el build se completó. Con menos de 1 GB libres falló (sección 7). |
+
+Memoria de cada contenedor (`docker stats`, equipo con 4 CPU y 8 GiB en Colima):
+
+| Servicio | En reposo | Durante el análisis de clips (pico) |
+|---|---|---|
+| Fog | 647 MiB | 669 MiB, 125 % de CPU |
+| Cloud | 274 MiB | 162 MiB, 52 % de CPU |
+| PostgreSQL | 35 MiB | 32 MiB |
+| Redis | 3.5 MiB | 4 MiB |
+| Frontend | 7 MiB | 7 MiB |
+
+Fog crece hasta unos 850 MiB tras varios análisis. `exportar_evidencia.py` y los demás scripts de `docker compose exec fog` inician otro proceso de Python que importa torch y llega a 447 MiB: por eso 2 GiB no bastan.
+
+Con Colima, cree la máquina virtual con los recursos mínimos antes de instalar:
 
 ```bash
-mkdir <raíz> && cd <raíz>
+colima start --cpu 2 --memory 4
+```
+
+Si la memoria es insuficiente, Fog se queda sin memoria al cargar la pose YOLOv8x (sección 7).
+
+Tiempos medidos:
+
+| Paso | Tiempo |
+|---|---|
+| `docker compose build --no-cache` (las tres imágenes, con descargas) | 82 s y 85 s en dos corridas |
+| `docker compose up -d --build` con las imágenes construidas, hasta Fog `healthy` | 17 s |
+| Análisis de un clip en CPU (`ms_clip` de `prueba_humo.py`) | 23 a 47 s, con 2 y con 4 CPU |
+
+Cloud responde en unos 5 ms por clip. El tiempo de análisis lo domina la pose en Fog.
+
+### Carpetas
+
+`backend` y `SaberAISoftware` deben ser carpetas hermanas. El compose construye el frontend desde `../SaberAISoftware`.
+
+Con Colima, coloque las carpetas dentro de su carpeta de usuario (`/Users/<usuario>`): Colima solo comparte esa ruta con Docker. En otra ubicación, la evidencia queda dentro de la máquina virtual y no aparece en `backend/datos`.
+
+## 2. Instalación
+
+1. Cree una carpeta y clone los dos repositorios. El frontend debe llamarse `SaberAISoftware`.
+
+```bash
+mkdir sabre && cd sabre
 git clone https://github.com/nicolaszagal/SaberAITesis.git backend
 git clone https://github.com/nicolaszagal/SaberAI-Frontend.git SaberAISoftware
 ```
 
-2. Copie o enlace la carpeta `dataset/` junto a `backend/`. La disposición final es:
+Resultado esperado: dos carpetas, `backend` y `SaberAISoftware`, ambas en la rama `main`.
 
-```text
-<raíz>/backend
-<raíz>/SaberAISoftware
-<raíz>/dataset
-```
-
-3. Verifique que la rama sea `main` en ambos repositorios (`git branch --show-current`).
-
-La prueba `tests/fog/test_migracion_esquema.py` además busca `docs_claude/` como carpeta hermana de `backend/`. Sin ella, esa prueba se omite.
-
-## 4. Base de datos
-
-1. Cree `backend/fog/.env` con la contraseña y el puerto de la base. No lo suba al repositorio.
+2. Cree el archivo de configuración.
 
 ```bash
-cd <raíz>/backend
-cat > fog/.env <<'EOF'
-POSTGRES_PASSWORD=<clave>
-POSTGRES_HOST_PORT=5433
-DATABASE_URL=postgresql+asyncpg://sabre:<clave>@localhost:5433/sabre
-EOF
+cd backend
+cp .env.example .env
 ```
 
-2. Levante solo PostgreSQL.
+Resultado esperado: existe `backend/.env` con `POSTGRES_PASSWORD`, `FRONTEND_HOST_PORT` y `FOG_HOST_PORT`. Cambie `POSTGRES_PASSWORD` si el equipo es compartido (solo letras y números). Cambie los puertos si 8081 o 8001 están ocupados.
+
+3. Construya y levante el sistema.
 
 ```bash
-docker compose -f fog/docker-compose.yml up -d postgres
+docker compose up -d --build
 ```
 
-Resultado esperado: el contenedor `postgres` queda `healthy` (`docker compose -f fog/docker-compose.yml ps`). El puerto 5433 se publica solo en `127.0.0.1`.
+Resultado esperado: el comando termina sin errores y crea los contenedores `sabre-postgres-1`, `sabre-redis-1`, `sabre-cloud-1`, `sabre-fog-1` y `sabre-frontend-1`. La primera construcción descarga las imágenes base, torch y los pesos de YOLOv8x, y verifica su SHA-256 (`yolov8x-pose.pt verificado ...`).
 
-3. Cree el entorno de Python e instale las dependencias (sección 5), y luego aplique las migraciones.
+4. Espere a que los servicios estén sanos.
 
 ```bash
-source .venv/bin/activate
-set -a; source fog/.env; set +a
-alembic upgrade head
+docker compose ps
 ```
 
-Resultado esperado: sin errores. La base queda en la revisión `0004` (migraciones `0001` a `0004`). Para comprobarlo:
+Resultado esperado: `postgres`, `redis`, `fog` y `frontend` en `healthy`, y `cloud` en `Up`. Fog puede figurar como `health: starting` durante los primeros 20 segundos. Al arrancar, Fog aplica las migraciones y registra el modelo desplegado solo si no hay uno activo. No hay pasos manuales.
+
+Cada servicio se puede levantar por separado con `docker compose up -d <servicio>` (`postgres`, `redis`, `cloud`, `fog`, `frontend`). Sus dependencias se levantan con él.
+
+## 3. Verificación
+
+1. Estado del sistema.
 
 ```bash
-docker compose -f fog/docker-compose.yml exec -T postgres psql -U sabre -d sabre -c "select * from alembic_version"
+curl -s -w " %{http_code}\n" http://localhost:8001/health
 ```
 
-Advertencias:
+Resultado esperado: `{"fog":"ok","redis":"ok","postgres":"ok"} 200`.
 
-- No use el PostgreSQL de Homebrew: escucha en el puerto 5432. Esta guía usa el 5433 del contenedor. Si cambia `POSTGRES_HOST_PORT`, use el mismo puerto en `DATABASE_URL`.
-- Si en el mismo equipo ya existe un proyecto de Compose llamado `fog` (otra instalación), `docker compose up` lo reconfigura. Defina antes un nombre propio: `export COMPOSE_PROJECT_NAME=sabre_nueva`.
-
-## 5. Entorno de Python y variables de entorno
-
-### Entorno de Python
-
-```bash
-cd <raíz>/backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install torch torchvision -c constraints.txt
-pip install -r requirements.txt -c constraints.txt
-```
-
-Resultado esperado: ambos comandos terminan sin errores. Si `pip` no encuentra un wheel de `torch` para su plataforma (por ejemplo, con CUDA), instale el que indica https://pytorch.org/get-started/locally/ y ajuste `constraints.txt` a esas versiones.
-
-### Variables de entorno
-
-| Variable | Servicio | Obligatoria | Valor de ejemplo | Descripción |
-|---|---|---|---|---|
-| `DATABASE_URL` | Fog | Sí | `postgresql+asyncpg://sabre:<clave>@localhost:5433/sabre` | Base PostgreSQL. Fog no arranca sin ella. |
-| `EVIDENCE_DIR` | Fog | Sí | `<raíz>/datos/evidencia` | Log de evidencia y exportaciones. Fog no arranca sin ella. |
-| `FEATURE_STATS_PATH` | Fog | Sí | `<raíz>/dataset/lstm_6class/feature_stats.npz` | Estadísticas de estandarización. |
-| `FEATURE_PREPROCESSING_PROFILE` | Fog | Sí | `lstm_6class` | Perfil de preprocesamiento del modelo. |
-| `MODEL_RUN_DIR` | Cloud | Sí | `<raíz>/dataset/lstm_6class/checkpoints/20260928_141021` | Corrida del modelo desplegado. Cloud no arranca sin ella. |
-| `STORAGE_DIR` | Fog | Sí, para cargar clips | `<raíz>/datos/storage` | Clips y keypoints por SHA-256. Sin ella la carga de clip falla. |
-| `REDIS_URL` | Fog y Cloud | No | `redis://localhost:6379/0` | Conexión a Redis. Valor por defecto: el del ejemplo. |
-| `POSTGRES_PASSWORD` | Compose | Sí | `<clave>` | Contraseña del contenedor de PostgreSQL. |
-| `POSTGRES_HOST_PORT` | Compose | No | `5433` | Puerto del host para PostgreSQL. Por defecto 5433. |
-| `YOLO_POSE_MODEL_PATH` | Fog | No | `<raíz>/dataset/yolov8x-pose.pt` | Por defecto `dataset/yolov8x-pose.pt` junto a `backend/`. |
-| `FEATURE_PREPROCESSING_PROFILES_PATH` | Fog | No | | Archivo de perfiles alternativo. |
-| `M01_EXPERIMENT_LOG` | Fog | No | `<raíz>/dataset/lstm_6class/EXPERIMENT_LOG.md` | Sin él, el resumen indica que la tabla de M01 no está disponible. |
-| `CLIP_MAX_MB` | Fog | No | `200` | Tamaño máximo del clip. Si se supera, responde 413. |
-| `CLIP_UPLOAD_VERDICT_TIMEOUT_S` | Fog | No | `30.0` | Espera de la sugerencia de Cloud al cargar un clip. |
-| `FAVERO_LUZ_TIMEOUT_S` | Fog | No | `2.0` | Espera de la luz Favero antes de clasificar sin ella. |
-| `SESSION_TTL_S` | Fog | No | `120.0` | Segundos que Fog conserva una sesión entregada. |
-| `SESSION_SWEEP_INTERVAL_S` | Fog | No | `30.0` | Cadencia de la limpieza de sesiones. |
-| `VERDICT_STREAM_TTL_S` | Cloud | No | `3600` | Vigencia del stream de sugerencia en Redis. |
-| `CLAIM_MIN_IDLE_S` | Cloud | No | `60.0` | Tiempo mínimo para reclamar mensajes pendientes al arrancar. |
-| `CLOUD_CONSUMER_NAME` | Cloud | No | `cloud-worker-1` | Nombre del consumidor, si hay más de una instancia. |
-| `LOG_LEVEL` | Fog y Cloud | No | `INFO` | Nivel del log técnico. |
-| `EXPO_PUBLIC_FOG_URL` | Frontend | No | `http://localhost:8001` | Dirección de Fog. Se fija antes de iniciar el frontend. |
-| `RTSP_FRONT_URL`, `RTSP_TOP_URL` | Edge | Sí (solo V2) | `rtsp://host.docker.internal:8554/live/front` | Direcciones de las cámaras. Edge falla con `KeyError` sin ellas. |
-| `WS_PORT`, `JPEG_QUALITY`, `TARGET_FPS` | Edge | No (solo V2) | `8002`, `70`, `15` | Puerto, calidad JPEG y cuadros por segundo. |
-| `TEST_DATABASE_URL` | Pruebas | No | | Base de pruebas para un módulo de `pytest`. |
-
-Si falta una variable obligatoria, Fog y Cloud terminan al arrancar con `RuntimeError: Faltan variables de entorno requeridas:` y el nombre de cada variable faltante.
-
-Cree los directorios de trabajo en `<raíz>/datos` y exporte las variables en la terminal de cada servicio:
-
-```bash
-mkdir -p <raíz>/datos/storage <raíz>/datos/evidencia
-cd <raíz>/backend && source .venv/bin/activate
-set -a; source fog/.env; set +a
-export STORAGE_DIR=<raíz>/datos/storage
-export EVIDENCE_DIR=<raíz>/datos/evidencia
-export FEATURE_STATS_PATH=<raíz>/dataset/lstm_6class/feature_stats.npz
-export FEATURE_PREPROCESSING_PROFILE=lstm_6class
-export MODEL_RUN_DIR=<raíz>/dataset/lstm_6class/checkpoints/20260928_141021
-export M01_EXPERIMENT_LOG=<raíz>/dataset/lstm_6class/EXPERIMENT_LOG.md
-```
-
-## 6. Modelo
-
-Registre el checkpoint desplegado en la base. El comando lo deja como versión activa.
-
-```bash
-python scripts/registrar_modelo.py 20260928_141021
-```
-
-Resultado esperado: una línea `Registrado modelo_version ... (lstm6class-20260928_141021): f1_macro_test=0.5249 activo=True`.
-
-Sin una versión activa, la carga de clip responde 503. La verificación con `GET /modelo/activo` se hace con Fog en marcha (sección 7, paso 5).
-
-## 7. Arranque
-
-Use una terminal por servicio. En cada terminal de Python, ejecute antes los comandos de exportación de la sección 5.
-
-1. Redis. Con el puerto 6379 libre:
-
-```bash
-redis-server
-```
-
-Si el 6379 está ocupado, use otro puerto y fije `REDIS_URL` en las terminales de Fog y Cloud:
-
-```bash
-redis-server --port 6391 --save "" --appendonly no --daemonize yes
-export REDIS_URL=redis://localhost:6391/0
-```
-
-La opción de Redis del compose (`docker compose -f fog/docker-compose.yml --profile localdev up -d redis`): No verificado en esta versión.
-
-2. Cloud:
-
-```bash
-cd <raíz>/backend && python -m cloud.main
-```
-
-Resultado esperado, en este orden: `Cargando <MODEL_RUN_DIR> ...`, `modelo precalentado en N ms` y `Cloud escuchando 'fog:features' como 'cloud-worker-1'...`. La línea "modelo precalentado" es la señal de que Cloud está listo. Si Cloud no puede precalentar el modelo, no arranca.
-
-3. Fog:
-
-```bash
-cd <raíz>/backend && python -m uvicorn fog.main:app --host 0.0.0.0 --port 8001
-```
-
-Resultado esperado: `Fog listo.` y `Uvicorn running on http://0.0.0.0:8001`. En macOS pueden aparecer avisos `objc: Class AVFFrameReceiver is implemented in both`: no impidieron el funcionamiento en la validación.
-
-4. Frontend. La primera vez, instale las dependencias:
-
-```bash
-cd <raíz>/SaberAISoftware
-npm install
-npx tsc --noEmit
-npx expo start --web --port 8081
-```
-
-Resultado esperado: `npm install` y `tsc` terminan sin errores, y `http://localhost:8081` responde. Si Fog no corre en `http://localhost:8001`, exporte `EXPO_PUBLIC_FOG_URL` antes de `npx expo start`.
-
-5. Verifique el modelo activo:
+2. Modelo activo.
 
 ```bash
 curl -s http://localhost:8001/modelo/activo
@@ -260,195 +122,147 @@ curl -s http://localhost:8001/modelo/activo
 
 Resultado esperado: `{"nombre":"lstm6class-20260928_141021","num_clases":6,"f1_macro_test":0.5249,"kappa_piloto":null}`.
 
-Edge y MediaMTX solo se usan en la Validación 2 (`GUIA_EJECUCION.md`, sección 6.4). No verificado en esta versión.
+3. Interfaz. Abra `http://localhost:8081` en el navegador.
 
-La ejecución de Fog en Docker (`docker compose -f fog/docker-compose.yml up fog`) exige red de host y en Mac un ajuste de Docker Desktop. No verificado en esta versión.
+Resultado esperado: aparece el encabezado SABRE.AI con la pantalla "Inicio" y el indicador "Conectado". Si cambió los puertos en `.env`, use `http://localhost:<FRONTEND_HOST_PORT>`.
 
-El despliegue de Cloud en Render (Background Worker con `cloud/Dockerfile`, argumento `RUN_ID` y `REDIS_URL` de Upstash) está descrito en `GUIA_EJECUCION.md`, secciones 6.2 y 6.3. No verificado en esta versión.
-
-## 8. Preparar una sesión de validación
-
-La interfaz lista los eventos y árbitros que existen en la base. Créelos con el script. Es idempotente por nombre: si ya existen, los reutiliza.
+4. Cloud listo.
 
 ```bash
-cd <raíz>/backend
-python scripts/crear_sesion_validacion.py --evento "<nombre>" --fecha AAAA-MM-DD \
-    --arbitro "<nombre>" --operador "<nombre>"
+docker compose logs cloud
 ```
 
-Resultado esperado: tres líneas `evento_id`, `arbitro_id` y `operador_id`, cada una con `(creado)` o `(ya existía)`. El script termina con código 1 si el evento ya existe con un tipo distinto de `piloto`. Anote el `evento_id` para la sección 10.
+Resultado esperado: las líneas `modelo precalentado en N ms` y `Cloud escuchando 'fog:features' como 'cloud-worker-1'...`.
 
-Para recargar la lista en la interfaz, abra "Combate" y pulse "Recargar" o recargue la página.
+Solo se publican el frontend (8081) y Fog (8001). PostgreSQL y Redis no se publican en el equipo. Los puertos se cambian en `.env`. Si cambia `FOG_HOST_PORT`, reconstruya el frontend (`docker compose up -d --build frontend`), porque la dirección de Fog se incrusta en el build.
 
-## 9. Verificación
+## 4. Preparar sesión y exportar evidencia
 
-### Estado del sistema
+### Crear la sesión
+
+La interfaz lista los eventos y árbitros que existen en la base. El comando es idempotente por nombre.
 
 ```bash
-curl -s -w " %{http_code}\n" http://localhost:8001/health
+docker compose exec fog python scripts/crear_sesion_validacion.py --evento "<nombre>" \
+    --fecha AAAA-MM-DD --arbitro "<nombre>" --operador "<nombre>"
 ```
 
-Resultado esperado: `{"fog":"ok","redis":"ok","postgres":"ok"} 200`. Si algún componente falla, el código es 503 y ese componente dice `"error"`. En la interfaz, el encabezado muestra "Conectado".
+Resultado esperado: tres líneas `evento_id`, `arbitro_id` y `operador_id`, cada una con `(creado)` o `(ya existía)`. Anote el `evento_id`. Termina con código 1 si el evento ya existe con un tipo distinto de `piloto`. En la interfaz, abra "Combate" y pulse "Recargar".
 
-### Prueba de humo
+### Dónde queda la evidencia
 
-Recorre un clip por clase hasta el veredicto. Use una base, un Redis y directorios distintos de los de la sesión: cada corrida agrega revisiones auditables que no se pueden borrar.
-
-1. Levante una base y un Redis separados.
-
-```bash
-docker run -d --name sabre-humo-pg -e POSTGRES_USER=sabre -e POSTGRES_PASSWORD=humo_local \
-    -e POSTGRES_DB=sabre_humo -p 127.0.0.1:5434:5432 postgres:16-alpine
-redis-server --port 6390 --save "" --appendonly no --daemonize yes
-```
-
-2. En una terminal nueva, exporte las variables de la prueba y prepare la base.
-
-```bash
-cd <raíz>/backend && source .venv/bin/activate
-export DATABASE_URL=postgresql+asyncpg://sabre:humo_local@localhost:5434/sabre_humo
-export REDIS_URL=redis://localhost:6390/0
-export STORAGE_DIR=<raíz>/humo/storage EVIDENCE_DIR=<raíz>/humo/evidencia
-export FEATURE_STATS_PATH=<raíz>/dataset/lstm_6class/feature_stats.npz
-export FEATURE_PREPROCESSING_PROFILE=lstm_6class
-export MODEL_RUN_DIR=<raíz>/dataset/lstm_6class/checkpoints/20260928_141021
-export M01_EXPERIMENT_LOG=<raíz>/dataset/lstm_6class/EXPERIMENT_LOG.md
-mkdir -p $STORAGE_DIR $EVIDENCE_DIR
-alembic upgrade head
-python scripts/registrar_modelo.py 20260928_141021
-python scripts/crear_sesion_validacion.py --evento "Humo" --fecha 2026-09-29 \
-    --arbitro "Arbitro Humo" --operador "Operador Humo"
-```
-
-3. En esa misma terminal, inicie un Cloud y un Fog propios de la prueba. Fog usa el puerto 8003 para no chocar con el Fog de la sesión.
-
-```bash
-python -m cloud.main &
-python -m uvicorn fog.main:app --port 8003 &
-```
-
-Espere la línea `Fog listo.`
-
-4. Ejecute la prueba con los ids que imprimió `crear_sesion_validacion.py`.
-
-```bash
-python scripts/prueba_humo.py --evento <evento_id> --arbitro <arbitro_id> \
-    --fog-url http://localhost:8003 --redis-url $REDIS_URL --salida humo.json
-echo $?
-```
-
-Resultado esperado: seis líneas JSON, una por clase, cada una con `"disponible": true`, `"veredicto_http": 200` y un `auditoria_seq` creciente, y código de salida 0. El script sale con código 1 si algún veredicto no se registra. Las latencias son del orden de segundos por clip (`ms_clip`).
-
-5. Detenga los procesos de la prueba (`kill %1 %2`) y, si ya no los necesita, el contenedor (`docker stop sabre-humo-pg`) y el Redis (`redis-cli -p 6390 shutdown nosave`).
-
-## 10. Evidencia
-
-Fog escribe en `STORAGE_DIR` y `EVIDENCE_DIR`:
-
-| Ruta | Contenido |
+| Carpeta del equipo | Contenido |
 |---|---|
-| `STORAGE_DIR/clips/<sha[:2]>/<sha>.<ext>` | Clip subido, nombrado por su SHA-256. |
-| `STORAGE_DIR/keypoints/<sha[:2]>/<sha>.npz` | Keypoints crudos de cada clasificación. |
-| `EVIDENCE_DIR/<evento_id>.jsonl` | Una línea por revisión cerrada. Solo adición. |
-| `EVIDENCE_DIR/<evento_id>/` | Exportación de la sesión: `resumen.json`, `revisiones.csv`, `resumen.md`. |
+| `backend/datos/storage/clips/` y `keypoints/` | Clips y keypoints por SHA-256. |
+| `backend/datos/evidencia/<evento_id>.jsonl` | Una línea por revisión cerrada. Solo adición. |
+| `backend/datos/evidencia/<evento_id>/` | Exportación: `resumen.json`, `revisiones.csv`, `resumen.md`. |
 
-Para exportar la sesión, con `DATABASE_URL` y `EVIDENCE_DIR` exportadas:
+Las carpetas se abren desde el Finder. La evidencia no incluye nombres de atletas: usa alias.
+
+### Exportar la evidencia
 
 ```bash
-cd <raíz>/backend
-python scripts/exportar_evidencia.py --evento <evento_id>
+docker compose exec fog python scripts/exportar_evidencia.py --evento <evento_id>
 ```
 
-Resultado esperado: `Evidencia exportada en <EVIDENCE_DIR>/<evento_id>` y código 0. Los tres archivos se sobrescriben al reejecutar. El script sale con código 1 si falta configuración o el evento no existe. La evidencia no incluye nombres de atletas: usa los alias.
+Resultado esperado: `Evidencia exportada en /data/evidencia/<evento_id>` y código 0. Los tres archivos aparecen en `backend/datos/evidencia/<evento_id>/`. El comando se puede repetir: sobrescribe los archivos. La tabla de M01 del resumen indica "no disponible" porque el log de experimentos no va dentro de la imagen.
 
-## 11. Respaldo y restauración
+## 5. Detener, actualizar, respaldar y restaurar
 
-Los tres elementos se respaldan por separado. Los comandos usan el servicio `postgres` del compose.
-
-1. Respaldo de la base:
+### Ver logs
 
 ```bash
-cd <raíz>/backend
-docker compose -f fog/docker-compose.yml exec -T postgres pg_dump -U sabre -d sabre > respaldo_sabre.sql
+docker compose logs -f fog
 ```
 
-2. Respaldo del almacenamiento y de la evidencia:
+Use `cloud`, `postgres`, `redis` o `frontend` en lugar de `fog` para otro servicio. Salga con Ctrl+C.
+
+### Detener e iniciar
 
 ```bash
-tar -czf respaldo_archivos.tgz -C <raíz>/datos storage evidencia
+docker compose down
+docker compose up -d
 ```
 
-3. Restauración de la base. Restaure siempre en una base vacía, sin ejecutar antes `alembic upgrade head`: el respaldo ya trae el esquema y la tabla `alembic_version`.
+Resultado esperado: `down` elimina los contenedores y conserva los datos (volumen de PostgreSQL y carpeta `datos/`). Nunca use `down -v`: borra la base.
+
+### Actualizar
 
 ```bash
-docker compose -f fog/docker-compose.yml exec -T postgres createdb -U sabre sabre_restaurada
-docker compose -f fog/docker-compose.yml exec -T postgres psql -q -v ON_ERROR_STOP=1 \
-    -U sabre -d sabre_restaurada < respaldo_sabre.sql
+git pull
+git -C ../SaberAISoftware pull
+docker compose up -d --build
 ```
 
-4. Verifique la restauración. La consulta de auditoría debe devolver 0 filas.
+Resultado esperado: se reconstruyen solo las imágenes que cambiaron y Fog aplica las migraciones pendientes al arrancar.
+
+### Respaldar
+
+1. Base de datos.
 
 ```bash
-docker compose -f fog/docker-compose.yml exec -T postgres psql -U sabre -d sabre_restaurada \
+docker compose exec -T postgres pg_dump -U sabre -d sabre > respaldo_sabre.sql
+```
+
+2. Clips y evidencia.
+
+```bash
+tar -czf respaldo_archivos.tgz datos
+```
+
+### Restaurar la base
+
+Restaure en una base vacía, sin ejecutar antes migraciones: el respaldo ya trae el esquema y la tabla `alembic_version`.
+
+```bash
+docker compose exec -T postgres createdb -U sabre sabre_restaurada
+docker compose exec -T postgres psql -q -v ON_ERROR_STOP=1 -U sabre -d sabre_restaurada < respaldo_sabre.sql
+docker compose exec -T postgres psql -U sabre -d sabre_restaurada \
     -c "select count(*) from sabre.veredicto" -c "select * from sabre.fn_verificar_auditoria()"
 ```
 
-5. Restauración de archivos:
+Resultado esperado: el primer comando imprime `set_config` y `setval`, que son normales. La cuenta de veredictos coincide con la base original y `fn_verificar_auditoria()` devuelve 0 filas. Para restaurar los archivos, extraiga `respaldo_archivos.tgz` en la carpeta `backend`.
+
+## 6. Prueba de humo
+
+Recorre un clip por clase hasta el veredicto. Usa el proyecto `sabre-humo`, con base, Redis y carpeta de datos propios (`datos-humo`) y los puertos 8003 y 8083, sin tocar la validación. Monta `../dataset` en solo lectura: requiere la carpeta `dataset` hermana de `backend`, con `dataset trimmed/test_trimmed/` y `labels/`.
 
 ```bash
-mkdir -p <destino> && tar -xzf respaldo_archivos.tgz -C <destino>
+sh scripts/prueba_humo_docker.sh
 ```
 
-Para usar la base restaurada, cambie el nombre de la base en `DATABASE_URL`.
+Resultado esperado: seis líneas JSON, una por clase, cada una con `"disponible": true` y `"veredicto_http": 200`, y código de salida 0 (`echo $?`). El script sale con código 1 si algún veredicto no se registra. Dura unos cuatro minutos. Los resultados quedan en `backend/datos-humo/evidencia/humo.json`.
 
-## 12. Solución de problemas
+Para retirar la prueba, incluidos sus datos:
+
+```bash
+docker compose -p sabre-humo --env-file humo.env -f docker-compose.yml -f docker-compose.humo.yml down -v
+rm -rf datos-humo
+```
+
+## 7. Solución de problemas
 
 | Síntoma | Causa | Acción |
 |---|---|---|
-| Fog o Cloud terminan con `RuntimeError: Faltan variables de entorno requeridas: ...` | Falta una variable obligatoria. | Exporte las variables de la sección 5 en esa terminal. Fog exige `DATABASE_URL`, `EVIDENCE_DIR`, `FEATURE_STATS_PATH` y `FEATURE_PREPROCESSING_PROFILE`. Cloud exige `MODEL_RUN_DIR`. |
-| `redis.exceptions.ConnectionError` al arrancar Cloud o Fog | Redis no está en marcha o `REDIS_URL` apunta a otro puerto. | Inicie Redis (sección 7, paso 1) y revise `REDIS_URL`. |
-| La carga de un clip falla por falta de `STORAGE_DIR` | La variable no está exportada en la terminal de Fog. | Exporte `STORAGE_DIR` y reinicie Fog. |
-| La carga de un clip responde 503 | No hay una versión de modelo activa. | Ejecute `scripts/registrar_modelo.py` (sección 6). |
-| `alembic upgrade head` falla por conexión o autenticación | `DATABASE_URL` no apunta a la base del compose, o conecta al PostgreSQL de Homebrew (puerto 5432). | Verifique puerto y clave en `fog/.env`. Use 5433, el puerto del contenedor. |
-| `docker compose up` reconfigura o reemplaza un contenedor existente | Ya existe un proyecto de Compose con el mismo nombre (`fog`). | Defina `COMPOSE_PROJECT_NAME` con otro nombre antes de ejecutar compose. |
-| Puerto ocupado (6379, 8001, 8081, 5433) | Otro proceso usa el puerto. | Cambie el puerto: `POSTGRES_HOST_PORT`, `--port` de Redis o de `uvicorn`, `--port` de Expo con `EXPO_PUBLIC_FOG_URL` ajustado. Para pruebas E2E del frontend use `E2E_PORT`. |
-| Un contenedor ajeno ocupa el puerto 8081 y el frontend "funciona" pero es otra versión | El servidor existente se reutiliza. | Detenga ese contenedor o use otro puerto. |
-| `pip` no encuentra un wheel de `torch` o `torchvision` | La plataforma (CPU, CUDA, otro sistema) no tiene las versiones de `constraints.txt`. | Instale los wheels de https://pytorch.org/get-started/locally/ y ajuste `constraints.txt`. La imagen de Cloud usa el índice `https://download.pytorch.org/whl/cpu`. |
-| `pip` intenta compilar un paquete desde un `.tar.gz` y falla | No hay wheel para su Python o sistema. | Actualice `pip` (`python -m pip install --upgrade pip`) o use un Python con más wheels publicados (3.12 o 3.13). |
-| Las pruebas con `testcontainers` se omiten en Colima | `pytest` no encuentra el socket de Docker, o el contenedor Ryuk falla. | Exporte `DOCKER_HOST=unix://$HOME/.colima/default/docker.sock` y `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`. Si Ryuk falla, agregue `TESTCONTAINERS_RYUK_DISABLED=true`. El fallo de Ryuk no se reprodujo en la validación de esta guía: con esa variable las pruebas pasan. |
-| La primera clasificación tarda casi 1 s más que las siguientes | El modelo no se precalentó. | Verifique que Cloud haya impreso `modelo precalentado en N ms`. Reinicie Cloud si no aparece. Antes del precalentamiento la primera inferencia tomó 950 ms (`docs/evidencia/prueba_humo_Q02.md`). |
-| `/health` responde 503 | Un componente está en `"error"`. | Lea el cuerpo: `redis` indica Redis caído, `postgres` indica la base. Levante el componente. |
-| La interfaz muestra "Sin conexión" | Fog no está en marcha o el frontend apunta a otra dirección. | Inicie Fog y revise `EXPO_PUBLIC_FOG_URL`. |
-| La interfaz muestra "No hay eventos registrados" o "No hay árbitros registrados" | La base no tiene sesión de validación. | Ejecute `scripts/crear_sesion_validacion.py` (sección 8) y pulse "Recargar". |
-| Una prueba con `testcontainers` se omite con "docs_claude/ no está junto a backend/" | Falta la carpeta hermana `docs_claude/`. | Copie `docs_claude/` junto a `backend/`. |
-| Aviso `objc: Class AVFFrameReceiver is implemented in both` en macOS | `opencv-python` y `av` incluyen la misma biblioteca. | Es un aviso; no impidió el funcionamiento en la validación. |
+| `required variable POSTGRES_PASSWORD is missing a value: copiar .env.example a .env` | Falta `backend/.env`. | Ejecute `cp .env.example .env` (sección 2, paso 2). |
+| `unable to prepare context: path "<ruta>/SaberAISoftware" not found` | El frontend no es carpeta hermana de `backend`, o tiene otro nombre. | Clone el frontend como `SaberAISoftware` junto a `backend` (sección 2, paso 1). |
+| `Bind for 0.0.0.0:8081 failed: port is already allocated` (o 8001) | Otro proceso usa el puerto. | Cambie `FRONTEND_HOST_PORT` o `FOG_HOST_PORT` en `.env` y repita `docker compose up -d --build`. |
+| Fog se reinicia sin llegar a `healthy`; `docker compose logs fog` termina en `Cargando modelo YOLO y extractor de features` | Falta de memoria (`OOMKilled`). | Confirme con `docker inspect -f '{{.RestartCount}}' sabre-fog-1`: un número mayor que 0 indica reinicios (`OOMKilled` solo es `true` justo después del corte). Con Colima: `colima stop` y `colima start --cpu 2 --memory 4`. |
+| Un comando de `docker compose exec fog python scripts/...` termina con código 137 | Falta de memoria: el script carga torch (447 MiB) sobre Fog. | Suba la memoria a 4 GiB (`colima stop` y `colima start --cpu 2 --memory 4`) y repita. |
+| `backend/datos` queda vacía aunque hay revisiones | Con Colima, las carpetas están fuera de `/Users/<usuario>` y Docker escribe dentro de la máquina virtual. | Mueva `backend` y `SaberAISoftware` a su carpeta de usuario y repita. |
+| El build de Fog falla con `SHA-256 de yolov8x-pose.pt no coincide` | El archivo descargado no es el usado en el entrenamiento. | No continúe. Avise al equipo de desarrollo. |
+| El build falla con `input/output error` o `no space left on device` | Disco del equipo lleno. | Libere espacio en el equipo y repita. Con Colima, reinicie con `colima stop` y `colima start`. |
+| `Cannot connect to the Docker daemon` | Docker o Colima no están en marcha. | Ejecute `colima start` (o abra Docker Desktop). |
+| La interfaz muestra "Sin conexión" | Fog no está sano, o `FOG_HOST_PORT` cambió sin reconstruir el frontend. | Revise `docker compose ps`. Si cambió el puerto, ejecute `docker compose up -d --build frontend`. |
+| La interfaz muestra "No hay eventos registrados" o "No hay árbitros registrados" | No hay sesión de validación. | Ejecute el comando de la sección 4 y pulse "Recargar". |
+| La carga de un clip responde 503 | No hay una versión de modelo activa. | Ejecute `docker compose restart fog`: el arranque registra el modelo si falta. |
+| `/health` responde 503 | Un componente está en `"error"`. | Lea el cuerpo: `redis` o `postgres` indican cuál. Revise `docker compose ps` y los logs de ese servicio. |
+| Aviso `objc: Class AVFFrameReceiver is implemented in both` en los logs de Fog | Bibliotecas duplicadas en la imagen. | Es un aviso. No impide el funcionamiento. |
 
-## 13. Regenerar capturas
+## Anexo. Fuera de la Validación 1
 
-Las 15 imágenes de `docs/manuales/img` se generan juntas con `e2e/capturas-manual.spec.ts`, contra Fog, Cloud, Redis y PostgreSQL reales, para que todas muestren el mismo evento. Si cambia la interfaz, regenere las 15, no solo las afectadas.
-
-1. Levante el sistema con puertos propios, sin tocar el que se usa en el piloto (secciones 4, 5 y 7). Por ejemplo, Redis en 6391, Fog en 8011 y el frontend de la prueba en 8082. Una base de humo distinta de la del piloto evita mezclar revisiones.
-2. Cree el evento de la sesión con `scripts/crear_sesion_validacion.py` (sección 8) y reutilice el árbitro que ya existe: use su nombre exacto en `--arbitro`. La captura agrega 3 revisiones a la base.
-3. Exporte las 8 variables del spec (están descritas en su cabecera):
-
-| Variable | Contenido |
+| Tema | Dónde |
 |---|---|
-| `EVENTO_NOMBRE` | Nombre del evento creado en el paso 2. |
-| `ARBITRO_NOMBRE` | Árbitro que ya existe en la base. |
-| `CLIP_1`, `CLIP_2` | Rutas absolutas de los clips de las revisiones 1 (mantener) y 2 (cambiar). |
-| `CLIP_SIN_TIRADORES` | Ruta absoluta de un video sin tiradores (revisión 3, "Clasificación no disponible"). |
-| `CLIP_1_T_MS`, `CLIP_2_T_MS` | Instante del tocado en ms: primer fotograma con luz de `dataset/labels/luz_annotations.csv` dividido por los fps, como en `docs/evidencia/prueba_humo_Q02.md`. |
-| `CAPTURAS_DIR` | Carpeta de salida, ruta absoluta: `<raíz>/backend/docs/manuales/img`. |
-
-4. Ejecute, con `EXPO_PUBLIC_FOG_URL` apuntando al Fog de la prueba y `E2E_PORT` a un puerto libre (Playwright reutiliza lo que encuentre en 8081):
-
-```bash
-cd <raíz>/SaberAISoftware
-EXPO_PUBLIC_FOG_URL=http://localhost:8011 E2E_PORT=8082 CAPTURAS=1 SISTEMA_REAL=1 \
-EVENTO_NOMBRE="<evento>" ARBITRO_NOMBRE="<árbitro>" \
-CLIP_1="<ruta>" CLIP_2="<ruta>" CLIP_SIN_TIRADORES="<ruta>" \
-CLIP_1_T_MS=<ms> CLIP_2_T_MS=<ms> CAPTURAS_DIR=<raíz>/backend/docs/manuales/img \
-npx playwright test e2e/capturas-manual.spec.ts
-```
-
-Resultado esperado: `1 passed` y las 15 imágenes actualizadas. Revise que ningún texto del manual cite un evento anterior.
+| V2 (Edge y MediaMTX): perfil `v2` del compose. No verificado en esta versión. | `docker compose --profile v2 up -d`; detalle en `GUIA_EJECUCION.md`, sección 6.4 |
+| Despliegue de Cloud en Render | `GUIA_EJECUCION.md`, secciones 6.2 y 6.3 |
+| Modo de desarrollo (venv, pruebas, frontend con Expo) | `GUIA_EJECUCION.md` |

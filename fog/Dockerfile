@@ -1,37 +1,30 @@
-# Imagen de Fog (API Gateway WebRTC + extracción de pose/features).
+# Imagen de Fog (API de la Validación 1: carga de clip, pose, features y
+# persistencia). Autocontenida: no monta dataset/ en el uso normal.
 #
-# IMPORTANTE — networking: aiortc elige sus puertos UDP de ICE al azar (el
-# propio sistema operativo, no aiortc/aioice — confirmado por el maintainer
-# de aiortc en https://github.com/aiortc/aiortc/issues/487: "you cannot
-# limit the UDP ports used by ICE"). Por eso este contenedor necesita
-# correr con red de host (`network_mode: host` en fog/docker-compose.yml)
-# para que esos puertos sean alcanzables — con red puente normal de Docker,
-# el cliente WebRTC del front no podría conectar. En Docker Desktop para
-# Mac, red de host requiere habilitar el toggle beta "Enable host
-# networking" (Settings > Resources > Network, Docker Desktop >= 4.34,
-# requiere desactivar Enhanced Container Isolation y reiniciar Docker
-# Desktop) y no es soporte oficial fuera de Linux — ver GUIA_EJECUCION.md
-# sección Docker para el detalle y el fallback a venv si resulta inestable.
+# Red: en la Validación 1 no se usa WebRTC (docs_claude/contexto_sabre.md
+# sección 8), así que Fog corre en red puente con el puerto 8001 publicado.
+# La red de host solo haría falta para un posible perfil v2 con WebRTC
+# (aiortc elige al azar sus puertos UDP de ICE, aiortc/aiortc#487).
 FROM python:3.12-slim
 
 WORKDIR /app/backend
 
-# Rutas por defecto de shared/config.py (dos niveles arriba de shared/)
-# resolverían a /app/dataset/... igual que en el host de Nicolas (sibling
-# de backend/). Las fijamos explícitas para no depender de esa cuenta de
-# directorios dentro del contenedor.
+# Run del modelo desplegado: lo usa el entrypoint para registrarlo si no hay
+# una versión activa (scripts/registrar_modelo.py). Se cambia con
+# --build-arg RUN_ID=<run_id>.
+ARG RUN_ID=20260928_141021
+ENV MODEL_RUN_ID=${RUN_ID}
+
+# Rutas dentro de la imagen. Son las de shared/config.py y de
+# scripts/registrar_modelo.py (dataset/ como hermano de backend/, en /app).
 ENV YOLO_POSE_MODEL_PATH=/app/dataset/yolov8x-pose.pt
 ENV FEATURE_STATS_PATH=/app/dataset/lstm_6class/feature_stats.npz
 # Perfil de recorte/ablación del modelo (fog/infrastructure/features/preprocessing_profiles.json).
 ENV FEATURE_PREPROCESSING_PROFILE=lstm_6class
+# Ultralytics escribe su configuración aquí (el directorio por defecto no es escribible).
+ENV YOLO_CONFIG_DIR=/tmp/Ultralytics
 
-# Librerías nativas requeridas por opencv-python (libGL, libglib, etc.) en
-# una imagen "slim" sin X server — causa típica de
-# "ImportError: libGL.so.1: cannot open shared object file" al importar cv2
-# en imágenes Debian minimalistas. Si aiortc/av lanzan algún ImportError de
-# librería nativa al correr, ese es el próximo apt-get a agregar (no hay
-# evidencia de que lo necesiten: sus wheels manylinux suelen traer su
-# ffmpeg/SRTP estático).
+# Librerías nativas de opencv-python en una imagen "slim" sin X server.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
@@ -42,26 +35,38 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements-fog.txt constraints.txt ./
 
-# torch + torchvision CPU-only vía el índice oficial (ultralytics requiere
-# ambos de transitivo) — mismo criterio que GUIA_EJECUCION.md sección 2
-# para venv. -c constraints.txt fija las versiones verificadas juntas
-# (DEF-19; ver constraints.txt) tanto acá como en el install de
-# requirements-fog.txt de abajo, para que ultralytics no resuelva una
-# versión distinta a la usada en desarrollo. Si la máquina que corre esta
-# imagen tiene GPU NVIDIA y querés usarla acá, cambiar este índice por el
-# de CUDA correspondiente (https://pytorch.org/get-started/locally/) y
-# reconstruir la imagen.
+# torch + torchvision CPU-only desde el índice oficial; -c constraints.txt
+# fija las versiones verificadas juntas (DEF-19).
 RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu -c constraints.txt
 RUN pip install --no-cache-dir -r requirements-fog.txt -c constraints.txt
 
+# Pesos de pose YOLOv8x (133 MB, no se comitean). Se descargan de la release
+# oficial de Ultralytics y el build falla si el SHA-256 no coincide con el del
+# archivo usado en el entrenamiento (Software/dataset/yolov8x-pose.pt).
+ARG YOLO_POSE_URL=https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov8x-pose.pt
+ARG YOLO_POSE_SHA256=7a9bf952c2fc1c07d4a1da00dbb4cfab5ed71f89cbe8824d51a8f7a61cee5825
+RUN mkdir -p /app/dataset && python - <<PY
+import hashlib, urllib.request
+destino = "/app/dataset/yolov8x-pose.pt"
+urllib.request.urlretrieve("${YOLO_POSE_URL}", destino)
+h = hashlib.sha256(open(destino, "rb").read()).hexdigest()
+if h != "${YOLO_POSE_SHA256}":
+    raise SystemExit(f"SHA-256 de yolov8x-pose.pt no coincide: {h}")
+print("yolov8x-pose.pt verificado", h)
+PY
+
+# Artefactos pequeños del modelo desplegado (comiteados en backend/dataset/).
+COPY dataset/lstm_6class/ /app/dataset/lstm_6class/
+
 COPY fog/ fog/
 COPY shared/ shared/
+COPY scripts/ scripts/
 COPY alembic.ini .
 
 RUN chmod +x fog/docker-entrypoint.sh
 
 EXPOSE 8001
 
-# Aplica alembic upgrade head (requiere DATABASE_URL) antes de levantar
-# uvicorn — ver fog/docker-entrypoint.sh.
+# Aplica las migraciones, registra el modelo si no hay uno activo y arranca
+# uvicorn (ver fog/docker-entrypoint.sh).
 ENTRYPOINT ["fog/docker-entrypoint.sh"]
