@@ -8,7 +8,7 @@ SABRE.AI clasifica la acción táctica de un tocado de sable en 6 clases y entre
 
 | Validación | Entrada | Señal de tocado | Estado en esta versión |
 |---|---|---|---|
-| Validación 1 (V1) | Clip de video cargado en la interfaz | Simulada: usted marca las luces y el instante del tocado | Disponible |
+| Validación 1 (V1) | Clip de video cargado en la interfaz | Simulada: usted marca el instante de cada luz | Disponible |
 | Validación 2 (V2) | Captura en tiempo real con cámaras | Señal real del aparato Favero | No disponible |
 
 Esta versión no captura video en tiempo real, no lee el aparato Favero y no dibuja trazos sobre el video. Estas funciones están en el Anexo B.
@@ -20,7 +20,7 @@ El esquema de la base define tres roles: `arbitro`, `operador` y `administrador`
 | Rol | Qué hace en la interfaz | Pantalla propia |
 |---|---|---|
 | Árbitro | Se selecciona al configurar el combate. Revisa la sugerencia y registra la decisión. | No. Usa "Revisión VAR". |
-| Operador | Configura el combate, carga el clip y marca las luces y el instante del tocado. | No. Usa "Combate" y "Revisión VAR". |
+| Operador | Configura el combate, carga el clip y marca el instante de cada luz. | No. Usa "Combate" y "Revisión VAR". |
 | Administrador | Consulta el historial y exporta la evidencia. | No. Usa "Historial". La gestión de versiones del modelo se hace con scripts (Anexo B). |
 
 La lista de árbitros de la pantalla "Combate" sale de la base de datos. Si no aparece un árbitro, pida a quien instala el sistema que lo registre (`GUIA_INSTALACION.md`, sección 4).
@@ -86,15 +86,15 @@ Si la lista de eventos o de árbitros no carga, la pantalla muestra "No se pudo 
 
 1. Seleccione "Revisión VAR" en el encabezado. Si no hay combate activo, la pantalla muestra "No hay combate activo" y el botón "Configurar combate".
 2. En "Paso 1 · Clip", pulse "Elegir archivo" (atajo S) y seleccione un archivo MP4 o MOV. Resultado esperado: el nombre del archivo aparece junto al botón y el clip se muestra en el reproductor.
-3. En "Luz Favero simulada (al menos una)", pulse "A · ROJ", "B · VER" o ambos, según las luces que se encendieron. Un botón activo muestra un círculo relleno y el texto a su derecha indica "Luz A", "Luz B" o "Ambas luces". Las luces se conservan al cambiar de clip: verifíquelas en cada clip.
-4. Con el reproductor, lleve el clip al instante del tocado. Puede usar "Reproducir" o "Pausa", "◀ Cuadro" (atajo coma), "Cuadro ▶" (atajo punto) y las velocidades "1×", "0.5×" y "0.25×".
-5. Pulse "Marcar tocado aquí". Resultado esperado: junto al botón aparece el instante en milisegundos, por ejemplo "433 ms". Antes de marcar se lee "Sin marcar".
+3. Con el reproductor, lleve el clip al instante en que se encendió la luz de A. Puede usar "Reproducir" o "Pausa", "◀ Cuadro" (atajo coma), "Cuadro ▶" (atajo punto) y las velocidades "1×", "0.5×" y "0.25×".
+4. En "Luz Favero simulada · instante de cada luz (al menos una)", pulse "Marcar luz A · ROJ aquí" (atajo R). Resultado esperado: junto al botón aparece el instante en milisegundos, por ejemplo "Luz A: 433 ms". Antes de marcar se lee "Luz A: sin marcar".
+5. Si también se encendió la luz de B, lleve el reproductor a su instante y pulse "Marcar luz B · VER aquí" (atajo V). En un tocado doble las dos luces pueden encenderse con algunos fotogramas de diferencia: marque cada una en su propio instante. Para deshacer una marca, pulse "Quitar luz A" o "Quitar luz B".
 
 ![Clip listo para analizar](img/05-revision-clip-listo.png)
 
-Al elegir otro archivo, el instante del tocado vuelve a "Sin marcar" y se descarta el resultado anterior.
+Al elegir otro archivo, las dos luces vuelven a "sin marcar" y se descarta el resultado anterior. Una luz sin marcar se envía como apagada.
 
-El botón "ANALIZAR" permanece desactivado hasta completar los requisitos. Debajo aparece "Falta: un combate activo.", "Falta: elegir un clip.", "Falta: marcar la luz A o la luz B." o "Falta: marcar el instante del tocado."
+El botón "ANALIZAR" permanece desactivado hasta completar los requisitos. Debajo aparece "Falta: un combate activo.", "Falta: elegir un clip.", o "Falta: marcar la luz A o la luz B." ANALIZAR se habilita con al menos una luz marcada.
 
 ### 4.3 Solicitar la revisión y esperar la sugerencia (CU-05)
 
@@ -290,7 +290,7 @@ Estas definiciones describen la anotación del conjunto de datos con el que se e
 - La sugerencia es orientativa. La decisión es siempre del árbitro.
 - Rendimiento del modelo: F1 macro de la serie de 10 corridas de 0.4856 ± 0.0322 (N = 10), frente a 0.167 de un clasificador al azar entre 6 clases. El umbral de aceptación es 0.65 y no se alcanza en esta versión. Cuente con sugerencias equivocadas.
 - No hay autenticación: cualquier persona con acceso a la dirección puede configurar combates, decidir y exportar la evidencia.
-- La luz Favero y el instante del tocado los marca usted. Una luz o un instante mal marcados cambian la sugerencia.
+- La luz Favero y su instante los marca usted. Una luz mal marcada cambia la sugerencia; el instante se guarda para la auditoría y no cambia la sugerencia.
 - La interfaz reproduce un solo clip por revisión, sin sincronía de dos cámaras.
 - Clases y reglas corresponden solo a sable.
 - La descarga del resumen y la reproducción de video solo están disponibles en la versión web.
@@ -316,7 +316,7 @@ Estas definiciones describen la anotación del conjunto de datos con el que se e
 - CU-04 Capturar acción en tiempo real con dos cámaras y buffer circular (F-001, F-014, F-015, F-017): Validación 2.
 - Lectura del aparato Favero por RJ11 y sincronización con el fotograma (F-002, F-004, F-016): Validación 2.
 - CU-05, flujo alterno: rechazo de la solicitud de revisión por el árbitro; la interfaz no tiene botón de rechazo.
-- Recorte automático de los 5 s previos al tocado (RF-01): el instante marcado se guarda pero no recorta el clip.
+- Recorte automático de los 5 s previos al tocado (RF-01): los instantes marcados se guardan pero no recortan el clip.
 - Revisión del clip de ambas cámaras con ±3 s alrededor del toque y cuadros sincronizados (F-006, F-007): la interfaz reproduce un solo clip.
 - CU-08 Superposición biomecánica de esqueleto, arma y trayectoria (F-031).
 - CU-09 Justificación de la clasificación, eventos clave y criterio FIE (F-035, F-008) y mensaje "Evidencia insuficiente".
