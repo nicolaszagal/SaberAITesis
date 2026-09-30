@@ -88,8 +88,7 @@ sobre `numpy==2.3.4` en `requirements.txt` para un caso concreto ya resuelto.
 | `FEATURE_STATS_PATH`    | — (obligatoria, DEF-15)                         | mean/std de estandarización (Fog) |
 | `FEATURE_PREPROCESSING_PROFILE` | — (obligatoria)                         | perfil de recorte/ablación por versión de modelo (Fog) |
 | `FEATURE_PREPROCESSING_PROFILES_PATH` | JSON junto a `preprocessing_profile.py` | archivo de perfiles alternativo (Fog) |
-| `DATABASE_URL`          | — (obligatoria al arrancar Fog)                 | PostgreSQL 16, `postgresql+asyncpg://usuario:clave@host:puerto/base` (Fog); con el compose, puerto `POSTGRES_HOST_PORT` (5433) |
-| `POSTGRES_HOST_PORT`    | `5433`                                          | puerto del host donde `fog/docker-compose.yml` publica PostgreSQL (solo loopback) |
+| `DATABASE_URL`          | — (obligatoria al arrancar Fog)                 | PostgreSQL 16, `postgresql+asyncpg://usuario:clave@host:puerto/base` (Fog); con el compose de `backend/`, PostgreSQL no se publica en el host |
 | `STORAGE_DIR`           | — (sin default; la carga de clip lo exige)      | raíz del almacenamiento local: `clips/<sha[:2]>/<sha>.<ext>` y `keypoints/<sha[:2]>/<sha>.npz`, nombrados por SHA-256 (Fog); en Docker, `/data/storage`. Disposición completa en `CONTRATO_API.md` 8.1 |
 | `EVIDENCE_DIR`          | — (obligatoria al arrancar Fog)                 | log de evidencia (L01): una línea JSON por revisión cerrada en `EVIDENCE_DIR/<evento_id>.jsonl` (logger `sabre.evidencia`) y exportación L02 en `EVIDENCE_DIR/<evento_id>/`; en Docker, `/data/evidencia` |
 | `M01_EXPERIMENT_LOG`    | — (opcional)                                    | `dataset/lstm_6class/EXPERIMENT_LOG.md`: de ahí el resumen de validación (L02) copia la tabla resumen de M01; sin él, indica "no disponible" |
@@ -234,96 +233,24 @@ con `scripts/prueba_humo.py` (sección 4.2).
 
 ## 6. Docker
 
-Cada módulo (`fog/`, `cloud/`, `edge/`) tiene su propio `Dockerfile` y su
-propio `docker-compose.yml`, independientes entre sí — no hay un
-`docker-compose.yml` único en la raíz de `backend/`. Fog y Cloud casi no
-comparten dependencias (Cloud es un worker puro: Redis + torch, sin
-FastAPI/aiortc/opencv/ultralytics — ver `requirements-cloud.txt` vs
-`requirements-fog.txt`), pero ambos sí dependen de `shared/` (config,
-feature extractor, clasificador LSTM), que vive en la raíz de `backend/`
-— por eso, aunque el `Dockerfile` de cada uno vive dentro de su propio
-directorio (igual que `edge/Dockerfile`), el **build context sigue siendo
-`backend/`** (ver el `context: ..` en `fog/docker-compose.yml` y
-`cloud/docker-compose.yml`), no el directorio del módulo. `edge/` es la
-excepción: no depende de `shared/`, así que su `docker-compose.yml` sí
-buildea con contexto propio (`build: .`).
+La instalación y operación de la Validación 1 con Docker Compose está en
+[`docs/manuales/GUIA_INSTALACION.md`](docs/manuales/GUIA_INSTALACION.md)
+(`docker-compose.yml` único en la raíz de `backend/`, proyecto `sabre`, servicios
+`postgres`, `redis`, `cloud`, `fog` y `frontend`). Esta sección documenta solo lo
+que esa guía no cubre: Cloud en Render (6.2 y 6.3) y Edge (6.4).
 
-Ningún módulo tiene ya un `.env.example` — las variables que necesita cada
-uno están documentadas en la sección 3 (Fog/Cloud) y en la 6.4 (Edge); se
-crea el `.env` de cada módulo a mano con esos valores.
+Build context: `fog/Dockerfile` y `cloud/Dockerfile` viven en sus módulos, pero el
+contexto es `backend/` porque ambos copian `shared/` y los artefactos de
+`dataset/lstm_6class/`. `edge/` se construye con contexto propio.
 
-### 6.1 Fog, local
+Fog corre en red puente con el puerto 8001 publicado: la Validación 1 no usa WebRTC
+(`docs_claude/contexto_sabre.md` sección 8). El flujo WebRTC necesitaría red de host
+(aiortc elige al azar sus puertos UDP de ICE, aiortc/aiortc#487) y en Docker Desktop
+para Mac esa red es beta; queda para un posible perfil v2.
 
-```bash
-cd backend/fog
-cat > .env <<'EOF'
-REDIS_URL=rediss://default:PASSWORD@HOST.upstash.io:PORT
-EOF
-docker compose build fog
-docker compose up fog
-```
-
-**Base PostgreSQL.** `fog/docker-compose.yml` también levanta `postgres`
-(`postgres:16-alpine`, volumen `sabre_pgdata`; los clips y keypoints van en el
-volumen `sabre_storage`). Agregar a `fog/.env`:
-
-```bash
-POSTGRES_PASSWORD=<clave>
-POSTGRES_HOST_PORT=5433        # opcional; puerto del host, 5433 por defecto
-DATABASE_URL=postgresql+asyncpg://sabre:<POSTGRES_PASSWORD>@localhost:<POSTGRES_HOST_PORT>/sabre
-```
-
-`POSTGRES_HOST_PORT` es el puerto del host donde se publica PostgreSQL (solo en
-loopback, `127.0.0.1`); por defecto **5433**, para no chocar con un PostgreSQL
-local (p. ej. el de Homebrew) que ocupe el 5432. Si lo cambias, usa el mismo
-puerto en `DATABASE_URL`. Dentro de la red de Docker el contenedor sigue
-escuchando en el 5432.
-
-Levantar solo la base (sin Fog) y aplicar el esquema:
-
-```bash
-cd backend
-docker compose -f fog/docker-compose.yml up -d postgres
-set -a; source fog/.env; set +a        # exporta DATABASE_URL (y las demás)
-alembic upgrade head
-```
-
-El esquema `sabre` lo crea Alembic (migraciones `0001` a `0004`; la `0001`
-ejecuta `docs_claude/sabre_ai_schema.sql` tal cual). Si Fog corre en Docker,
-también sirve `docker compose exec fog alembic upgrade head`.
-
-Con la base migrada hay que registrar el modelo activo y crear la sesión de
-validación (evento piloto, árbitro y operador; idempotente por nombre; imprime
-los ids que usa la pantalla de configuración):
-
-```bash
-python scripts/registrar_modelo.py 20260928_141021
-python scripts/crear_sesion_validacion.py --evento "<nombre>" --fecha YYYY-MM-DD \
-    --arbitro "<nombre>" --operador "<nombre>"
-```
-
-Las pruebas de la migración usan `TEST_DATABASE_URL` (base vacía, p. ej. el
-servicio de CI) o un contenedor de testcontainers. Con Colima hace falta
-`TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`.
-
-Requiere `dataset/` como sibling de `backend/` en tu filesystem (mismo
-layout que la sección 1) — se monta como volumen de solo lectura
-(`../../dataset` desde `fog/docker-compose.yml`, dos niveles arriba para
-llegar al sibling de `backend/`), no se hornea en la imagen.
-
-**Mac: WebRTC en Docker.** aiortc elige sus puertos UDP de ICE al azar (no
-se pueden fijar a un rango — confirmado por el maintainer de aiortc en
-[aiortc/aiortc#487](https://github.com/aiortc/aiortc/issues/487)), así que
-el contenedor de Fog necesita `network_mode: host` (ya seteado en
-`fog/docker-compose.yml`) para que esos puertos sean alcanzables. Docker
-Desktop para Mac no soporta red de host de forma estable: hay un toggle
-beta desde la versión 4.34 (Settings > Resources > Network > **Enable host
-networking**; requiere haber iniciado sesión, desactivar *Enhanced
-Container Isolation*, y reiniciar Docker Desktop) pero la comunidad reporta
-inestabilidad. Si falla la conexión WebRTC con esto activado, el fallback
-es correr Fog con venv (sección 2) en vez de Docker — el endpoint de subir
-clip (`/matches/{match_id}/clip`) no usa WebRTC y funciona en Docker en Mac
-sin esto.
+El entrypoint de Fog (`fog/docker-entrypoint.sh`) aplica `alembic upgrade head` y
+registra el modelo desplegado solo si no hay una versión activa
+(`scripts/registrar_modelo.py --solo-si-no-hay-activo`).
 
 ### 6.2 Cloud, Render
 
@@ -373,12 +300,8 @@ documentación, no por defecto del SDK):
 (mismo formato que ya usan `fog/composition.py` y `cloud/composition.py`
 vía `redis.from_url`).
 
-`fog/docker-compose.yml` y `cloud/docker-compose.yml` incluyen además,
-cada uno, un servicio `redis` propio bajo el perfil `localdev`
-(`docker compose --profile localdev up`) — solo para probar ese módulo de
-forma aislada contra un Redis local sin depender de Upstash mientras
-desarrollás; no reemplaza el `REDIS_URL` compartido de arriba para correr
-Fog y Cloud juntos.
+El `docker-compose.yml` de `backend/` ya incluye un Redis propio para la
+Validación 1 local; Upstash solo aplica si Cloud corre en Render.
 
 ### 6.4 Edge, local (Docker) — captura RTSP → WebSocket
 
