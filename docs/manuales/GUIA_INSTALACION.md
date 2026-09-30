@@ -422,3 +422,33 @@ Para usar la base restaurada, cambie el nombre de la base en `DATABASE_URL`.
 | La interfaz muestra "No hay eventos registrados" o "No hay árbitros registrados" | La base no tiene sesión de validación. | Ejecute `scripts/crear_sesion_validacion.py` (sección 8) y pulse "Recargar". |
 | Una prueba con `testcontainers` se omite con "docs_claude/ no está junto a backend/" | Falta la carpeta hermana `docs_claude/`. | Copie `docs_claude/` junto a `backend/`. |
 | Aviso `objc: Class AVFFrameReceiver is implemented in both` en macOS | `opencv-python` y `av` incluyen la misma biblioteca. | Es un aviso; no impidió el funcionamiento en la validación. |
+
+## 13. Regenerar capturas
+
+Las 15 imágenes de `docs/manuales/img` se generan juntas con `e2e/capturas-manual.spec.ts`, contra Fog, Cloud, Redis y PostgreSQL reales, para que todas muestren el mismo evento. Si cambia la interfaz, regenere las 15, no solo las afectadas.
+
+1. Levante el sistema con puertos propios, sin tocar el que se usa en el piloto (secciones 4, 5 y 7). Por ejemplo, Redis en 6391, Fog en 8011 y el frontend de la prueba en 8082. Una base de humo distinta de la del piloto evita mezclar revisiones.
+2. Cree el evento de la sesión con `scripts/crear_sesion_validacion.py` (sección 8) y reutilice el árbitro que ya existe: use su nombre exacto en `--arbitro`. La captura agrega 3 revisiones a la base.
+3. Exporte las 8 variables del spec (están descritas en su cabecera):
+
+| Variable | Contenido |
+|---|---|
+| `EVENTO_NOMBRE` | Nombre del evento creado en el paso 2. |
+| `ARBITRO_NOMBRE` | Árbitro que ya existe en la base. |
+| `CLIP_1`, `CLIP_2` | Rutas absolutas de los clips de las revisiones 1 (mantener) y 2 (cambiar). |
+| `CLIP_SIN_TIRADORES` | Ruta absoluta de un video sin tiradores (revisión 3, "Clasificación no disponible"). |
+| `CLIP_1_T_MS`, `CLIP_2_T_MS` | Instante del tocado en ms: primer fotograma con luz de `dataset/labels/luz_annotations.csv` dividido por los fps, como en `docs/evidencia/prueba_humo_Q02.md`. |
+| `CAPTURAS_DIR` | Carpeta de salida, ruta absoluta: `<raíz>/backend/docs/manuales/img`. |
+
+4. Ejecute, con `EXPO_PUBLIC_FOG_URL` apuntando al Fog de la prueba y `E2E_PORT` a un puerto libre (Playwright reutiliza lo que encuentre en 8081):
+
+```bash
+cd <raíz>/SaberAISoftware
+EXPO_PUBLIC_FOG_URL=http://localhost:8011 E2E_PORT=8082 CAPTURAS=1 SISTEMA_REAL=1 \
+EVENTO_NOMBRE="<evento>" ARBITRO_NOMBRE="<árbitro>" \
+CLIP_1="<ruta>" CLIP_2="<ruta>" CLIP_SIN_TIRADORES="<ruta>" \
+CLIP_1_T_MS=<ms> CLIP_2_T_MS=<ms> CAPTURAS_DIR=<raíz>/backend/docs/manuales/img \
+npx playwright test e2e/capturas-manual.spec.ts
+```
+
+Resultado esperado: `1 passed` y las 15 imágenes actualizadas. Revise que ningún texto del manual cite un evento anterior.
