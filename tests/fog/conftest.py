@@ -257,6 +257,7 @@ def crear_app(database_url, alembic_cfg, tmp_path):
     def _crear(
         *, locked: bool = True, extraccion_falla: bool = False, subscriber=None,
         verdict_timeout_s: float = 30.0, clip_max_mb: float = 200.0,
+        clip_timeout_s: float = 60.0, pose_estimator=None,
     ) -> AppAuditable:
         container = Container()
         container.config.database_url.from_value(database_url)
@@ -264,6 +265,7 @@ def crear_app(database_url, alembic_cfg, tmp_path):
         container.config.evidence_dir.from_value(str(tmp_path / "evidencia"))
         container.config.min_frames.from_value(3)
         container.config.clip_upload_verdict_timeout_s.from_value(verdict_timeout_s)
+        container.config.clip_upload_timeout_s.from_value(clip_timeout_s)
         container.config.luz_timeout_s.from_value(2.0)
         container.config.clip_max_mb.from_value(clip_max_mb)
 
@@ -271,7 +273,8 @@ def crear_app(database_url, alembic_cfg, tmp_path):
             providers.Singleton(build_engine, database_url=database_url, pooled=False)
         )
         container.pose_estimator.override(
-            FakePoseEstimator(tracked=TrackedSequence(frames=[], frame_w=64, frame_h=64, locked=locked))
+            pose_estimator
+            or FakePoseEstimator(tracked=TrackedSequence(frames=[], frame_w=64, frame_h=64, locked=locked))
         )
         resultado = (
             ExtractedFeatures(sequence=None, stats={"error": "tracking no pudo asignar IDs A/B"})

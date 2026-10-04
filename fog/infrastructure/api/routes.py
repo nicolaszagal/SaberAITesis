@@ -57,6 +57,7 @@ from fog.domain.models import (
     InstantesLuz,
     LuzSignal,
     MotivoNoDisponible,
+    TrackedSequence,
     UnavailableResult,
     VerdictView,
     WeaponSide,
@@ -86,6 +87,7 @@ from fog.infrastructure.api.schemas import (
 )
 from fog.infrastructure.clips.clip_file_reader import (
     ClipTooLargeError,
+    ExtraccionAgotadaError,
     InvalidClipError,
     TocadoFueraDelClipError,
     process_uploaded_clip,
@@ -465,6 +467,7 @@ async def upload_clip(
     abrir_revision: AbrirRevisionVar = Depends(Provide[Container.abrir_revision]),
     registrar_clasificacion: RegistrarClasificacion = Depends(Provide[Container.registrar_clasificacion]),
     verdict_timeout_s: float = Depends(Provide[Container.config.clip_upload_verdict_timeout_s]),
+    clip_timeout_s: float = Depends(Provide[Container.config.clip_upload_timeout_s]),
     clip_max_mb: float = Depends(Provide[Container.config.clip_max_mb]),
     min_frames: int = Depends(Provide[Container.config.min_frames]),
 ) -> ClipUploadResponse:
@@ -509,6 +512,7 @@ async def upload_clip(
         clip = await process_uploaded_clip(
             file, pose_estimator, executor, file_storage,
             clip_max_mb=clip_max_mb, min_frames=min_frames,
+            plazo_s=max(0.0, clip_timeout_s - (time.monotonic() - recibido)),
             instantes_ms={
                 nombre: valor
                 for nombre, valor in (("t_luz_a_ms", t_luz_a_ms), ("t_luz_b_ms", t_luz_b_ms))
@@ -521,6 +525,52 @@ async def upload_clip(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except TocadoFueraDelClipError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ExtraccionAgotadaError as exc:
+        # DEF-08: la pose superó el presupuesto total. No hay keypoints: se
+        # registra una clasificación "no disponible (timeout)" con arreglos
+        # vacíos, para que la revisión quede abierta y el árbitro pueda
+        # decidir (sin clasificación, el veredicto responde 409).
+        guardado = exc.clip
+        revision = await abrir_revision.execute(
+            combate=combate,
+            video=VideoGuardado(
+                uri=guardado.uri,
+                sha256=guardado.sha256,
+                fps=guardado.fps,
+                ancho_px=guardado.ancho_px,
+                alto_px=guardado.alto_px,
+                duracion_ms=guardado.duracion_ms,
+            ),
+            instantes=instantes,
+        )
+        revision_id = str(revision.revision.id)
+        session = sessions.create(
+            match_id,
+            revision_id,
+            lado_de_brazo(combate.brazo_a),
+            lado_de_brazo(combate.brazo_b),
+        )
+        session.set_luz(luz)
+        session.t_tocado_ms = t_tocado_ms
+        resultado = UnavailableResult(
+            match_id=match_id,
+            revision_id=revision_id,
+            motivo=MotivoNoDisponible.TIMEOUT,
+        )
+        await session.set_unavailable(resultado)
+        await registrar_clasificacion.execute(
+            tocado_id=revision.tocado.id,
+            revision_id=revision.revision.id,
+            tracked=TrackedSequence(
+                frames=[],
+                frame_w=guardado.ancho_px,
+                frame_h=guardado.alto_px,
+                locked=False,
+            ),
+            resultado=resultado,
+            latencia_ms=int((time.monotonic() - recibido) * 1000),
+        )
+        return _respuesta_clip(match_id, revision_id, luz, resultado)
 
     revision = await abrir_revision.execute(
         combate=combate,
@@ -548,7 +598,11 @@ async def upload_clip(
     # no tiene sentido esperar a Cloud (DEF-08).
     if resultado is None:
         try:
-            await asyncio.wait_for(forward_verdict.execute(revision_id), timeout=verdict_timeout_s)
+            restante_s = max(0.0, clip_timeout_s - (time.monotonic() - recibido))
+            await asyncio.wait_for(
+                forward_verdict.execute(revision_id),
+                timeout=min(verdict_timeout_s, restante_s),
+            )
         except asyncio.TimeoutError:
             # DEF-16: sin esto, esta sesión nunca queda "cerrada" (closed_at
             # sigue None) y sweep_expired no la libera jamás.

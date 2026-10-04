@@ -13,6 +13,10 @@ real vía `crear_app`, ver conftest.py):
   quedan como alias obsoleto, y t_tocado_ms se guarda en la sesión (y en
   `tocado`, D03) sin usarse para recortar.
 - DEF-16: el timeout de Cloud cierra la sesión.
+- DEF-08 (timeout): si el pipeline completo supera el presupuesto total
+  (60 s por defecto, RF-13/RNF-09) Fog responde `timeout` en vez de seguir
+  analizando; si la extracción de pose se agota, la revisión queda abierta
+  con una clasificación no disponible (sin keypoints) y el árbitro puede decidir.
 
 Dobla el estimador de pose (no corre YOLO real) y todo lo que toca Redis
 (publisher/subscriber), igual que tests/fog/fakes.py.
@@ -21,12 +25,39 @@ Dobla el estimador de pose (no corre YOLO real) y todo lo que toca Redis
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from fog.domain.models import VerdictView
+from fog.ports.pose_estimator import PoseEstimatorPort, PoseTrackingSession
 from fog.ports.verdict_subscriber import VerdictStreamSubscriberPort
 from tests.fog.conftest import clip_de_prueba
 from tests.fog.fakes import FakeVerdictSubscriber
+
+
+class _PoseLenta(PoseEstimatorPort):
+    """Pose cuyo add_frame tarda `demora_s` por frame: simula a YOLO
+    saturado, para ejercitar el timeout de extracción."""
+
+    def __init__(self, demora_s: float):
+        self.demora_s = demora_s
+        self.frames = 0
+        self.terminada = threading.Event()
+
+    def start_session(self) -> PoseTrackingSession:
+        estimador = self
+
+        class _Sesion(PoseTrackingSession):
+            def add_frame(self, frame) -> None:
+                time.sleep(estimador.demora_s)
+                estimador.frames += 1
+
+            def finish(self):
+                estimador.terminada.set()
+                raise AssertionError("finish no debe llamarse tras un timeout")
+
+        return _Sesion()
 
 
 class _HangingVerdictSubscriber(VerdictStreamSubscriberPort):
@@ -385,3 +416,90 @@ def test_misma_luz_y_misma_sugerencia_con_los_instantes_que_con_el_alias_obsolet
     assert publicados[-2][2].sequence.shape == publicados[-1][2].sequence.shape
     for campo in ("action", "fencer", "confidence", "disponible", "motivo"):
         assert nuevo[campo] == viejo[campo]
+
+
+def test_timeout_de_extraccion_responde_no_disponible_y_el_arbitro_puede_decidir(crear_app):
+    """DEF-08: si la extracción de pose supera el presupuesto total, Fog no
+    sigue analizando: responde 200 con `timeout`, registra una clasificación
+    no disponible (sin keypoints), deja la revisión abierta para que el árbitro
+    decida y no publica nada en Redis."""
+    pose = _PoseLenta(demora_s=0.3)
+    app = crear_app(pose_estimator=pose, clip_timeout_s=0.4)
+    app.container.executor.override(ThreadPoolExecutor(max_workers=2))
+    match_id = app.configurar()
+
+    inicio = time.monotonic()
+    response = app.subir_clip(match_id, clip_de_prueba(n_frames=20))
+    elapsed = time.monotonic() - inicio
+
+    assert elapsed < 1.5, f"tardó {elapsed:.2f}s: Fog siguió analizando tras el límite"
+    assert response.status_code == 200
+    body = response.json()
+    assert body["disponible"] is False
+    assert body["motivo"] == "timeout"
+    assert body["timed_out"] is True
+    assert body["revision_id"]
+    assert app.container.feature_publisher().published == []
+
+    detalle = app.client.get(f"/revisiones/{body['revision_id']}")
+    assert detalle.status_code == 200
+    sugerencia = detalle.json()["sugerencia"]
+    assert sugerencia["disponible"] is False
+    assert sugerencia["motivo_no_disp"] == "timeout"
+
+    # Queda una clasificación "no disponible" (timeout) para que el árbitro
+    # pueda decidir: sin ella el veredicto responde ClasificacionPendiente.
+    cerrada = app.veredicto(body["revision_id"], decision="anular")
+    assert cerrada.status_code == 200, cerrada.text
+
+    session = app.container.sessions().get(body["revision_id"])
+    assert session is not None and session.closed_at is not None
+    assert session.unavailable.motivo.value == "timeout"
+
+    # El hilo de pose se detiene (no sigue quemando CPU hasta el final del clip).
+    time.sleep(1.0)
+    assert pose.frames < 20
+
+
+def test_clip_guardado_tras_timeout_cuenta_los_frames_reales(monkeypatch, tmp_path):
+    """DEF-08: CAP_PROP_FRAME_COUNT sobreestima los clips con preroll (cuenta
+    paquetes de PTS negativo, p. ej. 108 por 49 reales); la duración del clip
+    guardado sin pose debe salir de los frames realmente leídos."""
+    import cv2
+
+    from fog.infrastructure.clips import clip_file_reader as lector
+
+    class _Captura:
+        def __init__(self, ruta):
+            self._restantes = 49
+
+        def get(self, prop):
+            return {
+                cv2.CAP_PROP_FPS: 25.0,
+                cv2.CAP_PROP_FRAME_WIDTH: 1280,
+                cv2.CAP_PROP_FRAME_HEIGHT: 720,
+                cv2.CAP_PROP_FRAME_COUNT: 108,
+            }[prop]
+
+        def grab(self):
+            if self._restantes == 0:
+                return False
+            self._restantes -= 1
+            return True
+
+        def release(self):
+            pass
+
+    class _Almacen:
+        async def save_clip(self, ruta):
+            return "uri", "sha"
+
+    monkeypatch.setattr(lector.cv2, "VideoCapture", _Captura)
+    vistos = []
+    guardado = asyncio.run(
+        lector._guardar_sin_pose(
+            str(tmp_path / "x.mp4"), "x.mp4", _Almacen(), None, vistos.append
+        )
+    )
+    assert guardado.duracion_ms == 1960  # 49 frames / 25 fps, no 108
+    assert vistos == [1960]

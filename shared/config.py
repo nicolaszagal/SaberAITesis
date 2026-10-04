@@ -111,6 +111,13 @@ FAVERO_LUZ_TIMEOUT_S = float(os.environ.get("FAVERO_LUZ_TIMEOUT_S", "2.0"))
 # corta de la luz Favero — default más generoso que FAVERO_LUZ_TIMEOUT_S.
 CLIP_UPLOAD_VERDICT_TIMEOUT_S = float(os.environ.get("CLIP_UPLOAD_VERDICT_TIMEOUT_S", "30.0"))
 
+# Presupuesto total de POST /matches/{match_id}/clip, desde que Fog recibe el
+# clip hasta responder: pose+tracking+features+Cloud. Si se agota, Fog responde
+# "Clasificación no disponible" con motivo `timeout` en vez de seguir analizando
+# (RF-13, RNF-09, D-08: sugerencia en <= 60 s). CLIP_UPLOAD_VERDICT_TIMEOUT_S
+# sigue acotando solo la espera del veredicto de Cloud dentro de este total.
+CLIP_UPLOAD_TIMEOUT_S = float(os.environ.get("CLIP_UPLOAD_TIMEOUT_S", "60.0"))
+
 # Tiempo que SessionRegistry mantiene una sesión (MatchSession) después de
 # entregar el veredicto o el "no disponible", antes de liberarla (DEF-16):
 # ventana para aceptar conexiones tardías de GET /ws/veredicto/{revision_id}

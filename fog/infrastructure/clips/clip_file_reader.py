@@ -18,15 +18,17 @@ dataset/05_extract_features.py para leer clips del dataset.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
 import asyncio
 import logging
 import os
 import tempfile
+import threading
 from concurrent.futures import Executor
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import cv2
 from fastapi import UploadFile
@@ -53,6 +55,34 @@ class TocadoFueraDelClipError(Exception):
 
 
 @dataclass(frozen=True)
+class ClipGuardado:
+    """Clip guardado por SHA-256 con sus metadatos de video, sin pose."""
+
+    uri: str
+    sha256: str
+    fps: float
+    ancho_px: int
+    alto_px: int
+    duracion_ms: int
+
+
+class ExtraccionAgotadaError(Exception):
+    """La extracción de pose superó el plazo (DEF-08, RF-13, RNF-09).
+
+    El clip ya quedó guardado en `clip`, para abrir la revisión sin
+    clasificación. El router lo traduce a "no disponible" con motivo `timeout`.
+    """
+
+    def __init__(self, clip: ClipGuardado):
+        super().__init__("la extracción de pose superó el plazo")
+        self.clip = clip
+
+
+class _ExtraccionCancelada(Exception):
+    """Interna: corta el hilo de lectura de frames tras un timeout."""
+
+
+@dataclass(frozen=True)
 class ClipProcesado:
     """Clip subido ya procesado y guardado: pose+tracking y metadatos de
     video para `sabre.clip`."""
@@ -74,6 +104,7 @@ async def process_uploaded_clip(
     clip_max_mb: float,
     min_frames: int,
     instantes_ms: Mapping[str, int] | None = None,
+    plazo_s: float | None = None,
 ) -> ClipProcesado:
     """Valida el clip subido, corre pose+tracking y lo guarda por SHA-256.
 
@@ -87,6 +118,7 @@ async def process_uploaded_clip(
         instantes_ms: instantes simulados por nombre de campo (`t_luz_a_ms`,
             `t_luz_b_ms`); cada uno debe estar entre 0 y la duración del clip
             (ambos incluidos).
+        plazo_s: segundos máximos para la extracción de pose; None = sin límite.
 
     Returns:
         Secuencia rastreada, uri/sha256 del archivo y metadatos de video.
@@ -97,6 +129,8 @@ async def process_uploaded_clip(
             tiene menos de `min_frames` frames.
         TocadoFueraDelClipError: si algún instante es negativo o supera la
             duración del clip. El clip no se guarda.
+        ExtraccionAgotadaError: si la pose no termina en `plazo_s`. El hilo de
+            lectura se cancela y el clip se guarda; la excepción lo trae.
     """
     suffix = os.path.splitext(file.filename or "")[1] or ".mp4"
     content = await file.read()
@@ -114,6 +148,8 @@ async def process_uploaded_clip(
             tmp.write(content)
 
         loop = asyncio.get_running_loop()
+        limite = None if plazo_s is None else loop.time() + plazo_s
+        cancelar = threading.Event()
         pose_session = pose_estimator.start_session()
 
         def _read_all_frames() -> tuple[int, float, int, int]:
@@ -125,6 +161,8 @@ async def process_uploaded_clip(
             fps = cap.get(cv2.CAP_PROP_FPS)
             try:
                 while True:
+                    if cancelar.is_set():
+                        raise _ExtraccionCancelada()
                     ok, frame = cap.read()
                     if not ok:
                         break
@@ -145,15 +183,36 @@ async def process_uploaded_clip(
                 )
             return n, float(fps), ancho, alto
 
-        n_frames, fps, ancho, alto = await loop.run_in_executor(executor, _read_all_frames)
-        duracion_ms = max(1, round(n_frames / fps * 1000))
-        for nombre, valor in (instantes_ms or {}).items():
-            if not 0 <= valor <= duracion_ms:
-                raise TocadoFueraDelClipError(
-                    f"{nombre}={valor} está fuera del clip: debe estar entre 0 y "
-                    f"{duracion_ms} ms (duración del clip {file.filename!r})"
+        def _validar_instantes(duracion_ms: int) -> None:
+            for nombre, valor in (instantes_ms or {}).items():
+                if not 0 <= valor <= duracion_ms:
+                    raise TocadoFueraDelClipError(
+                        f"{nombre}={valor} está fuera del clip: debe estar entre 0 y "
+                        f"{duracion_ms} ms (duración del clip {file.filename!r})"
+                    )
+
+        async def _con_plazo(trabajo: Callable[[], Any]) -> Any:
+            restante = None if limite is None else max(0.0, limite - loop.time())
+            try:
+                return await asyncio.wait_for(
+                    loop.run_in_executor(executor, trabajo), restante
                 )
-        tracked = await loop.run_in_executor(executor, pose_session.finish)
+            except asyncio.TimeoutError:
+                cancelar.set()
+                log.warning(
+                    "clip %r: la extracción superó el plazo de %.0f s",
+                    file.filename,
+                    plazo_s,
+                )
+                guardado = await _guardar_sin_pose(
+                    tmp_path, file.filename, storage, instantes_ms, _validar_instantes
+                )
+                raise ExtraccionAgotadaError(guardado) from None
+
+        n_frames, fps, ancho, alto = await _con_plazo(_read_all_frames)
+        duracion_ms = max(1, round(n_frames / fps * 1000))
+        _validar_instantes(duracion_ms)
+        tracked = await _con_plazo(pose_session.finish)
         uri, sha256 = await storage.save_clip(Path(tmp_path))
         log.info("clip subido (%s): %d frames procesados", file.filename, n_frames)
         return ClipProcesado(
@@ -167,3 +226,54 @@ async def process_uploaded_clip(
         )
     finally:
         os.remove(tmp_path)
+
+
+async def _guardar_sin_pose(
+    ruta: str,
+    nombre: str | None,
+    storage: FileStoragePort,
+    instantes_ms: Mapping[str, int] | None,
+    validar_instantes: Callable[[int], None],
+) -> ClipGuardado:
+    """Guarda el clip y lee sus metadatos sin correr pose (tras un timeout).
+
+    La duración se calcula con los frames realmente leídos, no con
+    CAP_PROP_FRAME_COUNT, que sobreestima los clips con preroll.
+
+    Args:
+        ruta: archivo temporal con el clip.
+        nombre: nombre original del archivo, solo para los mensajes.
+        storage: almacén donde se guarda el clip.
+        instantes_ms: instantes de luz recibidos, validados contra la duración.
+        validar_instantes: valida los instantes contra la duración estimada.
+
+    Returns:
+        El clip guardado y sus metadatos de video.
+
+    Raises:
+        InvalidClipError: si el clip no informa fps ni dimensiones válidos.
+        TocadoFueraDelClipError: si un instante cae fuera de la duración.
+    """
+    cap = cv2.VideoCapture(ruta)
+    try:
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        ancho = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        alto = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        # CAP_PROP_FRAME_COUNT cuenta paquetes de preroll (PTS negativo) que
+        # read() no entrega; grab() recorre solo los frames reales.
+        total = 0
+        while cap.grab():
+            total += 1
+    finally:
+        cap.release()
+    if not fps or fps <= 0 or total <= 0 or not ancho or not alto:
+        raise InvalidClipError(
+            f"el clip subido ({nombre!r}) no informa fps ni dimensiones válidos"
+        )
+    duracion_ms = max(1, round(total / fps * 1000))
+    validar_instantes(duracion_ms)
+    uri, sha256 = await storage.save_clip(Path(ruta))
+    return ClipGuardado(
+        uri=uri, sha256=sha256, fps=round(float(fps), 2), ancho_px=ancho, alto_px=alto,
+        duracion_ms=duracion_ms,
+    )
