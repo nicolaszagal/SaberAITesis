@@ -62,3 +62,9 @@ pytest-asyncio==1.4.0
 httpx==0.28.1
 fakeredis==2.38.0  # tests/cloud/test_redis_feature_consumer.py (XREADGROUP/XAUTOCLAIM, DEF-09)
 testcontainers[postgres]==4.15.0  # tests/fog/test_migracion_esquema.py (o TEST_DATABASE_URL en CI)
+
+# Puente WebSocket del nodo Edge (edge/ws_bridge.py, tests/edge/).
+websockets==17.2
+
+# Linter del proyecto: ruff check fog cloud shared edge --select E,F,W (CLAUDE.md).
+ruff==0.16.10
