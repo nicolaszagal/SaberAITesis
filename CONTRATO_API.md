@@ -398,6 +398,15 @@ Respuesta (JSON):
 - **Timeout de Cloud** (`motivo="timeout"`, `timed_out=true`): Fog sí
   publicó features pero Cloud no respondió dentro del timeout
   configurado. `fencer`/`action`/`confidence` quedan en `null`.
+- **Timeout de extracción** (`motivo="timeout"`, `timed_out=true`, DEF-08): el
+  pipeline completo tiene un presupuesto de `CLIP_UPLOAD_TIMEOUT_S` (60 s por
+  defecto, RF-13, RNF-09) desde que Fog recibe el clip; la espera del veredicto
+  de Cloud se acota además a lo que reste. Si la pose no termina en ese plazo,
+  Fog cancela la lectura de frames, guarda el clip, abre la revisión con una
+  clasificación **no disponible** (`disponible=false`, `motivo_no_disp="timeout"`,
+  keypoints vacíos; `GET /revisiones/{id}` la devuelve en `sugerencia`), no
+  publica en Redis y responde 200 con su `revision_id`. La revisión queda abierta:
+  el árbitro puede registrar su veredicto (`POST /revisiones/{id}/veredicto`).
 - **Cloud no disponible** (`motivo="mensaje_invalido"`, `timed_out=false`): Cloud publicó
   `disponible=false` (sección 6).
 
