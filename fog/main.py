@@ -66,6 +66,7 @@ container.config.min_frames.from_value(config.MIN_FRAMES)
 container.config.clip_max_mb.from_value(config.CLIP_MAX_MB)
 container.config.luz_timeout_s.from_value(config.FAVERO_LUZ_TIMEOUT_S)
 container.config.clip_upload_verdict_timeout_s.from_value(config.CLIP_UPLOAD_VERDICT_TIMEOUT_S)
+container.config.clip_upload_timeout_s.from_value(config.CLIP_UPLOAD_TIMEOUT_S)
 container.wire(modules=[routes])
 
 

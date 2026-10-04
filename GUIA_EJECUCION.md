@@ -94,6 +94,7 @@ sobre `numpy==2.3.4` en `requirements.txt` para un caso concreto ya resuelto.
 | `M01_EXPERIMENT_LOG`    | — (opcional)                                    | `dataset/lstm_6class/EXPERIMENT_LOG.md`: de ahí el resumen de validación (L02) copia la tabla resumen de M01; sin él, indica "no disponible" |
 | `CLIP_MAX_MB`           | `200`                                           | tamaño máximo del clip en `POST /matches/{id}/clip`; más de eso responde 413 (Fog) |
 | `CLIP_UPLOAD_VERDICT_TIMEOUT_S` | `30.0`                                  | espera del veredicto de Cloud en la carga de clip; vencida, responde `timed_out=true` y `motivo="timeout"` (Fog) |
+| `CLIP_UPLOAD_TIMEOUT_S`         | `60.0`                                  | presupuesto total de la carga de clip (pose + Cloud); vencido, responde `timed_out=true` y `motivo="timeout"`, y si fue en la pose deja la revisión abierta con la sugerencia no disponible (DEF-08) |
 | `SESSION_TTL_S`         | `120.0`                                         | segundos que Fog conserva una sesión tras entregar el resultado (Fog) |
 | `SESSION_SWEEP_INTERVAL_S` | `30.0`                                       | cadencia del barrido que libera sesiones vencidas (Fog) |
 | `VERDICT_STREAM_TTL_S`  | `3600`                                          | `EXPIRE` del stream `cloud:verdicts:{revision_id}` (Cloud) |
