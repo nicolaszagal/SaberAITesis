@@ -1,0 +1,25 @@
+# Prueba remota del árbitro (DEPLOY03): proxy de un solo origen con autenticación
+# básica delante del frontend estático y de Fog (modo piloto: Fog corre nativo en
+# el Mac). Solo escucha en 127.0.0.1; la exposición a internet la hace el túnel de
+# scripts/prueba_remota.sh. No se mezcla con docker-compose.yml.
+#
+# Requisitos: .secrets/htpasswd (ver docs/manuales/PRUEBA_REMOTA.md) y el build
+# del frontend con EXPO_PUBLIC_FOG_URL=/api (npm run build:remoto en SaberAISoftware).
+name: sabre-remoto
+
+services:
+  proxy:
+    image: nginx:alpine
+    container_name: sabre_proxy_remoto
+    ports:
+      - "127.0.0.1:8090:80"
+    environment:
+      CLIP_MAX_MB: ${CLIP_MAX_MB:-200}
+      FOG_UPSTREAM: ${FOG_UPSTREAM:-host.docker.internal:8001}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./proxy/nginx.remoto.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./.secrets/htpasswd:/etc/nginx/htpasswd:ro
+      - ${FRONTEND_DIST:-../SaberAISoftware/dist-remoto}:/usr/share/nginx/html:ro
+    restart: "no"

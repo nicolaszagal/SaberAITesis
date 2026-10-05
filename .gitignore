@@ -27,3 +27,7 @@ datos-humo/
 
 # Excepción: plantilla de configuración del despliegue con Docker.
 !.env.example
+
+# Prueba remota (DEPLOY03): credenciales del proxy y estado del túnel.
+.secrets/
+datos/prueba_remota_*
