@@ -7,6 +7,7 @@
 #   docker compose -f docker-compose.yml -f docker-compose.nativo.yml up -d
 #   sh scripts/fog_nativo.sh
 #
+# POSTGRES_DB_NAME elige otra base (por defecto sabre), p. ej. sabre_expo para el despliegue remoto.
 # Variables opcionales: ENV_FILE (por defecto .env), DATOS_DIR (por defecto ./datos),
 # MODEL_RUN_ID (por defecto el mismo run que fog/Dockerfile) y FOG_HOST_PORT (8001).
 set -eu
@@ -28,7 +29,7 @@ DATOS_DIR=${DATOS_DIR:-./datos}
 mkdir -p "$DATOS_DIR/storage" "$DATOS_DIR/evidencia"
 DATOS_DIR=$(cd "$DATOS_DIR" && pwd)
 
-export DATABASE_URL="postgresql+asyncpg://sabre:${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD}@127.0.0.1:${POSTGRES_HOST_PORT}/sabre"
+export DATABASE_URL="postgresql+asyncpg://sabre:${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD}@127.0.0.1:${POSTGRES_HOST_PORT}/${POSTGRES_DB_NAME:-sabre}"
 # DEPLOY07: con REDIS_URL_REMOTO (rediss://... hacia Railway) Fog no usa el Redis local.
 export REDIS_URL="${REDIS_URL_REMOTO:-redis://127.0.0.1:${REDIS_HOST_PORT}/0}"
 export STORAGE_DIR="$DATOS_DIR/storage"

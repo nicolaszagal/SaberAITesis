@@ -1,9 +1,21 @@
-Ya hay un modelo activo (lstm6class-20260928_141021); no se registra 20260928_141021.
-objc[76586]: Class AVFFrameReceiver is implemented in both /Users/darkarcher/Documents/Claude/Projects/Tesis/Software/backend/.venv/lib/python3.14/site-packages/cv2/.dylibs/libavdevice.61.3.100.dylib (0x10c1ac3a8) and /Users/darkarcher/Documents/Claude/Projects/Tesis/Software/backend/.venv/lib/python3.14/site-packages/av/.dylibs/libavdevice.62.1.100.dylib (0x11deb03a8). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
-objc[76586]: Class AVFAudioReceiver is implemented in both /Users/darkarcher/Documents/Claude/Projects/Tesis/Software/backend/.venv/lib/python3.14/site-packages/cv2/.dylibs/libavdevice.61.3.100.dylib (0x10c1ac3f8) and /Users/darkarcher/Documents/Claude/Projects/Tesis/Software/backend/.venv/lib/python3.14/site-packages/av/.dylibs/libavdevice.62.1.100.dylib (0x11deb03f8). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
-INFO:     Started server process [76586]
+Registrado modelo_version 7608731f-0e79-4a01-8b81-5002294f4333 (lstm6class-20260928_141021): f1_macro_test=0.5249 activo=True
+objc[77722]: Class AVFFrameReceiver is implemented in both /Users/darkarcher/Documents/Claude/Projects/Tesis/Software/backend/.venv/lib/python3.14/site-packages/cv2/.dylibs/libavdevice.61.3.100.dylib (0x1082703a8) and /Users/darkarcher/Documents/Claude/Projects/Tesis/Software/backend/.venv/lib/python3.14/site-packages/av/.dylibs/libavdevice.62.1.100.dylib (0x118aec3a8). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+objc[77722]: Class AVFAudioReceiver is implemented in both /Users/darkarcher/Documents/Claude/Projects/Tesis/Software/backend/.venv/lib/python3.14/site-packages/cv2/.dylibs/libavdevice.61.3.100.dylib (0x1082703f8) and /Users/darkarcher/Documents/Claude/Projects/Tesis/Software/backend/.venv/lib/python3.14/site-packages/av/.dylibs/libavdevice.62.1.100.dylib (0x118aec3f8). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+INFO:     Started server process [77722]
 INFO:     Waiting for application startup.
-2026-10-08 16:22:07,891 INFO:fog:Cargando modelo YOLO y extractor de features (192-dim)...
-2026-10-08 16:22:08,035 INFO:fog:Fog listo.
+2026-10-08 16:30:55,523 INFO:fog:Cargando modelo YOLO y extractor de features (192-dim)...
+2026-10-08 16:30:55,632 INFO:fog:Fog listo.
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://0.0.0.0:8011 (Press CTRL+C to quit)
+2026-10-08 16:32:05,197 INFO:sabre.auth:auth.login_ok ip=181.65.1.187 usuario='arbitro'
+2026-10-08 16:32:12,685 INFO:fog.infrastructure.clips:clip subido (AttackA_0007.mp4): 15 frames procesados
+2026-10-08 16:32:12,697 INFO:fog.application:[a97ced48-05b2-4c60-b298-504e4faff7b3] features extraídas: (15, 192)
+2026-10-08 16:32:21,690 INFO:fog.infrastructure.clips:clip subido (RiposteB_0004.mp4): 27 frames procesados
+2026-10-08 16:32:21,699 INFO:fog.application:[abc78644-0555-4132-9bd5-d7298b5d3055] features extraídas: (27, 192)
+2026-10-08 16:32:32,442 WARNING:sabre.auth:auth.login_fallo ip=181.65.1.187 usuario='arbitro'
+2026-10-08 16:32:33,758 WARNING:sabre.auth:auth.login_fallo ip=181.65.1.187 usuario='arbitro'
+2026-10-08 16:32:34,983 WARNING:sabre.auth:auth.login_fallo ip=181.65.1.187 usuario='arbitro'
+2026-10-08 16:32:36,163 WARNING:sabre.auth:auth.login_fallo ip=181.65.1.187 usuario='arbitro'
+2026-10-08 16:32:37,342 WARNING:sabre.auth:auth.login_fallo ip=181.65.1.187 usuario='arbitro'
+2026-10-08 16:32:37,607 WARNING:sabre.auth:auth.bloqueo ip=181.65.1.187 usuario='arbitro'
+INFO:     Shutting down

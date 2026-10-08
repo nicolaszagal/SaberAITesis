@@ -1,6 +1,6 @@
 # Despliegue remoto de SABRE.AI (DEPLOY07) · borrador
 
-Estado: preparación local terminada; **Railway aún no creado** (falta `railway login` del autor, publicar `main` y las decisiones de la sección 6). Las secciones 4 y 5 se completan con la evidencia de la Parte D.
+Estado (08/10/2026): proyecto `sabre-ai` en Railway con tres servicios (redis, cloud, frontend) desplegados desde `main`. Frontend público: https://frontend-production-0463.up.railway.app. Fog corre en el Mac (puerto 8011, base `sabre_expo`) y se expone con `scripts/fog_remoto.sh`. Ramas: `main` = producción desplegada; `dev/local` = entorno local para la Validación.
 
 ## 1. Arquitectura
 Navegador → HTTPS → [Railway] frontend (nginx: estático + `/api`) → HTTPS + `X-Proxy-Token` → [Mac] túnel Cloudflare → Fog → PostgreSQL local.
@@ -40,6 +40,33 @@ Prueba local (puerto 6390): sin TLS → conexión cerrada; TLS sin certificado d
 
 PKI: `sh scripts/generar_pki_redis.sh <host-proxy> redis.railway.internal` → `backend/.secrets/redis/` (ignorado por git). Rotación: borrar esa carpeta, regenerar y actualizar las variables; contraseña de Redis, `AUTH_JWT_SECRET` y `PROXY_SHARED_TOKEN` con `openssl rand -base64 48`, cambiando el valor en ambos extremos y reiniciando.
 
-## 6. Pendiente
-Crear servicios, pruebas 1–13 de la Parte D y tabla de controles del Anexo A.
-Riesgos aceptados: Fog depende del Mac encendido; JWT sin revocación; plan gratuito con recursos limitados; URL del túnel variable.
+## 6. Verificación (Parte D)
+| # | Prueba | Resultado |
+|---|---|---|
+| 1 | `curl -I` al frontend | 200; `strict-transport-security`, `content-security-policy`, `x-content-type-options: nosniff`, `referrer-policy`, `permissions-policy`; `server: railway-hikari` (sin versión de nginx) |
+| 2 | App sin login | **Pendiente de confirmación visual** (el build exige token; no se probó con navegador) |
+| 3 | `/api/eventos` y `/api/revisiones` sin token | 401 (`/api/health` es público por diseño) |
+| 4 | 6 logins fallidos con `X-Forwarded-For` falsificado distinto en cada intento | 401 ×5 y 429 al sexto; el bloqueo es por la IP real |
+| 5 | Túnel `/health` sin `X-Proxy-Token` | 403 |
+| 6 | Preflight CORS desde `https://ejemplo.com` | 400 sin `Access-Control-Allow-Origin` |
+| 7 | `redis-cli` al TCP proxy (`maglev.proxy.rlwy.net:33093`) | sin TLS: conexión cerrada; TLS sin certificado de cliente: error de E/S; certificado sin contraseña: `NOAUTH`; `sabre` con `FLUSHALL`: `NOPERM`. TLS 1.3 de extremo a extremo con verificación del certificado propio: el proxy no termina TLS |
+| 8 | Cloud sin dominio público | `railway domain list --service cloud`: sin dominios |
+| 9 | Flujo completo con 2 clips | Por el frontend público: login, configuración y clip → sugerencia (AttackA_0007: AttackB 0.53; RiposteB_0004: RiposteB 0.44). Desde datos móviles: **pendiente** (lo hace el autor) |
+| 10 | `fn_verificar_auditoria()` en `sabre_expo` | 0 filas (2 revisiones) |
+| 11 | Logs de Fog | `auth.login_ok` / `auth.login_fallo` con IP real y usuario; 0 apariciones de contraseñas, tokens o hashes |
+| 12 | `fog_remoto.sh stop` | la URL del túnel responde 530 |
+| 13 | Latencia de 2 clips (cliente → frontend → túnel → Fog → Redis → Cloud → respuesta) | 6.0 s y 7.9 s (límite D-08: 60 s) |
+
+Imagen del frontend: 93.6 MB; `/usr/share/nginx/html` solo contiene el build (`_expo`, `index.html`…), sin `node_modules`.
+
+### Hallazgo durante la verificación
+Detrás de nginx y del túnel, Cloudflare añade la IP de salida de Railway a `X-Forwarded-For`; Fog tomaba la última entrada y todos los clientes compartían un solo bloqueo (cinco fallos de cualquiera bloqueaban al árbitro). Corregido con `PROXY_SALTOS_CONFIANZA=2` (el cliente es la penúltima entrada) y una prueba que falla sin el cambio.
+
+## 7. Operación el día de la exposición
+1. `sh scripts/fog_nativo.sh` con `ENV_FILE=.secrets/fog_remoto.env` (puerto 8011, base `sabre_expo`).
+2. `FOG_HOST_PORT=8011 PROXY_SHARED_TOKEN=… sh scripts/fog_remoto.sh start`: imprime la URL del túnel (cambia en cada arranque).
+3. En Railway, servicio frontend: `FOG_UPSTREAM=<URL del túnel>` y reiniciar.
+4. Al terminar: `fog_remoto.sh stop`.
+
+## 8. Riesgos aceptados
+Fog depende del Mac encendido; JWT sin revocación; plan gratuito con recursos limitados ($1 de crédito al mes); URL del túnel variable; los certificados de Redis vencen al año; la contraseña maestra y el token del proxy viven solo en `backend/.secrets/`.
