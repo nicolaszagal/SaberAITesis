@@ -18,6 +18,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from fog.application.autenticar import ValidarToken
 from fog.composition import Container
 from fog.domain.errors import TokenInvalido
+from shared import config
 
 
 def ip_cliente(conexion: HTTPConnection) -> str:
@@ -27,15 +28,17 @@ def ip_cliente(conexion: HTTPConnection) -> str:
         conexion: petición HTTP o WebSocket.
 
     Returns:
-        La última entrada de `X-Forwarded-For` (la que añadió el proxy) solo si
-        hay `PROXY_SHARED_TOKEN` configurado, es decir, si la petición ya pasó
-        por el proxy de confianza; en otro caso la IP del socket.
+        La entrada de `X-Forwarded-For` que corresponde al cliente según
+        `PROXY_SALTOS_CONFIANZA` (la última con 1 salto; la penúltima con 2,
+        cuando el túnel añade la IP de salida del proxy), solo si hay
+        `PROXY_SHARED_TOKEN` configurado, es decir, si la petición ya pasó por
+        el proxy de confianza; en otro caso la IP del socket.
     """
     if getattr(conexion.app.state, "proxy_token", None):
-        reenviado = conexion.headers.get("x-forwarded-for", "")
-        ultimo = reenviado.split(",")[-1].strip()
-        if ultimo:
-            return ultimo
+        entradas = [e.strip() for e in conexion.headers.get("x-forwarded-for", "").split(",")]
+        saltos = max(config.PROXY_SALTOS_CONFIANZA, 1)
+        if len(entradas) >= saltos and entradas[-saltos]:
+            return entradas[-saltos]
     return conexion.client.host if conexion.client else "desconocida"
 
 

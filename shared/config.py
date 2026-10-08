@@ -174,6 +174,12 @@ AUTH_BLOQUEO_S = 15 * 60
 # igual a este valor (el nginx del frontend lo agrega). Vacío en local.
 PROXY_SHARED_TOKEN = os.environ.get("PROXY_SHARED_TOKEN") or None
 
+# Saltos de proxy de confianza entre el cliente y Fog para `X-Forwarded-For`.
+# 1: solo el proxy local o nginx (local, DEPLOY05). 2: nginx de Railway y el
+# túnel de Cloudflare, que añade la IP de salida de Railway al final: el cliente
+# real es la penúltima entrada (DEPLOY07).
+PROXY_SALTOS_CONFIANZA = int(os.environ.get("PROXY_SALTOS_CONFIANZA", "1"))
+
 # Orígenes CORS permitidos, separados por comas, sin comodines. Vacío en el
 # despliegue remoto (mismo origen vía /api); en desarrollo http://localhost:8081.
 CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "")
