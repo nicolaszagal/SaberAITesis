@@ -10,6 +10,18 @@ import os
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
+# TLS mutuo hacia Redis (DEPLOY07). Rutas a archivos PEM: CA propia, certificado
+# y clave de cliente. Sin ellas (modo local) el cliente no cambia. Las claves
+# nunca van en el repo ni en la imagen: el entrypoint las escribe en un tmpfs.
+REDIS_TLS_CA = os.environ.get("REDIS_TLS_CA") or None
+REDIS_TLS_CERT = os.environ.get("REDIS_TLS_CERT") or None
+REDIS_TLS_KEY = os.environ.get("REDIS_TLS_KEY") or None
+
+# Tope aproximado (MAXLEN ~) de entradas de los streams fog:features y su
+# dead-letter. Cada entrada de features pesa ~100 KB: acota la memoria de
+# Redis (maxmemory 200 MB con noeviction) porque Cloud no borra lo procesado.
+STREAM_MAXLEN = int(os.environ.get("STREAM_MAXLEN", "100"))
+
 # Base PostgreSQL de Fog (esquema `sabre`, ver docs_claude/sabre_ai_schema.sql).
 # Formato SQLAlchemy async: postgresql+asyncpg://usuario:clave@host:5432/base.
 # Sin default a propósito: la URL lleva credenciales, no se versionan. Se
@@ -165,6 +177,35 @@ PROXY_SHARED_TOKEN = os.environ.get("PROXY_SHARED_TOKEN") or None
 # Orígenes CORS permitidos, separados por comas, sin comodines. Vacío en el
 # despliegue remoto (mismo origen vía /api); en desarrollo http://localhost:8081.
 CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "")
+
+
+def redis_tls_kwargs() -> dict:
+    """Argumentos TLS de `redis.from_url` según `REDIS_TLS_*`.
+
+    Returns:
+        Diccionario vacío si no hay variables TLS (modo local); si no, CA,
+        certificado y clave de cliente con verificación obligatoria del
+        certificado del servidor y de su nombre.
+
+    Raises:
+        RuntimeError: si la configuración TLS es parcial (falta CA, certificado
+            o clave).
+    """
+    partes = (REDIS_TLS_CA, REDIS_TLS_CERT, REDIS_TLS_KEY)
+    if not any(partes):
+        return {}
+    if not all(partes):
+        raise RuntimeError(
+            "TLS de Redis incompleto: definir REDIS_TLS_CA, "
+            "REDIS_TLS_CERT y REDIS_TLS_KEY."
+        )
+    return {
+        "ssl_ca_certs": REDIS_TLS_CA,
+        "ssl_certfile": REDIS_TLS_CERT,
+        "ssl_keyfile": REDIS_TLS_KEY,
+        "ssl_cert_reqs": "required",
+        "ssl_check_hostname": True,
+    }
 
 
 def cors_origins() -> list[str]:

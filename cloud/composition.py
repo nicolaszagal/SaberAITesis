@@ -17,6 +17,7 @@ from cloud.infrastructure.arbitration.null_arbitration_policy import (
 from cloud.infrastructure.classifier.lstm6class_adapter import LSTM6ClassAdapter
 from cloud.infrastructure.messaging.redis_feature_consumer import RedisFeatureConsumer
 from cloud.infrastructure.messaging.redis_verdict_publisher import RedisVerdictPublisher
+from shared import config as shared_config
 
 
 def _select_device() -> "torch.device":
@@ -34,7 +35,12 @@ def _build_redis_client(redis_url: str) -> "redis.Redis":
     # también en 5s, el cliente puede cortar la lectura antes de que Redis
     # devuelva el BLOCK vacío, lanzando TimeoutError. La espera ya está
     # acotada por el BLOCK de cada comando; el socket no necesita timeout propio.
-    return redis.from_url(redis_url, decode_responses=False, socket_timeout=None)
+    return redis.from_url(
+        redis_url,
+        decode_responses=False,
+        socket_timeout=None,
+        **shared_config.redis_tls_kwargs(),
+    )
 
 
 class Container(containers.DeclarativeContainer):

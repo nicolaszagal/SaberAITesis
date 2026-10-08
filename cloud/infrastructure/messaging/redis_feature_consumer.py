@@ -142,7 +142,10 @@ class RedisFeatureConsumer(FeatureStreamConsumerPort):
             b"motivo": motivo.encode(),
             b"entry_id_original": entry_id.encode(),
         }
-        await self._client.xadd(config.STREAM_FEATURES_DEAD, dead_fields)
+        await self._client.xadd(
+            config.STREAM_FEATURES_DEAD, dead_fields,
+            maxlen=config.STREAM_MAXLEN, approximate=True,
+        )
         await self._client.xack(config.STREAM_FEATURES, config.GROUP_CLOUD, entry_id)
 
     async def _handle_entry(

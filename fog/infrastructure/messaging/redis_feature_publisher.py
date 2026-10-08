@@ -45,4 +45,6 @@ class RedisFeaturePublisher(FeatureStreamPublisherPort):
                 "has_luz_B": "1" if luz.has_luz_b else "0",
                 "ts": datetime.now(timezone.utc).isoformat(),
             },
+            maxlen=config.STREAM_MAXLEN,
+            approximate=True,
         )
