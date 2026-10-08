@@ -91,6 +91,7 @@ from fog.infrastructure.persistence.postgres.veredicto_repository import (
 from fog.infrastructure.pose.yolo_pose_adapter import YoloV8PoseAdapter
 from fog.infrastructure.storage.local_file_storage import LocalFileStorage
 from fog.infrastructure.webrtc.session_registry import SessionRegistry
+from shared import config as shared_config
 
 
 def _load_yolo_model(model_path: str) -> YOLO:
@@ -110,7 +111,12 @@ def _build_redis_client(redis_url: str) -> "redis.Redis":
     # hace xread(..., block=5000) en loop; con el timeout de socket de redis-py 8.x
     # (5s por default) corriendo en paralelo al BLOCK del servidor, el cliente
     # puede lanzar TimeoutError antes de que el BLOCK vacío vuelva.
-    return redis.from_url(redis_url, decode_responses=False, socket_timeout=None)
+    return redis.from_url(
+        redis_url,
+        decode_responses=False,
+        socket_timeout=None,
+        **shared_config.redis_tls_kwargs(),
+    )
 
 
 class Container(containers.DeclarativeContainer):
