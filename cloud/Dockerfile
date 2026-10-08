@@ -37,8 +37,11 @@ COPY shared/ shared/
 COPY dataset/lstm_6class/checkpoints/${RUN_ID}/run_config.json dataset/lstm_6class/checkpoints/${RUN_ID}/run_config.json
 COPY dataset/lstm_6class/checkpoints/${RUN_ID}/best_model.pt dataset/lstm_6class/checkpoints/${RUN_ID}/best_model.pt
 
+COPY cloud/docker-entrypoint.sh /usr/local/bin/sabre-cloud-entrypoint.sh
+
 # Usuario no root (DEPLOY05). Cloud solo lee el checkpoint y habla con Redis.
 RUN useradd --system --uid 10001 --create-home sabre
 USER sabre
 
+ENTRYPOINT ["sh", "/usr/local/bin/sabre-cloud-entrypoint.sh"]
 CMD ["python", "-m", "cloud.main"]
