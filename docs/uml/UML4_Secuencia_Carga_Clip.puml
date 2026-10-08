@@ -23,21 +23,21 @@ participant "LSTM6ClassAdapter" as L
 participant "NullArbitrationPolicy" as M
 end box
 
-Árbitro -> FE : clip + luces + instante del tocado
-FE -> R : POST /matches/{id}/clip (multipart)
+Árbitro -> FE : clip + instante de cada luz (A y/o B)
+FE -> R : POST /matches/{id}/clip\n(multipart: t_luz_a_ms, t_luz_b_ms)
 R -> DB : combate existe?
 alt combate inexistente
   R --> FE : 404
 end
-alt sin luz encendida
+alt ninguna luz marcada
   R --> FE : 422
 end
 R -> DB : ¿hay modelo activo?
 alt sin modelo activo
   R --> FE : 503
 end
-R -> PC : process_uploaded_clip(file, t_tocado_ms)
-PC -> PC : valida tamaño (413), video (400)\ny t_tocado_ms en [0, duración] (422)
+R -> PC : process_uploaded_clip(file, instantes)
+PC -> PC : valida tamaño (413), video (400)\ny cada instante de luz en [0, duración] (422)
 loop por cada frame (cv2.VideoCapture)
   PC -> Y : add_frame(frame)
 end
@@ -46,8 +46,8 @@ Y --> PC : TrackedSequence
 PC -> ST : save_clip(archivo)
 ST --> PC : uri + sha256
 PC --> R : ClipProcesado
-R -> AR : execute(combate, video, luz, t_tocado_ms)
-AR -> DB : tx: clip, tocado (simulado),\ntocado_clip, revision_var (abierta)
+R -> AR : execute(combate, video, instantes)
+AR -> DB : tx: clip, tocado (simulado,\nt_luz_a_ms, t_luz_b_ms, t_tocado_ms = mínimo),\ntocado_clip, revision_var (abierta)
 AR --> R : revision_id
 R -> PM : execute(match_id, revision_id, tracked, lados, luz)
 PM -> FX : extract() en executor
@@ -72,16 +72,18 @@ else pose incompleta
 end
 R -> RC : execute(tocado_id, revision_id, tracked,\nresultado, latencia_ms)
 RC -> ST : save_keypoints(.npz)
-RC -> DB : tx: clasificacion (modelo activo)\n+ revision.clasificacion_id
+RC -> DB : tx: clasificacion (modelo activo,\nlatencia_ms, latencia_inferencia_ms)\n+ revision.clasificacion_id
 R --> FE : 200 {revision_id, disponible, motivo,\nfencer, action, confidence, timed_out}
 FE --> Árbitro : sugerencia o "Clasificación no disponible"
 
-Árbitro -> FE : decisión (mantener / cambiar / anular)
-FE -> R : POST /revisiones/{revision_id}/veredicto
+Árbitro -> FE : clase final (6, sin preselección) o anular;\nsi eligió clase: ¿cambia la decisión en pista?
+FE -> R : POST /revisiones/{revision_id}/veredicto\n{decision: mantener | cambiar | anular, clase_final}
 R -> RV : execute(revision_id, decision, clase_final, arbitro_id)
 RV -> DB : tx: veredicto + cierra revision_var\n+ registro_auditoria (hash en la base)
 alt ya tiene veredicto / sin clasificación
   RV --> R : 409
+else clase_final ausente (mantener/cambiar) o presente (anular)
+  RV --> R : 422
 end
 RV -> RV : línea en EVIDENCE_DIR/<evento_id>.jsonl
 R --> FE : 200 {veredicto_id, auditoria_seq, auditoria_hash, ...}

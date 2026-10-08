@@ -12,6 +12,9 @@ package "application" {
   class VerificarAuditoria
   class ObtenerModeloActivo
   class ConsultarSalud
+  class CrearSesionValidacion {
+    uso técnico (script)
+  }
   class ResumirValidacion {
     +execute(evento_id): ResumenValidacion
   }
@@ -116,5 +119,7 @@ Auditoria --> Revision
 Clasificacion --> ModeloVersion
 Tocado --> Combate
 Clip --> Combate
+CrearSesionValidacion --> UnidadDeTrabajoPort
+note top of CrearSesionValidacion : Migraciones Alembic 0001-0006.\n0005 precarga "Evento de prueba", "Validación 1",\n"Árbitro de prueba" y "Operador de prueba".
 note bottom of PostgresUnidadDeTrabajo : Una transacción por caso de uso; el veredicto\ncierra la revisión y escribe la auditoría (append-only)\nen la misma transacción.
 @enduml
