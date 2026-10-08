@@ -429,3 +429,26 @@ def test_usuario_con_saltos_de_linea_no_inyecta_lineas_en_el_log(crear_app, capl
     app.client.post("/auth/login", json={"usuario": "x\nauth.login_ok ip=9.9.9.9", "password": "y"})
 
     assert all("\n" not in r.getMessage() for r in caplog.records)
+
+
+def test_bloqueo_por_cliente_real_con_dos_saltos_de_confianza(crear_app, monkeypatch):
+    """Tras nginx y el túnel de Cloudflare, XFF llega como "<cliente>, <salida de Railway>":
+    con 2 saltos de confianza el bloqueo es por el cliente, no por la IP compartida."""
+    from shared import config
+
+    monkeypatch.setattr(config, "PROXY_SALTOS_CONFIANZA", 2)
+    cab = {"X-Proxy-Token": "proxy-secreto"}
+    app = crear_app(proxy_token="proxy-secreto", autenticado=False)
+    for _ in range(5):
+        app.client.post(
+            "/auth/login", json=MALO, headers={**cab, "X-Forwarded-For": "1.1.1.1, 9.9.9.9"}
+        )
+
+    bloqueado = app.client.post(
+        "/auth/login", json=LOGIN, headers={**cab, "X-Forwarded-For": "1.1.1.1, 9.9.9.9"}
+    )
+    otro_cliente = app.client.post(
+        "/auth/login", json=LOGIN, headers={**cab, "X-Forwarded-For": "2.2.2.2, 9.9.9.9"}
+    )
+    assert bloqueado.status_code == 429
+    assert otro_cliente.status_code == 200
