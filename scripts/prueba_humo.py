@@ -21,6 +21,9 @@ Uso (Fog en :8001, Cloud y Redis de la base de prueba ya levantados):
         --evento <evento_id> --arbitro <arbitro_id> --salida humo.json \\
         [--redis-url redis://localhost:6390/0]
 
+Fog exige autenticación (DEPLOY05): la prueba inicia sesión con `--usuario` y la
+contraseña de la variable de entorno `SABRE_PASSWORD` (nunca como argumento).
+
 Con `--redis-url` (el mismo Redis de Cloud y Fog) agrega `inferencia_ms`, la latencia del
 clasificador publicada por Cloud (F-027, ≤ 50 ms).
 """
@@ -30,6 +33,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import sqlite3
 import sys
 import time
@@ -197,6 +201,7 @@ def main() -> int:
     parser.add_argument("--evento", required=True, help="evento_id de la base de prueba")
     parser.add_argument("--arbitro", required=True, help="arbitro_id de la base de prueba")
     parser.add_argument("--fog-url", default="http://localhost:8001")
+    parser.add_argument("--usuario", default=os.environ.get("AUTH_USER"), help="usuario maestro de Fog")
     parser.add_argument("--redis-url", default=None, help="Redis de Cloud, para inferencia_ms")
     parser.add_argument("--salida", type=Path, required=True, help="JSON con los resultados")
     parser.add_argument(
@@ -208,7 +213,16 @@ def main() -> int:
     luces = {fila["stem"]: fila for fila in csv.DictReader(LUZ_CSV.open(encoding="utf-8"))}
     brazos = brazos_anotados()
     resultados = []
+    password = os.environ.get("SABRE_PASSWORD")
+    if not args.usuario or not password:
+        print("Falta --usuario (o AUTH_USER) y la variable SABRE_PASSWORD.", file=sys.stderr)
+        return 2
     with httpx.Client(base_url=args.fog_url, timeout=120) as cliente:
+        login = cliente.post("/auth/login", json={"usuario": args.usuario, "password": password})
+        if login.status_code != 200:
+            print(f"Login rechazado por Fog (HTTP {login.status_code}).", file=sys.stderr)
+            return 2
+        cliente.headers["Authorization"] = f"Bearer {login.json()['access_token']}"
         for clase in CLASES:
             resultados.append(correr_clip(cliente, args, clase, luces, brazos))
             print(json.dumps(resultados[-1], ensure_ascii=False), flush=True)

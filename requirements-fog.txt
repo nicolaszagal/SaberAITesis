@@ -35,3 +35,8 @@ alembic==1.20.0
 # Cliente HTTP de scripts/prueba_humo.py, que corre dentro del contenedor de Fog
 # (DOCK01). Misma versión que requirements.txt.
 httpx==0.28.1
+
+# Autenticación del usuario maestro (DEPLOY05): hash Argon2id y JWT HS256.
+# Versiones verificadas en PyPI el 08/10/2026.
+argon2-cffi==25.1.0
+PyJWT==2.15.1

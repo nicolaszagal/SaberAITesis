@@ -6,6 +6,12 @@ import pytest
 
 from shared import config
 
+AUTH = {
+    "AUTH_USER": "u",
+    "AUTH_PASSWORD_HASH": "$argon2id$v=19$m=65536,t=3,p=4$x$y",
+    "AUTH_JWT_SECRET": "s" * 48,
+}
+
 
 def test_importing_fog_main_does_not_force_aioice_debug_logging(monkeypatch):
     """DEF-24: fog/main.py no debe forzar logging.DEBUG en aioice.ice.
@@ -18,6 +24,8 @@ def test_importing_fog_main_does_not_force_aioice_debug_logging(monkeypatch):
     monkeypatch.setattr(config, "FEATURE_PREPROCESSING_PROFILE", "lstm_6class")
     monkeypatch.setattr(config, "EVIDENCE_DIR", "/tmp/evidencia")
     monkeypatch.setattr(config, "DATABASE_URL", "postgresql+asyncpg://u:c@localhost/x")
+    for nombre, valor in AUTH.items():
+        monkeypatch.setattr(config, nombre, valor)
     logging.getLogger("aioice.ice").setLevel(logging.NOTSET)
 
     import fog.main
@@ -36,6 +44,7 @@ def test_fog_no_arranca_sin_variable_obligatoria(monkeypatch, faltante):
         "FEATURE_PREPROCESSING_PROFILE": "lstm_6class",
         "EVIDENCE_DIR": "/tmp/evidencia",
         "DATABASE_URL": "postgresql+asyncpg://u:c@localhost/x",
+        **AUTH,
     }
     for nombre, valor in valores.items():
         monkeypatch.setattr(config, nombre, None if nombre == faltante else valor)
@@ -43,3 +52,32 @@ def test_fog_no_arranca_sin_variable_obligatoria(monkeypatch, faltante):
 
     with pytest.raises(RuntimeError, match=faltante):
         importlib.import_module("fog.main")
+
+
+@pytest.mark.parametrize(
+    "variable, valor, mensaje",
+    [
+        ("AUTH_JWT_SECRET", None, "AUTH_JWT_SECRET"),
+        ("AUTH_JWT_SECRET", "corto" * 3, "al menos 32 bytes"),
+        ("AUTH_USER", None, "AUTH_USER"),
+        ("AUTH_PASSWORD_HASH", None, "AUTH_PASSWORD_HASH"),
+    ],
+)
+def test_fog_no_arranca_sin_autenticacion_valida(monkeypatch, variable, valor, mensaje):
+    """DEPLOY05: Fog no arranca sin AUTH_JWT_SECRET (o con uno de < 32 bytes),
+    sin AUTH_USER o sin AUTH_PASSWORD_HASH."""
+    valores = {
+        "FEATURE_STATS_PATH": "/tmp/feature_stats.npz",
+        "FEATURE_PREPROCESSING_PROFILE": "lstm_6class",
+        "EVIDENCE_DIR": "/tmp/evidencia",
+        "DATABASE_URL": "postgresql+asyncpg://u:c@localhost/x",
+        **AUTH,
+        variable: valor,
+    }
+    for nombre, v in valores.items():
+        monkeypatch.setattr(config, nombre, v)
+    monkeypatch.delitem(sys.modules, "fog.main", raising=False)
+
+    with pytest.raises(RuntimeError, match=mensaje) as exc:
+        importlib.import_module("fog.main")
+    assert "sss" not in str(exc.value)  # el mensaje nunca incluye el secreto

@@ -29,3 +29,23 @@ class SinModeloActivo(ErrorDeDominio):
 
 class VeredictoInvalido(ErrorDeDominio):
     """Combinación decision/clase_final que el esquema no admite."""
+
+
+class CredencialesInvalidas(ErrorDeDominio):
+    """Usuario o contraseña incorrectos (mensaje único, sin distinguir cuál)."""
+
+
+class DemasiadosIntentos(ErrorDeDominio):
+    """La IP superó los intentos de login permitidos y está bloqueada.
+
+    Attributes:
+        reintentar_en_s: segundos que faltan para que termine el bloqueo.
+    """
+
+    def __init__(self, reintentar_en_s: int):
+        super().__init__("demasiados intentos")
+        self.reintentar_en_s = reintentar_en_s
+
+
+class TokenInvalido(ErrorDeDominio):
+    """Token ausente, vencido, con firma alterada o mal formado."""

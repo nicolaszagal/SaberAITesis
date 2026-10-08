@@ -3,6 +3,70 @@
 Versión v1 (carga manual de clips de acción; un combate admite N revisiones). Sigue
 `arquitectura_diagramas.html` con dos adaptaciones documentadas en la sección final.
 
+## 0. Autenticación (DEPLOY05)
+
+Fog tiene un **usuario maestro único**. Toda ruta exige `Authorization: Bearer <token>`,
+salvo `GET /health` y `POST /auth/login`. Sin token, con token vencido o con firma alterada
+responde **401** (`{"detail": "No autenticado"}`, cabecera `WWW-Authenticate: Bearer`).
+Las secciones siguientes no repiten el encabezado.
+
+### POST /auth/login
+
+Cuerpo: `{"usuario": "...", "password": "..."}` (`usuario` ≤ 128 y `password` ≤ 256
+caracteres; más es **422**). Respuesta **200**:
+```json
+{"access_token": "<jwt>", "expires_in": 28800}
+```
+JWT HS256 firmado con `AUTH_JWT_SECRET`, claims `sub`, `iat`, `exp` (8 h), `jti`.
+
+| Código | Cuándo |
+|---|---|
+| 200 | Credenciales correctas. |
+| 401 | Usuario o contraseña incorrectos. Mismo cuerpo en ambos casos: `{"detail": "Credenciales inválidas"}`. |
+| 429 | La IP acumuló 5 fallos en 15 min y queda bloqueada 15 min (también si la contraseña es correcta). Cabecera `Retry-After` en segundos. |
+| 503 | Redis (contador de intentos) no responde. |
+
+La IP del bloqueo es la última entrada de `X-Forwarded-For` solo cuando Fog tiene
+`PROXY_SHARED_TOKEN` (la petición ya pasó por el proxy de confianza); en otro caso es la IP
+del socket.
+
+### GET /auth/me
+
+Con token válido responde **200** `{"usuario": "<sub>"}`; el frontend lo usa para validar la
+sesión. **401** si el token ya no sirve.
+
+### Cierre de sesión y limitación
+
+El logout lo hace el cliente borrando el token. **No hay lista de revocación**: un token
+robado sigue siendo válido hasta que vence (8 h). Se acepta como limitación del MVP; la
+mitigación es la vida corta del token y rotar `AUTH_JWT_SECRET` (invalida todos los tokens).
+
+### Otros códigos de seguridad
+
+| Código | Cuándo |
+|---|---|
+| 403 | Con `PROXY_SHARED_TOKEN` definido, la petición no trae `X-Proxy-Token` igual a ese valor (aplica a todas las rutas, incluidas `/health` y `/auth/login`). Cuerpo `{"detail": "Acceso denegado"}`. |
+| 401 | Falta de token, token vencido o alterado (toda ruta salvo las públicas). |
+| 429 | Bloqueo por intentos de login (ver arriba). |
+
+### Endurecimiento
+
+- **CORS** cerrado: solo los orígenes de `CORS_ORIGINS` (sin comodines; vacío en el despliegue
+  remoto, donde el navegador usa el mismo origen), métodos `GET, POST, OPTIONS`, cabeceras
+  `Authorization` y `Content-Type`, sin credenciales.
+- **Cabeceras** en toda respuesta: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+  `Referrer-Policy: no-referrer`, `Cache-Control: no-store`.
+- Con `ENTORNO=remoto`: `/docs`, `/redoc` y `/openapi.json` responden **404** y
+  `/ws/veredicto/{revision_id}` no existe (WebRTC no se usa en la Validación 1).
+- `/health` solo devuelve `ok` o `error` por componente (`fog`, `redis`, `postgres`).
+- **WebSocket — solo local, temporal.** En remoto (`ENTORNO=remoto`) la ruta
+  `/ws/veredicto/{revision_id}` no existe. En local el navegador no puede enviar
+  `Authorization`, así que se acepta el token en la query
+  (`/ws/veredicto/{revision_id}?token=<jwt>`); sin token válido se cierra con 1008 antes de
+  aceptar. En V2 se reemplaza por autenticación por primer mensaje (ver
+  `Tesis/prompts/DEPLOY/PENDIENTE_V2_websocket_camara.md`); no usar `?token=` en ningún entorno
+  accesible desde internet.
+
 ## 1. Flujo
 
 ```
@@ -501,6 +565,10 @@ Fog mantiene una tarea de fondo por revisión activa (`revision_id`) que hace `X
 bloqueante sobre este stream y reenvía el resultado por WebSocket en cuanto llega.
 
 ## 7. Fog → Front: WebSocket de veredicto
+
+> **Autenticación: solo local, temporal.** Con `ENTORNO=remoto` esta ruta no existe. En local
+> exige el JWT en `?token=` (ver sección 0); en V2 se reemplaza por autenticación por primer
+> mensaje (`Tesis/prompts/DEPLOY/PENDIENTE_V2_websocket_camara.md`).
 
 `GET /ws/veredicto/{revision_id}`: el WebSocket se identifica por revisión, con el
 `revision_id` que devuelven `POST /matches/{match_id}/clip` o `POST /webrtc/offer`. Si la

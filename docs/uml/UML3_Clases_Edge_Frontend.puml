@@ -18,15 +18,20 @@ package "Edge (backend/edge)" {
 package "Frontend (SaberAISoftware, Expo / React Native web)" {
   package "presentation" {
     class App {
-      screen: dashboard | live | config | history
+      screen: live (por defecto) | config | history
     }
-    class AppHeader
-    class DashboardScreen
+    class AppHeader {
+      estado (/health) y modelo activo
+    }
     class LiveScreen
     class ConfigScreen
     class HistoryScreen
     class ClipPlayer
-    class "PasoClip / PasoSugerencia / PasoDecision" as PanelRevision
+    class "PasoClip / PasoSugerencia / PasoDecision" as PanelRevision {
+      PasoClip: instante por luz A y B
+      PasoDecision: 6 clases sin preselección
+      o anular; ¿cambia la decisión en pista?
+    }
     class StateMessage
     class Button
     class CombatProvider <<Context>> {
@@ -65,7 +70,6 @@ package "Frontend (SaberAISoftware, Expo / React Native web)" {
     class VeredictoRegistrado
   }
   App --> AppHeader
-  App --> DashboardScreen
   App --> LiveScreen
   App --> ConfigScreen
   App --> HistoryScreen
@@ -75,8 +79,8 @@ package "Frontend (SaberAISoftware, Expo / React Native web)" {
   PanelRevision ..> SessionProvider
   ConfigScreen ..> CombatProvider
   ConfigScreen --> fogApi
-  DashboardScreen --> fogApi
-  HistoryScreen --> fogApi
+  HistoryScreen --> fogApi : revisiones, resumen,\nexportar evidencia
+  AppHeader --> fogApi : getModeloActivo
   AppHeader ..> useHealth
   useHealth --> fogApi
   CombatProvider --> fogApi : getCombate

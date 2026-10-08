@@ -6,7 +6,7 @@ left to right direction
 package "infrastructure.api" {
   class routes <<FastAPI router>> {
     +configure_match(body): MatchConfigResponse
-    +upload_clip(match_id, file, t_tocado_ms, has_luz_A, has_luz_B): ClipUploadResponse
+    +upload_clip(match_id, file, t_luz_a_ms, t_luz_b_ms): ClipUploadResponse
     +registrar_veredicto(revision_id, body): VeredictoResponse
     +webrtc_offer(body): OfferResponse
     +webrtc_luz(match_id, body): LuzAck
@@ -17,10 +17,10 @@ package "infrastructure.api" {
 
 package "application" {
   class ConfigurarCombate {
-    +execute(evento_id, pista, arbitro_id, tirador_a, tirador_b)
+    +execute(evento_id, pista, tirador_a, tirador_b, arbitro_id): Combate
   }
   class AbrirRevisionVar {
-    +execute(combate, video, luz, t_tocado_ms): RevisionAbierta
+    +execute(combate, video, instantes): RevisionAbierta
   }
   class ProcessIncomingMatch {
     -_min_frames: int
@@ -128,6 +128,13 @@ package "domain" {
   class LuzSignal {
     has_luz_a, has_luz_b
   }
+  class InstantesLuz {
+    t_luz_a_ms, t_luz_b_ms
+    t_tocado_ms = min(luces encendidas)
+  }
+  class DatosTirador {
+    alias (opcional), brazo_armado
+  }
   class VerdictView {
     fencer, action, confidence
     probs, latencia_inferencia_ms, modelo
@@ -191,6 +198,8 @@ RegistroEvidenciaPort <|.. RegistroEvidenciaJsonl
 UnavailableResult --> MotivoNoDisponible
 Match --> WeaponSide
 Match --> LuzSignal
+AbrirRevisionVar ..> InstantesLuz
+ConfigurarCombate ..> DatosTirador
 note bottom of InMemoryMatchRepository : Guarda el Match por match_id en memoria (se pierde\nal reiniciar). Lo que se audita está en PostgreSQL\n(ver UML1b).
 note bottom of consume_track : Flujo WebRTC: no abre revision_var\nni persiste (la Validación 1 usa la carga de clip).
 @enduml

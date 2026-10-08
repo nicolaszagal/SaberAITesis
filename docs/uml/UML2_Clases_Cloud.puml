@@ -4,6 +4,7 @@ title Diagrama de clases - Nodo Cloud
 package "application" {
   class ClassifyAndPublish {
     -_modelo_version_name: str
+    +precalentar()
     +run_forever()
   }
 }
@@ -14,6 +15,7 @@ package "ports" {
   }
   abstract class ActionClassifierPort {
     +classify(sequence, luz): RawVerdict
+    +precalentar()
   }
   abstract class ArbitrationPolicyPort {
     +resolve(raw, luz): RawVerdict
@@ -32,6 +34,7 @@ package "infrastructure" {
     -_model: LSTMClassifier
     -_device
     +model_version_name(run_dir): str
+    +precalentar()
     -_apply_favero_logit_mask(logits, luz)
   }
   class NullArbitrationPolicy {
@@ -103,5 +106,6 @@ InvalidFeatureMessage --> MotivoNoDisponible
 FeatureSequence --> LuzSignal
 RawVerdict --> ActionClass
 Verdict --> ActionClass
+note top of ClassifyAndPublish : Al arrancar ejecuta una inferencia de\nprecalentamiento con ceros (F-027);\nsi falla, Cloud no arranca.
 note bottom of NullArbitrationPolicy : Las reglas FIE t.101-t.106 (scoring híbrido)\nno están implementadas: solo existe el puerto.\nEl filtro Favero se aplica en LSTM6ClassAdapter,\nsobre los logits antes del softmax.
 @enduml

@@ -135,6 +135,77 @@ SESSION_SWEEP_INTERVAL_S = float(os.environ.get("SESSION_SWEEP_INTERVAL_S", "30.
 # quede acumulando memoria en Redis indefinidamente.
 VERDICT_STREAM_TTL_S = int(os.environ.get("VERDICT_STREAM_TTL_S", "3600"))
 
+# --- Autenticación y endurecimiento de Fog (DEPLOY05) -----------------------
+# Entorno de despliegue: "remoto" desactiva /docs, /redoc y /openapi.json y
+# deshabilita /ws/veredicto (WebRTC no se usa en la Validación 1).
+ENTORNO = os.environ.get("ENTORNO", "local")
+
+# Usuario maestro único. El hash es Argon2id (scripts/crear_hash_password.py);
+# nunca la contraseña en claro. Sin default: Fog no arranca sin ellos.
+AUTH_USER = os.environ.get("AUTH_USER")
+AUTH_PASSWORD_HASH = os.environ.get("AUTH_PASSWORD_HASH")
+
+# Secreto HS256 del JWT: al menos 32 bytes aleatorios. Sin default.
+AUTH_JWT_SECRET = os.environ.get("AUTH_JWT_SECRET")
+AUTH_JWT_SECRET_MIN_BYTES = 32
+
+# Una jornada de arbitraje.
+AUTH_TOKEN_TTL_S = 8 * 3600
+
+# Bloqueo por intentos: AUTH_MAX_FALLOS fallos en AUTH_VENTANA_S segundos por
+# IP bloquean esa IP durante AUTH_BLOQUEO_S segundos.
+AUTH_MAX_FALLOS = 5
+AUTH_VENTANA_S = 15 * 60
+AUTH_BLOQUEO_S = 15 * 60
+
+# Si está definido, Fog rechaza con 403 toda petición sin `X-Proxy-Token`
+# igual a este valor (el nginx del frontend lo agrega). Vacío en local.
+PROXY_SHARED_TOKEN = os.environ.get("PROXY_SHARED_TOKEN") or None
+
+# Orígenes CORS permitidos, separados por comas, sin comodines. Vacío en el
+# despliegue remoto (mismo origen vía /api); en desarrollo http://localhost:8081.
+CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "")
+
+
+def cors_origins() -> list[str]:
+    """Lista de orígenes CORS permitidos, tomada de `CORS_ORIGINS`.
+
+    Returns:
+        Orígenes sin espacios ni vacíos; lista vacía si no hay ninguno.
+
+    Raises:
+        RuntimeError: si algún origen es el comodín `*`.
+    """
+    origenes = [o.strip() for o in CORS_ORIGINS.split(",") if o.strip()]
+    if "*" in origenes:
+        raise RuntimeError("CORS_ORIGINS no admite comodines: listar cada origen.")
+    return origenes
+
+
+def require_auth() -> None:
+    """Falla si la configuración de autenticación falta o es débil.
+
+    Fog la llama al arrancar, antes de construir la app.
+
+    Raises:
+        RuntimeError: si falta `AUTH_USER`, `AUTH_PASSWORD_HASH` o
+            `AUTH_JWT_SECRET`, o si el secreto tiene menos de 32 bytes.
+            El mensaje nunca incluye los valores.
+    """
+    faltan = [
+        n for n in ("AUTH_USER", "AUTH_PASSWORD_HASH", "AUTH_JWT_SECRET")
+        if not globals().get(n)
+    ]
+    if faltan:
+        raise RuntimeError(
+            "Faltan variables de autenticación requeridas: " + ", ".join(faltan) + "."
+        )
+    if len(AUTH_JWT_SECRET.encode()) < AUTH_JWT_SECRET_MIN_BYTES:
+        raise RuntimeError(
+            f"AUTH_JWT_SECRET debe tener al menos {AUTH_JWT_SECRET_MIN_BYTES} bytes."
+        )
+
+
 # Mapeo fijo v1, confirmado por Nicolas: A=ROJ (izquierda en cámara), B=VER (derecha).
 FENCER_COLOR = {"A": "ROJ", "B": "VER"}
 

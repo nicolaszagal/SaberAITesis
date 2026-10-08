@@ -17,6 +17,7 @@ from dependency_injector import containers, providers
 from ultralytics import YOLO
 
 from fog.application.abrir_revision import AbrirRevisionVar
+from fog.application.autenticar import IniciarSesion, ValidarToken
 from fog.application.configurar_combate import ConfigurarCombate
 from fog.application.forward_verdict import ForwardVerdictToClient
 from fog.application.consultar_revisiones import (
@@ -32,6 +33,9 @@ from fog.application.process_match import ProcessIncomingMatch
 from fog.application.resumir_validacion import ResumirValidacion
 from fog.application.registrar_clasificacion import RegistrarClasificacion
 from fog.application.registrar_veredicto import RegistrarVeredicto
+from fog.infrastructure.auth.argon2_verificador import Argon2Verificador
+from fog.infrastructure.auth.jwt_emisor import JwtEmisor
+from fog.infrastructure.auth.redis_limitador import RedisLimitador
 from fog.infrastructure.evidencia.fuente_modelo_m01 import FuenteModeloM01
 from fog.infrastructure.evidencia.lector_jsonl import LectorEvidenciaJsonl
 from fog.infrastructure.evidencia.registro_jsonl import RegistroEvidenciaJsonl
@@ -247,6 +251,30 @@ class Container(containers.DeclarativeContainer):
         modelos=modelo_version_repository,
         fuente_modelo=fuente_evidencia_modelo,
     )
+
+    # Autenticación del usuario maestro (DEPLOY05).
+    verificador_credenciales = providers.Singleton(
+        Argon2Verificador,
+        usuario=config.auth_user,
+        password_hash=config.auth_password_hash,
+    )
+    emisor_tokens = providers.Singleton(
+        JwtEmisor, secreto=config.auth_jwt_secret, ttl_s=config.auth_token_ttl_s
+    )
+    limitador_intentos = providers.Singleton(
+        RedisLimitador,
+        client=redis_client,
+        max_fallos=config.auth_max_fallos,
+        ventana_s=config.auth_ventana_s,
+        bloqueo_s=config.auth_bloqueo_s,
+    )
+    iniciar_sesion = providers.Singleton(
+        IniciarSesion,
+        verificador=verificador_credenciales,
+        emisor=emisor_tokens,
+        limitador=limitador_intentos,
+    )
+    validar_token = providers.Singleton(ValidarToken, emisor=emisor_tokens)
 
     feature_publisher = providers.Singleton(RedisFeaturePublisher, client=redis_client)
 

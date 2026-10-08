@@ -37,4 +37,8 @@ COPY shared/ shared/
 COPY dataset/lstm_6class/checkpoints/${RUN_ID}/run_config.json dataset/lstm_6class/checkpoints/${RUN_ID}/run_config.json
 COPY dataset/lstm_6class/checkpoints/${RUN_ID}/best_model.pt dataset/lstm_6class/checkpoints/${RUN_ID}/best_model.pt
 
+# Usuario no root (DEPLOY05). Cloud solo lee el checkpoint y habla con Redis.
+RUN useradd --system --uid 10001 --create-home sabre
+USER sabre
+
 CMD ["python", "-m", "cloud.main"]

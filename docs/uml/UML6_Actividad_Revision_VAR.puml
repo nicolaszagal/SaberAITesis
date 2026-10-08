@@ -2,12 +2,12 @@
 !include skin.iuml
 title Actividad - Revisión VAR asistida (Validación 1, estado final)
 start
-:Configurar combate: evento, pista, árbitro,\ntiradores A/B y brazo armado (CU-01);
+:Configurar combate (CU-01): evento y árbitro precargados,\npista P1, alias opcionales, brazo armado A y B;
 note right: POST /matches/config\nbrazo armado obligatorio, sin valor por defecto
-:Seleccionar clip y marcar luces e instante del tocado (CU-02, CU-03);
-note right: sin luz encendida no se puede analizar (422)
+:Seleccionar clip y marcar el instante de cada luz\nencendida (A y/o B) (CU-02, CU-03);
+note right: al menos una luz; t_tocado_ms = el menor instante
 :Subir clip;
-:Validar archivo y guardarlo (SHA-256);
+:Validar archivo e instantes y guardarlo (SHA-256);
 :Abrir revisión: clip, tocado simulado, revision_var;
 note right: no se registra qué tirador pidió el VAR (D-04)
 :Pose YOLOv8x + BoT-SORT, 192 features;
@@ -21,16 +21,22 @@ if (¿pose completa?) then (sí)
 else (no)
   :"Clasificación no disponible"\nmotivo pose_incompleta;
 endif
-:Registrar clasificación y keypoints crudos;
-:Mostrar clip (velocidad normal / lenta, cuadro a cuadro)\ny la sugerencia rotulada "sugerencia" (CU-07);
-if (¿Decisión del árbitro?) then (mantener / cambiar)
-  :Elegir la clase final (6 opciones);
-else (anular)
-  :Anular la acción (sin clase final);
+:Registrar clasificación, latencias y keypoints crudos;
+:Mostrar clip (velocidad normal / lenta, cuadro a cuadro)\ny la sugerencia destacada, sin preseleccionar (CU-07);
+if (¿El árbitro anula la acción?) then (no)
+  :Elegir la clase final entre las 6;
+  if (¿Cambia la decisión original en pista?) then (sí)
+    :decisión = cambiar;
+  else (no)
+    :decisión = mantener;
+  endif
+else (sí)
+  :decisión = anular (sin clase final);
 endif
+:Confirmar y registrar;
 :Registrar veredicto, cerrar la revisión\ny guardar la auditoría (misma transacción);
 note right: solo el árbitro cierra la revisión (RNF-01, RF-21)\nregistros append-only (RNF-05)
 :Agregar línea al log de evidencia;
-:Historial y resumen de la validación\n(κ, latencia, concordancia);
+:Historial con resumen de la validación\n(κ, latencia, concordancia) y exportación;
 stop
 @enduml

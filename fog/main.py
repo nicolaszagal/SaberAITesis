@@ -35,10 +35,9 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
 from fog.composition import Container
-from fog.infrastructure.api import routes
+from fog.infrastructure.api.app import MODULOS_WIRING, crear_app
 from shared import config
 from shared.logging_config import configurar_logging_tecnico
 
@@ -51,6 +50,8 @@ config.require_paths(
     "EVIDENCE_DIR",
     "DATABASE_URL",
 )
+# DEPLOY05: sin usuario maestro ni secreto JWT de >= 32 bytes, Fog no arranca.
+config.require_auth()
 
 container = Container()
 container.config.redis_url.from_value(config.REDIS_URL)
@@ -67,7 +68,14 @@ container.config.clip_max_mb.from_value(config.CLIP_MAX_MB)
 container.config.luz_timeout_s.from_value(config.FAVERO_LUZ_TIMEOUT_S)
 container.config.clip_upload_verdict_timeout_s.from_value(config.CLIP_UPLOAD_VERDICT_TIMEOUT_S)
 container.config.clip_upload_timeout_s.from_value(config.CLIP_UPLOAD_TIMEOUT_S)
-container.wire(modules=[routes])
+container.config.auth_user.from_value(config.AUTH_USER)
+container.config.auth_password_hash.from_value(config.AUTH_PASSWORD_HASH)
+container.config.auth_jwt_secret.from_value(config.AUTH_JWT_SECRET)
+container.config.auth_token_ttl_s.from_value(config.AUTH_TOKEN_TTL_S)
+container.config.auth_max_fallos.from_value(config.AUTH_MAX_FALLOS)
+container.config.auth_ventana_s.from_value(config.AUTH_VENTANA_S)
+container.config.auth_bloqueo_s.from_value(config.AUTH_BLOQUEO_S)
+container.wire(modules=MODULOS_WIRING)
 
 
 @asynccontextmanager
@@ -91,7 +99,7 @@ async def lifespan(app: FastAPI):
     await container.redis_client().close()
 
 
-app = FastAPI(
+app = crear_app(
     title="SABRE.AI — Fog Service",
     description=(
         "Gateway WebRTC + extracción de features biomecánicas para el "
@@ -103,13 +111,4 @@ app = FastAPI(
     ),
     version="2.0.0",
     lifespan=lifespan,
-)
-
-app.include_router(routes.router)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
 )

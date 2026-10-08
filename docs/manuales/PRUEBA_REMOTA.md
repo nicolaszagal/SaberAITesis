@@ -62,3 +62,14 @@ Los clips quedan en `datos/storage`.
 - Si el Mac se suspende o pierde red, el árbitro pierde el acceso. Use `caffeinate` y conexión estable.
 - Los clips del árbitro se guardan en este Mac; trátelos según el consentimiento informado (RNF-16).
 - La vista previa de cámaras (WebSocket, Validación 2) no está disponible por el túnel y no se usa en la Validación 1.
+
+## 7. Cierre de la sesión piloto (DEPLOY04)
+
+Cierre registrado el 08/10/2026 (hora local del Mac, ~13:57):
+
+- El túnel de `cloudflared` ya estaba terminado (el log registra `Tunnel server stopped` a las 18:55 UTC); no quedaban procesos `cloudflared` ni el PID 16110. El archivo `.pid` ya no existía antes de ejecutar `stop`.
+- `sh scripts/prueba_remota.sh stop`: sin contenedores del proxy (`docker-compose -f docker-compose.remoto.yml ps` vacío) y nada escuchando en `127.0.0.1:8090`.
+- La URL pública dejó de resolver (`curl: (6) Could not resolve host`, código 000).
+- Se detuvo con `kill 16157` el `caffeinate -dimsu` lanzado el 05/10 para la ventana de prueba, que seguía vivo.
+- Se borró `.secrets/htpasswd`: las credenciales del árbitro ya no son válidas.
+- Evidencia conservada en `datos/archivo_prueba_remota/` (URL y log del túnel; fuera de git).

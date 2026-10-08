@@ -78,15 +78,15 @@ from dataclasses import dataclass  # noqa: E402
 from datetime import date  # noqa: E402
 
 import cv2  # noqa: E402
+import fakeredis  # noqa: E402
 import numpy as np  # noqa: E402
 from dependency_injector import providers  # noqa: E402
-from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 
 from fog.composition import Container  # noqa: E402
 from fog.domain.models import ExtractedFeatures, TrackedSequence, VerdictView  # noqa: E402
-from fog.infrastructure.api import routes  # noqa: E402
+from fog.infrastructure.api.app import MODULOS_WIRING, crear_app as crear_app_fog  # noqa: E402
 from fog.infrastructure.persistence.in_memory_match_repository import (  # noqa: E402
     InMemoryMatchRepository,
 )
@@ -101,6 +101,32 @@ from tests.fog.fakes import (  # noqa: E402
     FakeVerdictSubscriber,
     InlineExecutor,
 )
+
+# Credenciales y secreto de prueba (DEPLOY05). El hash se calcula una vez.
+AUTH_USUARIO = "arbitro-maestro"
+AUTH_PASSWORD = "clave-de-prueba-123"
+AUTH_SECRETO = "s" * 48
+
+
+def _config_auth(container: Container) -> None:
+    from argon2 import PasswordHasher
+
+    container.config.auth_user.from_value(AUTH_USUARIO)
+    container.config.auth_password_hash.from_value(PasswordHasher().hash(AUTH_PASSWORD))
+    container.config.auth_jwt_secret.from_value(AUTH_SECRETO)
+    container.config.auth_token_ttl_s.from_value(8 * 3600)
+    container.config.auth_max_fallos.from_value(5)
+    container.config.auth_ventana_s.from_value(900)
+    container.config.auth_bloqueo_s.from_value(900)
+    container.config.redis_url.from_value("redis://fake")
+    container.redis_client.override(providers.Object(fakeredis.FakeAsyncRedis()))
+
+
+def encabezado_auth(container: Container) -> dict[str, str]:
+    """`Authorization: Bearer` con un token válido emitido por el contenedor."""
+    token = container.emisor_tokens().emitir(AUTH_USUARIO).access_token
+    return {"Authorization": f"Bearer {token}"}
+
 
 VEREDICTO_DEFAULT = VerdictView(
     match_id="unused",
@@ -205,6 +231,7 @@ class AppAuditable:
     evidencia_dir: Path
     evento_id: uuid.UUID
     arbitro_id: uuid.UUID
+    fastapi: object = None  # la app FastAPI (para recorrer sus rutas)
 
     def body_config(self, **cambios) -> dict:
         body = {
@@ -257,9 +284,11 @@ def crear_app(database_url, alembic_cfg, tmp_path):
     def _crear(
         *, locked: bool = True, extraccion_falla: bool = False, subscriber=None,
         verdict_timeout_s: float = 30.0, clip_max_mb: float = 200.0,
-        clip_timeout_s: float = 60.0, pose_estimator=None,
+        clip_timeout_s: float = 60.0, pose_estimator=None, autenticado: bool = True,
+        **opciones_app,
     ) -> AppAuditable:
         container = Container()
+        _config_auth(container)
         container.config.database_url.from_value(database_url)
         container.config.storage_dir.from_value(str(tmp_path / "storage"))
         container.config.evidence_dir.from_value(str(tmp_path / "evidencia"))
@@ -286,15 +315,18 @@ def crear_app(database_url, alembic_cfg, tmp_path):
         container.match_repository.override(InMemoryMatchRepository())
         container.executor.override(InlineExecutor())
         container.sessions.override(SessionRegistry())
-        container.wire(modules=[routes])
+        container.wire(modules=MODULOS_WIRING)
 
-        app = FastAPI()
-        app.include_router(routes.router)
-        client_cm = TestClient(app, raise_server_exceptions=False)
+        app = crear_app_fog(**{"entorno": "local", "cors_origins": [], **opciones_app})
+        client_cm = TestClient(
+            app, raise_server_exceptions=False,
+            headers=encabezado_auth(container) if autenticado else None,
+        )
         client = client_cm.__enter__()
         abiertos.append((client_cm, container))
         return AppAuditable(
-            client, container, sql, tmp_path / "storage", tmp_path / "evidencia", evento_id, arbitro_id
+            client, container, sql, tmp_path / "storage", tmp_path / "evidencia", evento_id,
+            arbitro_id, fastapi=app,
         )
 
     yield _crear
