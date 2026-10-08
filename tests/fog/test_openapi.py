@@ -10,6 +10,7 @@ from fog.infrastructure.api import routes
 
 def _openapi() -> dict:
     app = FastAPI()
+    app.include_router(routes.router_publico)
     app.include_router(routes.router)
     return app.openapi()
 

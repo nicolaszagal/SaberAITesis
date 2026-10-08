@@ -85,6 +85,7 @@ from fog.infrastructure.api.schemas import (
     VeredictoRequest,
     VeredictoResponse,
 )
+from fog.infrastructure.api.seguridad import exigir_autenticacion
 from fog.infrastructure.clips.clip_file_reader import (
     ClipTooLargeError,
     ExtraccionAgotadaError,
@@ -98,7 +99,12 @@ from fog.ports.file_storage import FileStoragePort
 from fog.ports.pose_estimator import PoseEstimatorPort
 from fog.ports.unidad_de_trabajo import UnidadDeTrabajoPort
 
-router = APIRouter()
+# Toda ruta exige `Authorization: Bearer` (DEPLOY05), salvo /health y
+# /auth/login. `router_publico` solo contiene /health. El WebSocket va en su
+# propio router para poder omitirlo en el despliegue remoto (ver app.py).
+router = APIRouter(dependencies=[Depends(exigir_autenticacion)])
+router_publico = APIRouter()
+router_ws = APIRouter(dependencies=[Depends(exigir_autenticacion)])
 
 
 async def _combate_o_none(match_id: str, uow: UnidadDeTrabajoPort) -> Combate | None:
@@ -859,7 +865,7 @@ async def modelo_activo(
     )
 
 
-@router.get(
+@router_publico.get(
     "/health",
     response_model=HealthResponse,
     tags=["salud"],
@@ -887,7 +893,7 @@ async def health(
     return JSONResponse(cuerpo, status_code=200 if estado.ok else 503)
 
 
-@router.websocket("/ws/veredicto/{revision_id}")
+@router_ws.websocket("/ws/veredicto/{revision_id}")
 @inject
 async def ws_veredicto(
     websocket: WebSocket,

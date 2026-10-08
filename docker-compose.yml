@@ -62,6 +62,13 @@ services:
       REDIS_URL: redis://redis:6379/0
       STORAGE_DIR: /data/storage
       EVIDENCE_DIR: /data/evidencia
+      # DEPLOY05: Fog no arranca sin estas tres (definirlas en .env, ver .env.example).
+      AUTH_USER: ${AUTH_USER:?definir AUTH_USER en .env}
+      AUTH_PASSWORD_HASH: ${AUTH_PASSWORD_HASH:?definir AUTH_PASSWORD_HASH en .env}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?definir AUTH_JWT_SECRET en .env}
+      ENTORNO: ${ENTORNO:-local}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8081}
+      PROXY_SHARED_TOKEN: ${PROXY_SHARED_TOKEN:-}
     ports:
       - "${FOG_HOST_PORT:-8001}:8001"
     volumes:
@@ -75,7 +82,7 @@ services:
       cloud:
         condition: service_started
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8001/health', timeout=3)"]
+      test: ["CMD", "python", "-c", "import os, urllib.request as u; u.urlopen(u.Request('http://localhost:8001/health', headers={'X-Proxy-Token': os.environ.get('PROXY_SHARED_TOKEN', '')}), timeout=3)"]
       interval: 10s
       timeout: 5s
       retries: 12

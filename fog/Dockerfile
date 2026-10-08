@@ -65,6 +65,14 @@ COPY alembic.ini .
 
 RUN chmod +x fog/docker-entrypoint.sh
 
+# Usuario no root (DEPLOY05). /data/storage y /data/evidencia se crean con este
+# dueño para los volúmenes con nombre; con bind mounts en Linux, el directorio
+# del host debe pertenecer al UID 10001 (chown -R 10001 datos/).
+RUN useradd --system --uid 10001 --create-home sabre \
+    && mkdir -p /data/storage /data/evidencia \
+    && chown -R sabre /data
+USER sabre
+
 EXPOSE 8001
 
 # Aplica las migraciones, registra el modelo si no hay uno activo y arranca

@@ -68,3 +68,7 @@ websockets==17.2
 
 # Linter del proyecto: ruff check fog cloud shared edge --select E,F,W (CLAUDE.md).
 ruff==0.16.10
+
+# Autenticación de Fog (DEPLOY05); mismas versiones que requirements-fog.txt.
+argon2-cffi==25.1.0
+PyJWT==2.15.1
