@@ -66,10 +66,75 @@ Detrás de nginx y del túnel, Cloudflare añade la IP de salida de Railway a `X
 nginx resolvía `FOG_UPSTREAM` al arrancar; con el túnel cerrado el contenedor fallaba (`host not found in upstream`) y Railway lo detenía. Ahora el nombre se resuelve en cada petición (`resolver` + variable): sin túnel, `/` y `/healthz` responden 200 y `/api/` responde 502. Prueba: `SaberAISoftware/deploy/railway/probar_nginx.sh` (falló antes del cambio, pasa después).
 
 ## 7. Operación el día de la exposición
-1. `sh scripts/fog_nativo.sh` con `ENV_FILE=.secrets/fog_remoto.env` (puerto 8011, base `sabre_expo`).
-2. `FOG_HOST_PORT=8011 PROXY_SHARED_TOKEN=… sh scripts/fog_remoto.sh start`: imprime la URL del túnel (cambia en cada arranque).
-3. En Railway, servicio frontend: `FOG_UPSTREAM=<URL del túnel>` y reiniciar.
-4. Al terminar: `fog_remoto.sh stop`.
+
+Todo se ejecuta en el Mac del autor. `BACKEND` = `/Users/darkarcher/Documents/Claude/Projects/Tesis/Software/backend`. Los comandos de los pasos 2 a 4 se escriben en **dos terminales** abiertas en esa carpeta (`cd BACKEND`).
+
+Servicios en la nube (Railway: frontend, cloud, redis) quedan encendidos y no se tocan. Lo único que se arranca y se apaga a mano es **Fog + el túnel**. Fog usa la base `sabre_expo` (no la `sabre` del piloto).
+
+### 1. Antes de empezar (una vez, 10 min antes)
+Desde cualquier terminal, en `BACKEND`:
+1. Docker (Colima) encendido y PostgreSQL arriba:
+   ```bash
+   docker ps --format '{{.Names}} {{.Status}}' | grep sabre-postgres-1
+   ```
+   Si no aparece: `colima start` y luego
+   `docker compose -f docker-compose.yml -f docker-compose.nativo.yml up -d postgres`.
+2. Sesión de Railway: `railway whoami` debe mostrar el usuario. Si no: `railway login`.
+3. Mac conectado a corriente y a internet. No tocar el Fog antiguo del puerto 8001 (es del piloto).
+
+### 2. Terminal 1: arrancar Fog (se queda abierta)
+```bash
+cd /Users/darkarcher/Documents/Claude/Projects/Tesis/Software/backend
+ENV_FILE=.secrets/fog_remoto.env sh scripts/fog_nativo.sh
+```
+Espere hasta ver `Uvicorn running on http://0.0.0.0:8011` (30–60 s: aplica migraciones y carga el modelo de pose). No cierre esta terminal: cerrarla apaga Fog.
+
+### 3. Terminal 2: verificar Fog y abrir el túnel
+```bash
+cd /Users/darkarcher/Documents/Claude/Projects/Tesis/Software/backend
+curl -s -H "X-Proxy-Token: $(cat .secrets/proxy_token.txt)" localhost:8011/health
+```
+Debe responder `{"fog":"ok","redis":"ok","postgres":"ok"}`. Si `redis` no es `ok`, revise que el servicio redis de Railway esté Online (`railway service list`). Luego:
+```bash
+FOG_HOST_PORT=8011 PROXY_SHARED_TOKEN=$(cat .secrets/proxy_token.txt) sh scripts/fog_remoto.sh start
+```
+Imprime `URL del túnel de Fog: https://xxxx.trycloudflare.com` y lanza `caffeinate` (el Mac no se suspende). **La URL cambia en cada arranque.** También queda guardada en `datos/fog_remoto_url.txt`.
+
+### 4. Terminal 2: apuntar el frontend de Railway al túnel nuevo
+```bash
+railway variable set --service frontend FOG_UPSTREAM="$(cat datos/fog_remoto_url.txt)"
+```
+(sin barra final). Cambiar la variable reinicia el frontend; tarda ~1 min. Espere a `Online`:
+```bash
+railway service list | grep -A1 frontend
+```
+Alternativa por el panel: railway.com → proyecto `sabre-ai` → servicio `frontend` → Variables → `FOG_UPSTREAM` → Deploy.
+
+### 5. Comprobar la cadena completa
+```bash
+curl -s https://frontend-production-0463.up.railway.app/api/health
+```
+Debe responder `{"fog":"ok","redis":"ok","postgres":"ok"}`. Si responde 502, ver la tabla de problemas. Después abra https://frontend-production-0463.up.railway.app e ingrese con el usuario `arbitro` y la contraseña de `.secrets/auth_maestro.txt`. Haga una prueba con un clip antes de la exposición.
+
+### 6. Durante la exposición
+- Dejar las dos terminales abiertas y el Mac despierto.
+- El clip se procesa en Fog (6–8 s en las pruebas); si el Wi-Fi del recinto es lento, usar datos móviles en el Mac o compartir internet.
+
+### 7. Al terminar
+1. Terminal 2: `sh scripts/fog_remoto.sh stop` (cierra túnel y `caffeinate`).
+2. Terminal 1: `Ctrl+C` (apaga Fog).
+3. El frontend de Railway seguirá en línea (muestra el login, `/api` responde 502 hasta el próximo túnel). Para no gastar crédito, puede pausar los tres servicios en el panel de Railway.
+
+### Problemas frecuentes
+| Síntoma | Causa | Solución |
+|---|---|---|
+| `/api/...` responde 502 o el login dice error de conexión | El túnel está cerrado o `FOG_UPSTREAM` tiene una URL vieja | Repetir pasos 3 y 4; confirmar que la URL de `datos/fog_remoto_url.txt` es la que está en Railway (`railway variable list --service frontend`) |
+| `/api/...` responde 403 | `PROXY_SHARED_TOKEN` distinto entre Railway y Fog | El valor de `.secrets/proxy_token.txt` debe ser el de la variable del servicio `frontend` |
+| Login responde 429 | 5 intentos fallidos desde su IP (bloqueo de 15 min) | Esperar 15 min |
+| Login responde 401 con la contraseña correcta | Fog se arrancó sin `.secrets/fog_remoto.env` | Reiniciar Fog con el comando del paso 2 |
+| `fog_nativo.sh` dice que postgres no responde en 127.0.0.1:5436 | PostgreSQL de Docker apagado | Paso 1.1 |
+| `Address already in use` | Otro Fog usa el puerto | Confirmar que no queda un Fog remoto previo: `lsof -iTCP:8011 -sTCP:LISTEN` y cerrarlo con Ctrl+C en su terminal |
+| La sugerencia tarda más de 60 s o no llega | Cloud caído o Redis sin conexión | `railway service list` (cloud y redis `Online`); `railway logs --service cloud` |
 
 ## 8. Riesgos aceptados
 Fog depende del Mac encendido; JWT sin revocación; plan gratuito con recursos limitados ($1 de crédito al mes); URL del túnel variable; los certificados de Redis vencen al año; la contraseña maestra y el token del proxy viven solo en `backend/.secrets/`.
