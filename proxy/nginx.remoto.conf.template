@@ -1,0 +1,39 @@
+# Proxy de un solo origen para la prueba remota del árbitro (DEPLOY03).
+# Sirve el build estático del frontend en "/" y reenvía "/api/" a Fog sin el
+# prefijo. Toda ruta exige autenticación básica. Las variables ${...} las
+# sustituye la imagen nginx al arrancar (envsubst sobre /etc/nginx/templates).
+server {
+    listen 80;
+    server_name _;
+
+    auth_basic           "SABRE.AI prueba remota";
+    auth_basic_user_file /etc/nginx/htpasswd;
+
+    # Igual al límite de subida de Fog (CLIP_MAX_MB, shared/config.py): un clip
+    # mayor recibe 413 y la interfaz lo muestra.
+    client_max_body_size ${CLIP_MAX_MB}m;
+
+    # Mismo formato {"detail": ...} que Fog para que la interfaz muestre el motivo.
+    error_page 413 @clip_grande;
+    location @clip_grande {
+        default_type application/json;
+        return 413 '{"detail":"El clip supera el tamaño máximo permitido (${CLIP_MAX_MB} MB)."}';
+    }
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api/ {
+        # La barra final en proxy_pass quita el prefijo /api.
+        proxy_pass http://${FOG_UPSTREAM}/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+    }
+}
