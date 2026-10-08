@@ -61,7 +61,7 @@ iniciar() {
     echo "$URL" > "$URL_FILE"
 
     # Evita que el Mac se suspenda solo mientras dura la ventana de uso.
-    caffeinate -s -i &
+    caffeinate -s -i >/dev/null 2>&1 &
     echo $! > "$PID_CAFE"
 
     echo "URL del túnel de Fog: $URL"

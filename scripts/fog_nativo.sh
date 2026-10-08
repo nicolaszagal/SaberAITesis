@@ -29,7 +29,8 @@ mkdir -p "$DATOS_DIR/storage" "$DATOS_DIR/evidencia"
 DATOS_DIR=$(cd "$DATOS_DIR" && pwd)
 
 export DATABASE_URL="postgresql+asyncpg://sabre:${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD}@127.0.0.1:${POSTGRES_HOST_PORT}/sabre"
-export REDIS_URL="redis://127.0.0.1:${REDIS_HOST_PORT}/0"
+# DEPLOY07: con REDIS_URL_REMOTO (rediss://... hacia Railway) Fog no usa el Redis local.
+export REDIS_URL="${REDIS_URL_REMOTO:-redis://127.0.0.1:${REDIS_HOST_PORT}/0}"
 export STORAGE_DIR="$DATOS_DIR/storage"
 export EVIDENCE_DIR="$DATOS_DIR/evidencia"
 DS=$(cd "$BACKEND_DIR/../dataset" && pwd)
@@ -38,7 +39,9 @@ export FEATURE_PREPROCESSING_PROFILE=lstm_6class
 export YOLO_POSE_MODEL_PATH="$DS/yolov8x-pose.pt"
 MODEL_RUN_ID=${MODEL_RUN_ID:-20260928_141021}
 
-for destino in "postgres:$POSTGRES_HOST_PORT" "redis:$REDIS_HOST_PORT"; do
+DESTINOS="postgres:$POSTGRES_HOST_PORT"
+[ -n "${REDIS_URL_REMOTO:-}" ] || DESTINOS="$DESTINOS redis:$REDIS_HOST_PORT"
+for destino in $DESTINOS; do
     nc -z 127.0.0.1 "${destino#*:}" 2>/dev/null || {
         echo "${destino%%:*} no responde en 127.0.0.1:${destino#*:}. Levántelo con:" >&2
         echo "  docker compose -f docker-compose.yml -f docker-compose.nativo.yml up -d" >&2
