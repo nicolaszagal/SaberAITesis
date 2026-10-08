@@ -59,9 +59,13 @@ mitigación es la vida corta del token y rotar `AUTH_JWT_SECRET` (invalida todos
 - Con `ENTORNO=remoto`: `/docs`, `/redoc` y `/openapi.json` responden **404** y
   `/ws/veredicto/{revision_id}` no existe (WebRTC no se usa en la Validación 1).
 - `/health` solo devuelve `ok` o `error` por componente (`fog`, `redis`, `postgres`).
-- **WebSocket** (fuera del remoto): el navegador no puede enviar `Authorization`, así que
-  `/ws/veredicto/{revision_id}?token=<jwt>` acepta el token en la query; sin token válido se
-  cierra con 1008 antes de aceptar.
+- **WebSocket — solo local, temporal.** En remoto (`ENTORNO=remoto`) la ruta
+  `/ws/veredicto/{revision_id}` no existe. En local el navegador no puede enviar
+  `Authorization`, así que se acepta el token en la query
+  (`/ws/veredicto/{revision_id}?token=<jwt>`); sin token válido se cierra con 1008 antes de
+  aceptar. En V2 se reemplaza por autenticación por primer mensaje (ver
+  `Tesis/prompts/DEPLOY/PENDIENTE_V2_websocket_camara.md`); no usar `?token=` en ningún entorno
+  accesible desde internet.
 
 ## 1. Flujo
 
@@ -561,6 +565,10 @@ Fog mantiene una tarea de fondo por revisión activa (`revision_id`) que hace `X
 bloqueante sobre este stream y reenvía el resultado por WebSocket en cuanto llega.
 
 ## 7. Fog → Front: WebSocket de veredicto
+
+> **Autenticación: solo local, temporal.** Con `ENTORNO=remoto` esta ruta no existe. En local
+> exige el JWT en `?token=` (ver sección 0); en V2 se reemplaza por autenticación por primer
+> mensaje (`Tesis/prompts/DEPLOY/PENDIENTE_V2_websocket_camara.md`).
 
 `GET /ws/veredicto/{revision_id}`: el WebSocket se identifica por revisión, con el
 `revision_id` que devuelven `POST /matches/{match_id}/clip` o `POST /webrtc/offer`. Si la
