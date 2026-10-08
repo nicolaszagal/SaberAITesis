@@ -62,6 +62,9 @@ Imagen del frontend: 93.6 MB; `/usr/share/nginx/html` solo contiene el build (`_
 ### Hallazgo durante la verificación
 Detrás de nginx y del túnel, Cloudflare añade la IP de salida de Railway a `X-Forwarded-For`; Fog tomaba la última entrada y todos los clientes compartían un solo bloqueo (cinco fallos de cualquiera bloqueaban al árbitro). Corregido con `PROXY_SALTOS_CONFIANZA=2` (el cliente es la penúltima entrada) y una prueba que falla sin el cambio.
 
+### Segundo hallazgo: el frontend caía sin túnel
+nginx resolvía `FOG_UPSTREAM` al arrancar; con el túnel cerrado el contenedor fallaba (`host not found in upstream`) y Railway lo detenía. Ahora el nombre se resuelve en cada petición (`resolver` + variable): sin túnel, `/` y `/healthz` responden 200 y `/api/` responde 502. Prueba: `SaberAISoftware/deploy/railway/probar_nginx.sh` (falló antes del cambio, pasa después).
+
 ## 7. Operación el día de la exposición
 1. `sh scripts/fog_nativo.sh` con `ENV_FILE=.secrets/fog_remoto.env` (puerto 8011, base `sabre_expo`).
 2. `FOG_HOST_PORT=8011 PROXY_SHARED_TOKEN=… sh scripts/fog_remoto.sh start`: imprime la URL del túnel (cambia en cada arranque).
