@@ -27,6 +27,11 @@ class SinModeloActivo(ErrorDeDominio):
     scripts/registrar_modelo.py)."""
 
 
+class KeypointsAlterados(ErrorDeDominio):
+    """El .npz de keypoints no coincide con el SHA-256 registrado en la
+    clasificación: no se sirven datos alterados (F-031)."""
+
+
 class VeredictoInvalido(ErrorDeDominio):
     """Combinación decision/clase_final que el esquema no admite."""
 

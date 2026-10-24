@@ -22,6 +22,7 @@ from fastapi import (
     Form,
     HTTPException,
     Query,
+    Response,
     UploadFile,
     WebSocket,
     WebSocketDisconnect,
@@ -31,6 +32,7 @@ from fastapi.responses import JSONResponse
 from fog.application.abrir_revision import AbrirRevisionVar, VideoGuardado
 from fog.application.configurar_combate import ConfigurarCombate, DatosTirador
 from fog.application.consultar_combate import ObtenerCombate
+from fog.application.consultar_pose import ConsultarPose
 from fog.application.consultar_revisiones import (
     ConsultarSalud,
     ListarRevisiones,
@@ -48,6 +50,7 @@ from fog.composition import Container
 from fog.domain.audit_models import Combate
 from fog.domain.errors import (
     ClasificacionPendiente,
+    KeypointsAlterados,
     RecursoNoEncontrado,
     SinModeloActivo,
     VeredictoInvalido,
@@ -76,6 +79,7 @@ from fog.infrastructure.api.schemas import (
     ModeloActivoResponse,
     OfferRequest,
     OfferResponse,
+    PoseResponse,
     RegistroAlteradoResponse,
     RevisionDetalleResponse,
     RevisionResumenResponse,
@@ -786,6 +790,58 @@ async def obtener_revision(
         registrado_en=d.registrado_en,
         auditoria_seq=d.auditoria_seq,
         auditoria_hash=d.auditoria_hash,
+    )
+
+
+@router.get(
+    "/revisiones/{revision_id}/pose",
+    response_model=PoseResponse,
+    tags=["revisiones"],
+    summary="Pose de A y B para los trazos del modal (solo lectura, F-031)",
+    description=(
+        "Keypoints crudos del .npz de la clasificación, en píxeles del frame, "
+        "con el ángulo del codo del brazo armado en grados (calculado con la "
+        "misma función del extractor de features). `frame_inicio` es el frame "
+        "del clip que corresponde al índice 0 de los arreglos. Con `n_frames` 0 "
+        "(timeout o pose incompleta) no hay trazos y `motivo` trae el "
+        "`motivo_no_disp`. Al leer el .npz se recalcula su SHA-256: si no "
+        "coincide con el registrado, 409 y no se sirven datos. No dibuja la "
+        "línea del arma (D-18). `Cache-Control: no-store`."
+    ),
+    responses={
+        404: {"description": "La revisión, su clip o sus keypoints no existen."},
+        409: {
+            "description": (
+                "Sin clasificación registrada, o `keypoints alterados` "
+                "(SHA-256 distinto)."
+            )
+        },
+        422: {"description": "`revision_id` no es uuid."},
+    },
+)
+@inject
+async def obtener_pose(
+    revision_id: uuid.UUID,
+    response: Response,
+    caso: ConsultarPose = Depends(Provide[Container.consultar_pose]),
+) -> PoseResponse:
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        vista = await caso.execute(revision_id)
+    except RecursoNoEncontrado as exc:
+        raise HTTPException(status_code=404, detail=f"no existe: {exc}") from exc
+    except ClasificacionPendiente as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="la revisión aún no tiene una clasificación registrada",
+        ) from exc
+    except KeypointsAlterados as exc:
+        raise HTTPException(status_code=409, detail="keypoints alterados") from exc
+    return PoseResponse(
+        **{k: v for k, v in vars(vista).items() if k != "tiradores"},
+        tiradores=None
+        if vista.tiradores is None
+        else {lado: vars(t) for lado, t in vista.tiradores.items()},
     )
 
 

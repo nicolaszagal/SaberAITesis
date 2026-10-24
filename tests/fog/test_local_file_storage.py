@@ -68,3 +68,30 @@ def test_build_engine_sin_database_url_falla_con_mensaje_claro():
 
     with pytest.raises(RuntimeError, match="DATABASE_URL"):
         build_engine(None)
+
+
+async def test_read_keypoints_devuelve_los_arreglos_guardados(storage):
+    kp = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+    uri, sha256 = await storage.save_keypoints({"keypoints": kp})
+
+    leidos = await storage.read_keypoints(uri, sha256)
+
+    np.testing.assert_array_equal(leidos["keypoints"], kp)
+
+
+async def test_read_keypoints_con_sha256_distinto_falla_como_alterado(storage):
+    from fog.domain.errors import KeypointsAlterados
+
+    uri, sha256 = await storage.save_keypoints({"keypoints": np.zeros(3, dtype=np.float32)})
+
+    with pytest.raises(KeypointsAlterados):
+        await storage.read_keypoints(uri, "0" * 64)
+
+
+async def test_read_keypoints_rechaza_uri_fuera_del_almacen(storage, tmp_path):
+    (tmp_path / "fuera.npz").write_bytes(b"x")
+
+    with pytest.raises(FileNotFoundError):
+        await storage.read_keypoints("local://../fuera.npz", "0" * 64)
+    with pytest.raises(FileNotFoundError):
+        await storage.read_keypoints("file:///etc/passwd", "0" * 64)

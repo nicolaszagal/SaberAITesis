@@ -28,6 +28,7 @@ from fog.application.consultar_revisiones import (
     VerificarAuditoria,
 )
 from fog.application.consultar_combate import ObtenerCombate
+from fog.application.consultar_pose import ConsultarPose
 from fog.application.listar_catalogos import ListarEventos, ListarUsuarios
 from fog.application.process_match import ProcessIncomingMatch
 from fog.application.resumir_validacion import ResumirValidacion
@@ -227,6 +228,9 @@ class Container(containers.DeclarativeContainer):
     )
     obtener_revision = providers.Singleton(
         ObtenerRevision, consulta=consulta_revision_repository
+    )
+    consultar_pose = providers.Singleton(
+        ConsultarPose, consulta=consulta_revision_repository, storage=file_storage
     )
     verificar_auditoria = providers.Singleton(
         VerificarAuditoria, verificador=verificador_auditoria

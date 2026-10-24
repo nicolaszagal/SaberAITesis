@@ -21,6 +21,7 @@ from pathlib import Path
 
 import numpy as np
 
+from fog.domain.errors import KeypointsAlterados
 from fog.ports.file_storage import FileStoragePort
 
 _CHUNK = 1024 * 1024
@@ -36,6 +37,9 @@ class LocalFileStorage(FileStoragePort):
 
     async def save_keypoints(self, arrays: Mapping[str, np.ndarray]) -> tuple[str, str]:
         return await asyncio.to_thread(self._save_keypoints, arrays)
+
+    async def read_keypoints(self, uri: str, sha256: str) -> dict[str, np.ndarray]:
+        return await asyncio.to_thread(self._read_keypoints, uri, sha256)
 
     def _save_clip(self, source: Path) -> tuple[str, str]:
         digest = hashlib.sha256()
@@ -55,6 +59,18 @@ class LocalFileStorage(FileStoragePort):
         rel = self._relative("keypoints", sha256, ".npz")
         self._place(rel, lambda tmp: tmp.write_bytes(data))
         return URI_SCHEME + rel.as_posix(), sha256
+
+    def _read_keypoints(self, uri: str, sha256: str) -> dict[str, np.ndarray]:
+        if not uri.startswith(URI_SCHEME):
+            raise FileNotFoundError(uri)
+        path = (self._root / uri.removeprefix(URI_SCHEME)).resolve()
+        if not path.is_relative_to(self._root.resolve()):
+            raise FileNotFoundError(uri)
+        data = path.read_bytes()
+        if hashlib.sha256(data).hexdigest() != sha256:
+            raise KeypointsAlterados(uri)
+        with np.load(io.BytesIO(data), allow_pickle=False) as npz:
+            return {nombre: npz[nombre] for nombre in npz.files}
 
     @staticmethod
     def _relative(kind: str, sha256: str, suffix: str) -> Path:

@@ -199,6 +199,25 @@ class DetalleRevision:
 
 
 @dataclass(frozen=True)
+class DatosPose:
+    """Lo que hace falta de una revisión para armar la vista de pose
+    (GET /revisiones/{id}/pose): el clip, el tocado, los brazos armados y la
+    referencia al .npz de keypoints. `None` en los campos del clip si la
+    revisión no tiene clip; `keypoints_*` y `disponible` son `None` mientras no
+    hay clasificación."""
+
+    revision_id: uuid.UUID
+    fps: float | None
+    frame_tocado: int | None
+    brazo_a: str
+    brazo_b: str
+    disponible: bool | None
+    motivo_no_disp: str | None
+    keypoints_uri: str | None
+    keypoints_sha256: str | None
+
+
+@dataclass(frozen=True)
 class RegistroAlterado:
     """Fila que devuelve `sabre.fn_verificar_auditoria()`: el hash guardado
     no coincide con el recalculado (CU-12)."""
