@@ -42,3 +42,20 @@ class FileStoragePort(ABC):
             Tupla (uri, sha256) del .npz guardado.
         """
         raise NotImplementedError
+
+    @abstractmethod
+    async def read_keypoints(self, uri: str, sha256: str) -> dict[str, np.ndarray]:
+        """Lee un .npz de keypoints verificando su integridad.
+
+        Args:
+            uri: URI devuelta por `save_keypoints`.
+            sha256: SHA-256 esperado (el registrado en `clasificacion`).
+
+        Returns:
+            Los arreglos del .npz por nombre.
+
+        Raises:
+            KeypointsAlterados: si el SHA-256 del contenido no coincide.
+            FileNotFoundError: si la URI no existe en el almacén.
+        """
+        raise NotImplementedError

@@ -199,6 +199,44 @@ también con `anular`).
 la versión de modelo ni keypoints. `decision`, `clase_final`, `registrado_en`,
 `auditoria_seq` y `auditoria_hash` son null hasta el veredicto (sección 7.1).
 
+`GET /revisiones/{revision_id}/pose` (F-031, CU-08, D-14) — keypoints crudos de A y B para
+dibujar sus esqueletos en un modal con fondo negro, sin video. Protegida por JWT como el resto
+y con `Cache-Control: no-store`. Sale del `.npz` de la clasificación (sección 8.1), no del video.
+```json
+{ "revision_id": "uuid", "fps": 30.0, "frame_w": 1280, "frame_h": 720,
+  "frame_inicio": 0, "frame_tocado": 25, "n_frames": 38, "conf_min_keypoint": 0.3,
+  "tiradores": {
+    "A": { "color": "ROJ", "brazo": "diestro",
+           "xy": [ [[315.6, 302.4], [313.8, 296.5], "... 17 pares"], "... un arreglo por frame" ],
+           "conf": [ [0.133, 0.015, "... 17 valores"], "..." ],
+           "detectado": [true, true, "..."],
+           "angulo_codo": [100.1, 94.6, null, "..."] },
+    "B": { "color": "VER", "brazo": "zurdo", "...": "..." } },
+  "motivo": null }
+```
+- `xy` en píxeles del frame, a 1 decimal. `conf` a 3 decimales. Todos los arreglos de
+  `tiradores` miden `n_frames`.
+- `frame_inicio`: el `.npz` solo guarda los frames desde que Fog fija las identidades A/B
+  (`lock_frame`), así que su índice `i` es el frame `frame_inicio + i` del clip. Para ubicar
+  el tocado en los arreglos, el índice es `frame_tocado - frame_inicio`. `frame_tocado` y `fps`
+  son los de `tocado_clip` y `clip`.
+- `conf_min_keypoint`: la confianza mínima del extractor de features (`CONF_THR` de
+  `shared/feature_extractor.py`, igual a la de `dataset/05_extract_features.py`). Un keypoint
+  por debajo de ese valor no se dibuja.
+- `angulo_codo`: ángulo hombro-codo-muñeca del brazo armado declarado en el combate, en grados y
+  sin estandarizar, calculado con `valid_pt` y `angle_three_points` del extractor (el valor que
+  recibe el modelo antes de la estandarización, sin la interpolación de saltos). `null` si el
+  tirador no fue detectado en el frame o alguno de los tres keypoints no pasa `CONF_THR`.
+- La línea del arma no se dibuja ni se entrega (D-18).
+- Sin trazos (timeout o pose incompleta, `.npz` vacío): **200** con `n_frames: 0`,
+  `tiradores: null` y `motivo` igual al `motivo_no_disp` de la clasificación.
+- **404** si la revisión, su clip o su `.npz` no existen; **422** si `revision_id` no es uuid
+  (a diferencia de `GET /revisiones/{id}`, que responde 404); **401** sin token.
+- **409** `{"detail": "la revisión aún no tiene una clasificación registrada"}` si la revisión
+  no tiene clasificación; **409** `{"detail": "keypoints alterados"}` si el SHA-256 del `.npz`
+  no coincide con `keypoints_sha256`: se registra en el log técnico (`fog.application`) y no se
+  sirven datos.
+
 `GET /auditoria/verificar` — resultado de `sabre.fn_verificar_auditoria()` sin filtrar, con
 200 en ambos casos: `{ "integra": true, "alteradas": [] }` o
 `{ "integra": false, "alteradas": [ { "seq": 3, "esperado": "<hash>", "guardado": "<hash>" } ] }`.
@@ -765,6 +803,7 @@ contrato del flujo WebRTC, fuera de la Validación 1):
 | Subir clip con luces e instante del tocado (CU-02, CU-03) | `POST /matches/{match_id}/clip` (la respuesta trae la sugerencia o "no disponible") |
 | Veredicto (CU-10) | `POST /revisiones/{revision_id}/veredicto` (`clase_final` obligatoria con mantener y cambiar; sin ella con anular) |
 | Historial y detalle (CU-12) | `GET /revisiones?evento_id=`, `GET /revisiones/{id}` |
+| Trazos de pose en el modal (CU-08, F-031) | `GET /revisiones/{revision_id}/pose` |
 | Resumen y exportación de la validación (L02) | `GET /validaciones/{evento_id}/resumen` |
 | Estado del sistema y modelo | `GET /health`, `GET /modelo/activo` |
 

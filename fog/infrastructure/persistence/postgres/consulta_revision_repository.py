@@ -11,16 +11,18 @@ from sqlalchemy import Select, select
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from fog.domain.audit_models import DetalleRevision, ResumenRevision
+from fog.domain.audit_models import DatosPose, DetalleRevision, ResumenRevision
 from fog.infrastructure.persistence.postgres.tables import (
     clasificacion as clasificacion_t,
 )
+from fog.infrastructure.persistence.postgres.tables import clip as clip_t
 from fog.infrastructure.persistence.postgres.tables import combate as combate_t
 from fog.infrastructure.persistence.postgres.tables import (
     registro_auditoria as auditoria_t,
 )
 from fog.infrastructure.persistence.postgres.tables import revision_var as revision_t
 from fog.infrastructure.persistence.postgres.tables import tocado as tocado_t
+from fog.infrastructure.persistence.postgres.tables import tocado_clip as tocado_clip_t
 from fog.infrastructure.persistence.postgres.tables import veredicto as veredicto_t
 from fog.infrastructure.persistence.postgres.vocabulario import (
     clase_a_modelo,
@@ -120,4 +122,45 @@ class PostgresConsultaRevisionRepository(ConsultaRevisionRepositoryPort):
             registrado_en=f.registrado_en,
             auditoria_seq=f.auditoria_seq,
             auditoria_hash=f.auditoria_hash,
+        )
+
+    async def datos_pose(self, revision_id: uuid.UUID) -> DatosPose | None:
+        consulta = (
+            select(
+                revision_t.c.id,
+                clip_t.c.fps,
+                tocado_clip_t.c.frame_tocado,
+                combate_t.c.brazo_a,
+                combate_t.c.brazo_b,
+                clasificacion_t.c.disponible,
+                clasificacion_t.c.motivo_no_disp,
+                clasificacion_t.c.keypoints_uri,
+                clasificacion_t.c.keypoints_sha256,
+            )
+            .select_from(
+                revision_t.join(tocado_t, tocado_t.c.id == revision_t.c.tocado_id)
+                .join(combate_t, combate_t.c.id == tocado_t.c.combate_id)
+                .outerjoin(tocado_clip_t, tocado_clip_t.c.tocado_id == tocado_t.c.id)
+                .outerjoin(clip_t, clip_t.c.id == tocado_clip_t.c.clip_id)
+                .outerjoin(
+                    clasificacion_t,
+                    clasificacion_t.c.id == revision_t.c.clasificacion_id,
+                )
+            )
+            .where(revision_t.c.id == revision_id)
+        )
+        async with self._session_factory() as session:
+            f = (await session.execute(consulta)).first()
+        if f is None:
+            return None
+        return DatosPose(
+            revision_id=f.id,
+            fps=float(f.fps) if f.fps is not None else None,
+            frame_tocado=f.frame_tocado,
+            brazo_a=f.brazo_a,
+            brazo_b=f.brazo_b,
+            disponible=f.disponible,
+            motivo_no_disp=f.motivo_no_disp,
+            keypoints_uri=f.keypoints_uri,
+            keypoints_sha256=f.keypoints_sha256,
         )

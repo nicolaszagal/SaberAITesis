@@ -314,6 +314,72 @@ class RevisionDetalleResponse(BaseModel):
     auditoria_hash: str | None = None
 
 
+class PoseTiradorResponse(BaseModel):
+    """Pose de un tirador a lo largo del clip: un elemento por frame."""
+
+    color: Literal["ROJ", "VER"] = Field(..., description="A = ROJ, B = VER.")
+    brazo: Literal["diestro", "zurdo"] = Field(
+        ..., description="Brazo armado declarado en el combate."
+    )
+    xy: list[list[list[float]]] = Field(
+        ...,
+        description=(
+            "Por frame, 17 keypoints COCO [x, y] en píxeles del frame, a 1 decimal."
+        ),
+    )
+    conf: list[list[float]] = Field(
+        ..., description="Por frame, la confianza de cada uno de los 17 keypoints."
+    )
+    detectado: list[bool] = Field(
+        ..., description="Si el tirador fue detectado en el frame."
+    )
+    angulo_codo: list[float | None] = Field(
+        ...,
+        description=(
+            "Ángulo hombro-codo-muñeca del brazo armado, en grados y sin "
+            "estandarizar. null si no hay detección o algún keypoint no pasa "
+            "`conf_min_keypoint`."
+        ),
+    )
+
+
+class PoseResponse(BaseModel):
+    """GET /revisiones/{id}/pose: keypoints crudos de A y B para el modal de
+    trazos (F-031, D-14)."""
+
+    revision_id: uuid.UUID
+    fps: float
+    frame_w: int
+    frame_h: int
+    frame_inicio: int = Field(
+        ...,
+        description="Frame del clip al que corresponde el índice 0 de los arreglos.",
+    )
+    frame_tocado: int = Field(
+        ..., description="Frame del clip en que se simuló el tocado."
+    )
+    n_frames: int = Field(
+        ..., description="Largo de cada arreglo de `tiradores`; 0 si no hay trazos."
+    )
+    conf_min_keypoint: float = Field(
+        ...,
+        description=(
+            "Confianza mínima para dibujar un keypoint "
+            "(la que usa el extractor de features)."
+        ),
+    )
+    tiradores: dict[Literal["A", "B"], PoseTiradorResponse] | None = Field(
+        None, description="null si `n_frames` es 0."
+    )
+    motivo: str | None = Field(
+        None,
+        description=(
+            "Con `n_frames` 0, el `motivo_no_disp` de la clasificación; "
+            "null en los demás casos."
+        ),
+    )
+
+
 class RegistroAlteradoResponse(BaseModel):
     seq: int
     esperado: str

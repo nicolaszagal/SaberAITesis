@@ -6,7 +6,7 @@ import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime
 
-from fog.domain.audit_models import DetalleRevision, ResumenRevision
+from fog.domain.audit_models import DatosPose, DetalleRevision, ResumenRevision
 
 
 class ConsultaRevisionRepositoryPort(ABC):
@@ -41,5 +41,18 @@ class ConsultaRevisionRepositoryPort(ABC):
 
         Returns:
             El detalle, o None si la revisión no existe.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    async def datos_pose(self, revision_id: uuid.UUID) -> DatosPose | None:
+        """Devuelve lo necesario para la vista de pose de una revisión.
+
+        Args:
+            revision_id: id de `revision_var`.
+
+        Returns:
+            Los datos del clip, el tocado, los brazos y los keypoints, o None
+            si la revisión no existe.
         """
         raise NotImplementedError
