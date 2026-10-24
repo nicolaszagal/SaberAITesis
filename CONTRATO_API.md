@@ -121,7 +121,7 @@ Body (JSON):
 |---|---|---|
 | `evento_id` | sí | debe existir en `sabre.evento` (404 si no) |
 | `pista` | sí | texto no vacío |
-| `arbitro_id` | sí | debe existir en `sabre.usuario` (404 si no). Se guarda también como `configurado_por` (no hay login ni operador identificado) |
+| `arbitro_id` | sí | debe existir en `sabre.usuario` (404 si no). Se guarda también como `configurado_por` (el login es de un usuario maestro único, sección 0: no identifica al árbitro ni al operador) |
 | `alias_A/B` | no | alias del tirador (minimización de datos). Vacío u omitido: `"Tirador A"` / `"Tirador B"` |
 | `weapon_side_A/B` | **sí, sin valor por defecto** | `"right"` → `diestro`, `"left"` → `zurdo`. Se guarda en `combate.brazo_a/b` y `tirador.brazo_habitual`. Sin él: 422 y no se crea nada |
 
@@ -168,8 +168,8 @@ precarga la migración Alembic 0005 (V01), idempotente por nombre: eventos "Even
 
 ## 1.3 Consultas de solo lectura (CU-07, CU-12)
 
-Ninguno crea ni modifica nada (`POST`/`PUT`/`DELETE` responden 404/405). Sin autenticación
-(RF-26 es COULD). Las clases usan siempre los nombres del modelo (sección 1).
+Ninguno crea ni modifica nada (`POST`/`PUT`/`DELETE` responden 404/405). Exigen JWT como el
+resto de las rutas (sección 0). Las clases usan siempre los nombres del modelo (sección 1).
 
 `GET /revisiones?evento_id=&desde=&hasta=` — lista resumida, de la más reciente a la más
 antigua. Los tres filtros son opcionales; `evento_id` es el evento del combate y
@@ -248,8 +248,8 @@ se registraron). **404** si no hay versión activa.
 `GET /validaciones/{evento_id}/resumen` (L02, T-017, RNF-03, RNF-06) — resumen de la sesión de
 validación de un evento, con el mismo contenido que el `resumen.json` de
 `scripts/exportar_evidencia.py`. Se calcula desde PostgreSQL sobre las revisiones **con
-veredicto** del evento; el JSONL de L01 no es la fuente (solo se concilia). Sin autenticación
-(RF-26 es COULD, no hay regla de autorización documentada). **404** si el evento no existe,
+veredicto** del evento; el JSONL de L01 no es la fuente (solo se concilia). Exige JWT (sección 0);
+no hay regla de autorización por rol documentada. **404** si el evento no existe,
 **422** si `evento_id` no es uuid. Solo lectura.
 ```json
 { "evento_id": "uuid", "generado_en": "2026-09-29T20:00:00+00:00",
@@ -766,11 +766,11 @@ log técnico.
 - **Mapeo A/B ↔ ROJ/VER**: fijo (`A=ROJ`, `B=VER`) para v1, confirmado por Nicolas. No
   configurable por combate todavía.
 - **Persistencia (D03)**: requiere `DATABASE_URL`, `STORAGE_DIR`, filas de `usuario` y
-  `evento` (las precarga la migración 0005; `scripts/crear_sesion_validacion.py` crea más; no hay
-  login, RF-26 es COULD; sección 1.2) y una versión de modelo activa
+  `evento` (las precarga la migración 0005; `scripts/crear_sesion_validacion.py` crea más; el
+  login es de un usuario maestro único, sección 0; sección 1.2) y una versión de modelo activa
   (`scripts/registrar_modelo.py`). La base del compose publica el puerto
-  `POSTGRES_HOST_PORT` (5433 por defecto, solo loopback; ver `GUIA_EJECUCION.md`). `tocado.registrado_por` queda nulo (no hay
-  operador identificado). La transacción única del veredicto usa
+  `POSTGRES_HOST_PORT` (5433 por defecto, solo loopback; ver `GUIA_EJECUCION.md`). `tocado.registrado_por` queda nulo (el usuario
+  maestro no identifica al operador). La transacción única del veredicto usa
   `fog/ports/unidad_de_trabajo.py`.
 
 ## 8.1 Almacenamiento y evidencia en disco
@@ -803,7 +803,7 @@ contrato del flujo WebRTC, fuera de la Validación 1):
 | Subir clip con luces e instante del tocado (CU-02, CU-03) | `POST /matches/{match_id}/clip` (la respuesta trae la sugerencia o "no disponible") |
 | Veredicto (CU-10) | `POST /revisiones/{revision_id}/veredicto` (`clase_final` obligatoria con mantener y cambiar; sin ella con anular) |
 | Historial y detalle (CU-12) | `GET /revisiones?evento_id=`, `GET /revisiones/{id}` |
-| Trazos de pose en el modal (CU-08, F-031) | `GET /revisiones/{revision_id}/pose` |
+| Trazos de pose en el modal (CU-08, F-031): botón "Ver trazos" (tecla T) en Revisión VAR (Paso 2) y en el detalle del Historial (CU-12); se pide solo al abrir el modal y se guarda por revisión mientras la pantalla siga montada | `GET /revisiones/{revision_id}/pose` |
 | Resumen y exportación de la validación (L02) | `GET /validaciones/{evento_id}/resumen` |
 | Estado del sistema y modelo | `GET /health`, `GET /modelo/activo` |
 
