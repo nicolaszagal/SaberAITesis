@@ -31,3 +31,12 @@ datos-humo/
 # Prueba remota (DEPLOY03): credenciales del proxy y estado del túnel.
 .secrets/
 datos/prueba_remota_*
+
+# Logs y estado del túnel remoto (no se versionan)
+datos/*.log
+datos/*.pid
+datos/fog_remoto_url.txt
+
+# Duplicados de Finder ("archivo 2.ext")
+* 2
+* 2.*
