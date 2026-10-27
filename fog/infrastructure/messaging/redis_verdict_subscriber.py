@@ -46,4 +46,7 @@ class RedisVerdictSubscriber(VerdictStreamSubscriberPort):
                     else None
                 ),
                 modelo=fields[b"modelo"].decode() if b"modelo" in fields else None,
+                atencion=(
+                    json.loads(fields[b"atencion"]) if b"atencion" in fields else None
+                ),
             )

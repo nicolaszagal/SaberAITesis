@@ -14,6 +14,8 @@ no en application/.
 
 from abc import ABC, abstractmethod
 
+import numpy as np
+
 from fog.domain.models import ExtractedFeatures, TrackedSequence, WeaponSide
 
 
@@ -30,5 +32,21 @@ class FeatureExtractorPort(ABC):
         Devuelve ExtractedFeatures con `sequence=None` y `stats["error"]`
         seteado si la secuencia trackeada es inválida (sin lock, o menos
         de `min_frames` frames procesados).
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def extract_raw(
+        self,
+        tracked: TrackedSequence,
+        weapon_side_a: WeaponSide,
+        weapon_side_b: WeaponSide,
+    ) -> tuple[np.ndarray, int]:
+        """Features crudas (T, 192), sin estandarizar, sobre los mismos frames
+        que `extract`. Las usa el razonamiento (F-035) para leer la velocidad
+        relativa del CM sin reimplementarla.
+
+        Returns:
+            (secuencia cruda (T, 192) float32, frames corregidos por interpolación).
         """
         raise NotImplementedError

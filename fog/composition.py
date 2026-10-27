@@ -29,6 +29,7 @@ from fog.application.consultar_revisiones import (
 )
 from fog.application.consultar_combate import ObtenerCombate
 from fog.application.consultar_pose import ConsultarPose
+from fog.application.consultar_razonamiento import ConsultarRazonamiento
 from fog.application.listar_catalogos import ListarEventos, ListarUsuarios
 from fog.application.process_match import ProcessIncomingMatch
 from fog.application.resumir_validacion import ResumirValidacion
@@ -40,6 +41,7 @@ from fog.infrastructure.auth.redis_limitador import RedisLimitador
 from fog.infrastructure.evidencia.fuente_modelo_m01 import FuenteModeloM01
 from fog.infrastructure.evidencia.lector_jsonl import LectorEvidenciaJsonl
 from fog.infrastructure.evidencia.registro_jsonl import RegistroEvidenciaJsonl
+from fog.infrastructure.explicacion.parametros_json import ParametrosExplicacionJson
 from fog.infrastructure.features.new192_feature_extractor import New192FeatureExtractor
 from fog.infrastructure.features.preprocessing_profile import load_profile
 from fog.infrastructure.messaging.redis_feature_publisher import RedisFeaturePublisher
@@ -192,8 +194,14 @@ class Container(containers.DeclarativeContainer):
 
     abrir_revision = providers.Singleton(AbrirRevisionVar, uow=unidad_de_trabajo)
 
+    parametros_explicacion = providers.Singleton(ParametrosExplicacionJson)
+
     registrar_clasificacion = providers.Singleton(
-        RegistrarClasificacion, uow=unidad_de_trabajo, storage=file_storage
+        RegistrarClasificacion,
+        uow=unidad_de_trabajo,
+        storage=file_storage,
+        extractor=feature_extractor,
+        parametros=parametros_explicacion,
     )
 
     registro_evidencia = providers.Singleton(
@@ -231,6 +239,11 @@ class Container(containers.DeclarativeContainer):
     )
     consultar_pose = providers.Singleton(
         ConsultarPose, consulta=consulta_revision_repository, storage=file_storage
+    )
+    consultar_razonamiento = providers.Singleton(
+        ConsultarRazonamiento,
+        consulta=consulta_revision_repository,
+        uow=unidad_de_trabajo,
     )
     verificar_auditoria = providers.Singleton(
         VerificarAuditoria, verificador=verificador_auditoria

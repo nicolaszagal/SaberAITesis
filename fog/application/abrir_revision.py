@@ -12,6 +12,19 @@ from fog.domain.models import InstantesLuz
 from fog.ports.unidad_de_trabajo import UnidadDeTrabajoPort
 
 
+def frame_del_tocado(t_tocado_ms: int, fps: float) -> int:
+    """Frame del clip en que cae el tocado simulado: `round(t_tocado_ms / 1000 · fps)`.
+
+    Args:
+        t_tocado_ms: instante del tocado dentro del clip.
+        fps: cuadros por segundo del clip.
+
+    Returns:
+        El índice de frame (0-based) dentro del clip.
+    """
+    return round(t_tocado_ms / 1000 * fps)
+
+
 @dataclass(frozen=True)
 class VideoGuardado:
     """Clip ya almacenado (FileStoragePort) con sus metadatos de video."""
@@ -77,7 +90,7 @@ class AbrirRevisionVar:
                 t_luz_b_ms=instantes.t_luz_b_ms,
             )
             await tx.tocados.vincular_clip(
-                tocado.id, clip.id, round(instantes.t_tocado_ms / 1000 * video.fps)
+                tocado.id, clip.id, frame_del_tocado(instantes.t_tocado_ms, video.fps)
             )
             revision = await tx.revisiones.crear(
                 tocado_id=tocado.id, aceptada=True, arbitro_id=combate.arbitro_id

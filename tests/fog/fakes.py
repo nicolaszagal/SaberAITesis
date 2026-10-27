@@ -44,15 +44,21 @@ class FakePoseEstimator(PoseEstimatorPort):
 
 
 class FakeFeatureExtractor(FeatureExtractorPort):
-    def __init__(self, result: ExtractedFeatures | None = None):
+    def __init__(self, result: ExtractedFeatures | None = None, raw: np.ndarray | None = None):
         self.result = result or ExtractedFeatures(
             sequence=np.zeros((5, 192), dtype=np.float32), stats={"error": None}
         )
+        self.raw = raw  # features crudas que devuelve extract_raw; None = ceros
         self.calls: list[tuple] = []
 
     def extract(self, tracked, weapon_side_a, weapon_side_b, min_frames=3) -> ExtractedFeatures:
         self.calls.append((tracked, weapon_side_a, weapon_side_b, min_frames))
         return self.result
+
+    def extract_raw(self, tracked, weapon_side_a, weapon_side_b) -> tuple[np.ndarray, int]:
+        if self.raw is not None:
+            return self.raw, 0
+        return np.zeros((len(tracked.frames), 192), dtype=np.float32), 0
 
 
 class FakeFeaturePublisher(FeatureStreamPublisherPort):

@@ -29,10 +29,15 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse
 
-from fog.application.abrir_revision import AbrirRevisionVar, VideoGuardado
+from fog.application.abrir_revision import (
+    AbrirRevisionVar,
+    VideoGuardado,
+    frame_del_tocado,
+)
 from fog.application.configurar_combate import ConfigurarCombate, DatosTirador
 from fog.application.consultar_combate import ObtenerCombate
 from fog.application.consultar_pose import ConsultarPose
+from fog.application.consultar_razonamiento import ConsultarRazonamiento
 from fog.application.consultar_revisiones import (
     ConsultarSalud,
     ListarRevisiones,
@@ -43,7 +48,7 @@ from fog.application.consultar_revisiones import (
 from fog.application.forward_verdict import ForwardVerdictToClient
 from fog.application.listar_catalogos import ListarEventos, ListarUsuarios
 from fog.application.process_match import ProcessIncomingMatch
-from fog.application.registrar_clasificacion import RegistrarClasificacion
+from fog.application.registrar_clasificacion import ContextoClip, RegistrarClasificacion
 from fog.application.registrar_veredicto import RegistrarVeredicto
 from fog.application.resumir_validacion import ResumirValidacion
 from fog.composition import Container
@@ -80,6 +85,7 @@ from fog.infrastructure.api.schemas import (
     OfferRequest,
     OfferResponse,
     PoseResponse,
+    RazonamientoResponse,
     RegistroAlteradoResponse,
     RevisionDetalleResponse,
     RevisionResumenResponse,
@@ -89,6 +95,8 @@ from fog.infrastructure.api.schemas import (
     VeredictoRequest,
     VeredictoResponse,
 )
+from fog.infrastructure.api import errores
+from fog.infrastructure.api.errores import ErrorConCodigo
 from fog.infrastructure.api.seguridad import exigir_autenticacion
 from fog.infrastructure.clips.clip_file_reader import (
     ClipTooLargeError,
@@ -633,6 +641,12 @@ async def upload_clip(
         tracked=clip.tracked,
         resultado=resultado,
         latencia_ms=int((time.monotonic() - recibido) * 1000),
+        contexto=ContextoClip(
+            fps=clip.fps,
+            frame_tocado=frame_del_tocado(t_tocado_ms, clip.fps),
+            weapon_side_a=session.weapon_side_a,
+            weapon_side_b=session.weapon_side_b,
+        ),
     )
     return _respuesta_clip(match_id, revision_id, luz, resultado)
 
@@ -657,7 +671,13 @@ async def upload_clip(
     ),
     responses={
         404: {"description": "La revisión o el árbitro no existen."},
-        409: {"description": "La revisión ya tiene veredicto, o no tiene clasificación registrada."},
+        409: {
+            "description": (
+                "La revisión ya tiene veredicto (`codigo`: "
+                "`veredicto_ya_registrado`), o no tiene clasificación registrada "
+                "(`codigo`: `sin_clasificacion`)."
+            )
+        },
         422: {"description": "'mantener' o 'cambiar' sin clase_final, 'anular' con clase_final, o clase fuera de dominio."},
     },
 )
@@ -683,10 +703,16 @@ async def registrar_veredicto(
     except RecursoNoEncontrado as exc:
         raise HTTPException(status_code=404, detail=f"no existe: {exc}") from exc
     except VeredictoYaRegistrado as exc:
-        raise HTTPException(status_code=409, detail="la revisión ya tiene un veredicto registrado") from exc
+        raise ErrorConCodigo(
+            409,
+            "la revisión ya tiene un veredicto registrado",
+            errores.VEREDICTO_YA_REGISTRADO,
+        ) from exc
     except ClasificacionPendiente as exc:
-        raise HTTPException(
-            status_code=409, detail="la revisión aún no tiene una clasificación registrada"
+        raise ErrorConCodigo(
+            409,
+            "la revisión aún no tiene una clasificación registrada",
+            errores.SIN_CLASIFICACION,
         ) from exc
     except VeredictoInvalido as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -812,8 +838,9 @@ async def obtener_revision(
         404: {"description": "La revisión, su clip o sus keypoints no existen."},
         409: {
             "description": (
-                "Sin clasificación registrada, o `keypoints alterados` "
-                "(SHA-256 distinto)."
+                "Sin clasificación registrada (`codigo`: `sin_clasificacion`), o "
+                "`keypoints alterados` (SHA-256 distinto; `codigo`: "
+                "`keypoints_alterados`)."
             )
         },
         422: {"description": "`revision_id` no es uuid."},
@@ -831,17 +858,95 @@ async def obtener_pose(
     except RecursoNoEncontrado as exc:
         raise HTTPException(status_code=404, detail=f"no existe: {exc}") from exc
     except ClasificacionPendiente as exc:
-        raise HTTPException(
-            status_code=409,
-            detail="la revisión aún no tiene una clasificación registrada",
+        raise ErrorConCodigo(
+            409,
+            "la revisión aún no tiene una clasificación registrada",
+            errores.SIN_CLASIFICACION,
         ) from exc
     except KeypointsAlterados as exc:
-        raise HTTPException(status_code=409, detail="keypoints alterados") from exc
+        raise ErrorConCodigo(
+            409, "keypoints alterados", errores.KEYPOINTS_ALTERADOS
+        ) from exc
     return PoseResponse(
         **{k: v for k, v in vars(vista).items() if k != "tiradores"},
         tiradores=None
         if vista.tiradores is None
         else {lado: vars(t) for lado, t in vista.tiradores.items()},
+    )
+
+
+@router.get(
+    "/revisiones/{revision_id}/razonamiento",
+    response_model=RazonamientoResponse,
+    response_model_exclude_none=True,
+    tags=["revisiones"],
+    summary="Razonamiento de la sugerencia (solo lectura, F-035)",
+    description=(
+        "Una o dos frases que ponen lado a lado la atención del modelo, los "
+        "eventos de pose medidos por Fog y el artículo FIE de la clase sugerida "
+        "(D-15). Se calculó al clasificar y se sirve tal como se guardó (D-16). "
+        "`estado`: `respaldada`, `discordante`, `no_concluyente`, "
+        "`insuficiente`, `no_registrado` (revisión anterior al registro, D-17) o "
+        "`no_disponible` (la clasificación no está disponible; `motivo` trae el "
+        "`motivo_no_disp`). Las frases se arman con plantillas fijas; el modelo no "
+        "aplica reglas FIE. Los campos null se omiten. `Cache-Control: no-store`."
+    ),
+    responses={
+        404: {"description": "La revisión no existe."},
+        409: {
+            "description": (
+                "La revisión aún no tiene clasificación "
+                "(`codigo`: `sin_clasificacion`)."
+            )
+        },
+        422: {"description": "`revision_id` no es uuid."},
+    },
+)
+@inject
+async def obtener_razonamiento(
+    revision_id: uuid.UUID,
+    response: Response,
+    caso: ConsultarRazonamiento = Depends(Provide[Container.consultar_razonamiento]),
+) -> RazonamientoResponse:
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        v = await caso.execute(revision_id)
+    except RecursoNoEncontrado as exc:
+        raise HTTPException(status_code=404, detail=f"no existe: {exc}") from exc
+    except ClasificacionPendiente as exc:
+        raise ErrorConCodigo(
+            409,
+            "la revisión aún no tiene una clasificación registrada",
+            errores.SIN_CLASIFICACION,
+        ) from exc
+    return RazonamientoResponse(
+        revision_id=v.revision_id,
+        estado=v.estado,
+        frases=v.frases,
+        criterio_fie=(
+            {"articulo": v.articulo, "clase": v.clase}
+            if v.articulo is not None
+            else None
+        ),
+        confianza=v.confianza,
+        ventana_atencion=(
+            None
+            if v.ventana_atencion is None
+            else {k: v.ventana_atencion[k] for k in ("desde_ms", "hasta_ms")}
+        ),
+        frame_clave=v.frame_clave,
+        eventos=[
+            {
+                "tipo": e.tipo,
+                "tirador": e.tirador,
+                "frame_idx": e.frame_idx,
+                "t_ms": e.t_ms,
+                "censurado_inicio": (e.detalle or {}).get("censurado_inicio"),
+            }
+            for e in v.eventos
+        ],
+        params_version=v.params_version,
+        motivo=v.motivo,
     )
 
 

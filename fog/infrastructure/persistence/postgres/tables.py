@@ -176,3 +176,16 @@ registro_auditoria = sa.Table(
     sa.Column("hash", sa.String(64), nullable=False),
     sa.Column("creado_en", sa.TIMESTAMP(timezone=True), nullable=False),
 )
+
+evidencia = sa.Table(
+    "evidencia",
+    metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("clasificacion_id", UUID(as_uuid=True), nullable=False),
+    sa.Column("tipo", sa.Text, nullable=False),
+    sa.Column("tirador", sa.String(1)),
+    sa.Column("frame_idx", sa.Integer),
+    sa.Column("t_ms", sa.Integer),
+    sa.Column("articulo_fie", sa.Text),
+    sa.Column("detalle", JSONB),
+)

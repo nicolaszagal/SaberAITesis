@@ -10,7 +10,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from fog.infrastructure.api import auth_routes, routes, seguridad
+from fog.infrastructure.api import auth_routes, errores, routes, seguridad
 from shared import config
 
 # Módulos con `Provide[...]` que el Container debe cablear.
@@ -52,6 +52,7 @@ def crear_app(
         kwargs.update(docs_url=None, redoc_url=None, openapi_url=None)
     app = FastAPI(**kwargs)
     app.state.proxy_token = proxy_token
+    errores.registrar_manejadores(app)
 
     app.include_router(routes.router_publico)
     app.include_router(auth_routes.router_login)

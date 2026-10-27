@@ -11,7 +11,12 @@ from sqlalchemy import Select, select
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from fog.domain.audit_models import DatosPose, DetalleRevision, ResumenRevision
+from fog.domain.audit_models import (
+    DatosPose,
+    DatosRazonamiento,
+    DetalleRevision,
+    ResumenRevision,
+)
 from fog.infrastructure.persistence.postgres.tables import (
     clasificacion as clasificacion_t,
 )
@@ -163,4 +168,37 @@ class PostgresConsultaRevisionRepository(ConsultaRevisionRepositoryPort):
             motivo_no_disp=f.motivo_no_disp,
             keypoints_uri=f.keypoints_uri,
             keypoints_sha256=f.keypoints_sha256,
+        )
+
+    async def datos_razonamiento(
+        self, revision_id: uuid.UUID
+    ) -> DatosRazonamiento | None:
+        consulta = (
+            select(
+                revision_t.c.id,
+                clasificacion_t.c.id.label("clasificacion_id"),
+                clasificacion_t.c.disponible,
+                clasificacion_t.c.motivo_no_disp,
+                clasificacion_t.c.clase,
+                clasificacion_t.c.confianza,
+            )
+            .select_from(
+                revision_t.outerjoin(
+                    clasificacion_t,
+                    clasificacion_t.c.id == revision_t.c.clasificacion_id,
+                )
+            )
+            .where(revision_t.c.id == revision_id)
+        )
+        async with self._session_factory() as session:
+            f = (await session.execute(consulta)).first()
+        if f is None:
+            return None
+        return DatosRazonamiento(
+            revision_id=f.id,
+            clasificacion_id=f.clasificacion_id,
+            disponible=f.disponible,
+            motivo_no_disp=f.motivo_no_disp,
+            clase=clase_a_modelo(f.clase),
+            confianza=_confianza(f),
         )

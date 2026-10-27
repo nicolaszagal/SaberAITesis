@@ -18,6 +18,7 @@ from fog.ports.clip_repository import ClipRepositoryPort
 from fog.ports.combate_repository import CombateRepositoryPort
 from fog.ports.evento_repository import EventoRepositoryPort
 from fog.ports.modelo_version_repository import ModeloVersionRepositoryPort
+from fog.ports.razonamiento_repository import RazonamientoRepositoryPort
 from fog.ports.revision_repository import RevisionRepositoryPort
 from fog.ports.tirador_repository import TiradorRepositoryPort
 from fog.ports.tocado_repository import TocadoRepositoryPort
@@ -35,6 +36,7 @@ class Transaccion:
     tocados: TocadoRepositoryPort
     modelos: ModeloVersionRepositoryPort
     clasificaciones: ClasificacionRepositoryPort
+    razonamientos: RazonamientoRepositoryPort
     revisiones: RevisionRepositoryPort
     veredictos: VeredictoRepositoryPort
     auditoria: AuditoriaRepositoryPort

@@ -121,3 +121,40 @@ def test_rejects_run_config_with_mismatched_classes(tmp_path):
 def test_model_version_name_derives_from_run_dir():
     name = LSTM6ClassAdapter.model_version_name("/data/dataset/lstm_6class/checkpoints/20260928_141021")
     assert name == "lstm_6class/20260928_141021/best_model.pt"
+
+
+def test_classify_devuelve_atencion_de_largo_t_que_suma_uno(tmp_path):
+    """F-035: la atención sale en la misma pasada y sus pesos suman ~1."""
+    _write_synthetic_run(tmp_path)
+    adapter = LSTM6ClassAdapter(run_dir=str(tmp_path), device=torch.device("cpu"))
+    sequence = np.random.default_rng(3).normal(size=(37, 192)).astype(np.float32)
+
+    raw = adapter.classify(sequence, LuzSignal(has_luz_a=True, has_luz_b=True))
+
+    assert len(raw.atencion) == 37
+    assert sum(raw.atencion) == pytest.approx(1.0, abs=1e-5)
+    assert all(w >= 0.0 for w in raw.atencion)
+
+
+def test_la_atencion_no_cambia_la_clase_ni_las_probabilidades(tmp_path):
+    _write_synthetic_run(tmp_path)
+    adapter = LSTM6ClassAdapter(run_dir=str(tmp_path), device=torch.device("cpu"))
+    sequence = np.random.default_rng(4).normal(size=(25, 192)).astype(np.float32)
+    luz = LuzSignal(has_luz_a=True, has_luz_b=True)
+
+    raw = adapter.classify(sequence, luz)
+
+    x = torch.tensor(sequence).unsqueeze(0)
+    with torch.no_grad():
+        logits = adapter._model(x, torch.tensor([25]), torch.tensor([[1.0, 1.0]]))
+    esperado = torch.softmax(logits, dim=1)[0].numpy()
+    assert [raw.probs[c] for c in CLASSES] == pytest.approx(list(esperado), abs=1e-6)
+
+
+def test_sin_atencion_en_el_modelo_la_atencion_es_nula(tmp_path):
+    _write_synthetic_run(tmp_path, dict(_RUN_CONFIG, use_attention=False))
+    adapter = LSTM6ClassAdapter(run_dir=str(tmp_path), device=torch.device("cpu"))
+
+    raw = adapter.classify(np.zeros((10, 192), dtype=np.float32), None)
+
+    assert raw.atencion is None
