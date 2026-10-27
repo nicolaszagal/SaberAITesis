@@ -105,5 +105,6 @@ class ClassifyAndPublish:
             probs=resolved.probs,
             latencia_inferencia_ms=latencia_inferencia_ms,
             modelo=self._modelo_version_name,
+            atencion=resolved.atencion,
         ))
         await self._consumer.ack(entry_id)

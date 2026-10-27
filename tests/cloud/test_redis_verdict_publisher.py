@@ -89,3 +89,25 @@ async def test_publish_omits_match_id_when_unknown(client):
     campos = (await client.xrange(f"{config.VERDICT_STREAM_PREFIX}r7", "-", "+"))[0][1]
     assert b"match_id" not in campos
     assert campos[b"revision_id"] == b"r7"
+
+
+async def test_publish_incluye_atencion_con_cuatro_decimales(client):
+    import json
+
+    publisher = RedisVerdictPublisher(client)
+    verdict = _verdict("r8")
+    verdict.atencion = [0.123456, 0.376544, 0.5]
+
+    await publisher.publish(verdict)
+
+    campos = (await client.xrange(f"{config.VERDICT_STREAM_PREFIX}r8", "-", "+"))[0][1]
+    assert json.loads(campos[b"atencion"]) == [0.1235, 0.3765, 0.5]
+
+
+async def test_publish_omite_atencion_si_no_hay(client):
+    publisher = RedisVerdictPublisher(client)
+
+    await publisher.publish(_verdict("r9"))
+
+    campos = (await client.xrange(f"{config.VERDICT_STREAM_PREFIX}r9", "-", "+"))[0][1]
+    assert b"atencion" not in campos

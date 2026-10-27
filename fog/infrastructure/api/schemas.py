@@ -380,6 +380,76 @@ class PoseResponse(BaseModel):
     )
 
 
+class EventoRazonamientoResponse(BaseModel):
+    """Evento medido sobre la pose (tabla `evidencia`)."""
+
+    tipo: Literal["inicio_extension_brazo", "inicio_desplazamiento", "tocado"]
+    tirador: Literal["A", "B"] | None = Field(
+        None,
+        description=(
+            "Ausente en `inicio_desplazamiento` (acercamiento mutuo) y en `tocado`."
+        ),
+    )
+    frame_idx: int = Field(
+        ..., description="Frame del clip (mismo eje que `frame_inicio` de /pose)."
+    )
+    t_ms: int = Field(
+        ..., description="Milisegundos respecto al tocado; negativo = antes."
+    )
+    censurado_inicio: bool | None = Field(
+        None,
+        description=(
+            "Solo en `inicio_desplazamiento`: true si el umbral ya se superaba al "
+            "arrancar la secuencia; el inicio real es anterior y `frame_idx` es "
+            "el primero."
+        ),
+    )
+
+
+class CriterioFieResponse(BaseModel):
+    articulo: str = Field(
+        ..., description="Artículo FIE de la clase sugerida, p. ej. t.101.2-4."
+    )
+    clase: str = Field(
+        ..., description="Clase sugerida, con el vocabulario del modelo."
+    )
+
+
+class VentanaAtencionResponse(BaseModel):
+    desde_ms: int
+    hasta_ms: int
+
+
+class RazonamientoResponse(BaseModel):
+    """GET /revisiones/{id}/razonamiento: explicación determinista de la
+    sugerencia (F-035, CU-09, D-15). Los campos null se omiten."""
+
+    revision_id: uuid.UUID
+    estado: Literal[
+        "respaldada",
+        "discordante",
+        "no_concluyente",
+        "insuficiente",
+        "no_registrado",
+        "no_disponible",
+    ]
+    frases: list[str] = Field(
+        default_factory=list, description="Una o dos frases; vacía sin razonamiento."
+    )
+    criterio_fie: CriterioFieResponse | None = None
+    confianza: float | None = None
+    ventana_atencion: VentanaAtencionResponse | None = Field(
+        None, description="Tramo donde el modelo concentró la mitad de su atención."
+    )
+    frame_clave: int | None = Field(None, description="Frame de mayor atención.")
+    eventos: list[EventoRazonamientoResponse] = Field(default_factory=list)
+    params_version: str | None = None
+    motivo: str | None = Field(
+        None,
+        description="Con `no_disponible`, el `motivo_no_disp` de la clasificación.",
+    )
+
+
 class RegistroAlteradoResponse(BaseModel):
     seq: int
     esperado: str

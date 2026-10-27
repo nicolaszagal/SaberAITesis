@@ -153,7 +153,7 @@ def test_npz_modificado_responde_409_y_no_sirve_datos(crear_app, caplog):
         r = app.client.get(f"/revisiones/{revision_id}/pose")
 
     assert r.status_code == 409
-    assert r.json() == {"detail": "keypoints alterados"}
+    assert r.json() == {"detail": "keypoints alterados", "codigo": "keypoints_alterados"}
     assert any("keypoints alterados" in m for m in caplog.messages)
 
 

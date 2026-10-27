@@ -211,6 +211,8 @@ class VerdictView:
     probs: dict[str, float] | None = None
     latencia_inferencia_ms: int | None = None
     modelo: str | None = None
+    # Pesos de atención del BiLSTM por frame (F-035); None si Cloud no los envió.
+    atencion: list[float] | None = None
 
     def to_ws_message(self) -> dict:
         return {

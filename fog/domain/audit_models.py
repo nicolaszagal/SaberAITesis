@@ -218,6 +218,20 @@ class DatosPose:
 
 
 @dataclass(frozen=True)
+class DatosRazonamiento:
+    """Lo que hace falta de una revisión para servir su razonamiento
+    (GET /revisiones/{id}/razonamiento). `clasificacion_id` y los demás campos
+    de la clasificación son `None` mientras la revisión no tiene clasificación."""
+
+    revision_id: uuid.UUID
+    clasificacion_id: uuid.UUID | None
+    disponible: bool | None
+    motivo_no_disp: str | None
+    clase: str | None  # vocabulario del modelo (AttackA, ...)
+    confianza: float | None
+
+
+@dataclass(frozen=True)
 class RegistroAlterado:
     """Fila que devuelve `sabre.fn_verificar_auditoria()`: el hash guardado
     no coincide con el recalculado (CU-12)."""

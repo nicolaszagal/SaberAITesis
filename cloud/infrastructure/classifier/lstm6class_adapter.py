@@ -96,8 +96,18 @@ class LSTM6ClassAdapter(ActionClassifierPort):
         )
 
     def classify(self, sequence: np.ndarray, luz: LuzSignal | None) -> RawVerdict:
-        """sequence: (T, 192) float32, ya estandarizada/recortada por
-        FeatureExtractorPort en Fog (perfil `lstm_6class`, no se reprocesa acá)."""
+        """Clasifica la secuencia y devuelve, en la misma pasada, la atención.
+
+        Args:
+            sequence: (T, 192) float32, ya estandarizada/recortada por
+                FeatureExtractorPort en Fog (perfil `lstm_6class`, no se
+                reprocesa acá).
+            luz: señal Favero, o None si no hay.
+
+        Returns:
+            El veredicto crudo con `atencion`: los T pesos de atención del
+            BiLSTM (suman 1), o None si el modelo no usa atención.
+        """
         effective_luz = luz if luz is not None else LuzSignal.none()
 
         # x: (1, T, 192)
@@ -109,15 +119,19 @@ class LSTM6ClassAdapter(ActionClassifierPort):
         )
 
         with torch.no_grad():
-            logits = self._model(x, lengths, luz_t)
+            salida = self._model(x, lengths, luz_t, return_attention=True)
+            # Sin atención el modelo devuelve solo los logits (F-035: sin pesos).
+            logits, pesos = salida if isinstance(salida, tuple) else (salida, None)
             logits = _apply_favero_logit_mask(logits, effective_luz)
             probs = torch.softmax(logits, dim=1)[0].cpu().numpy()
+            atencion = None if pesos is None else pesos[0].cpu().numpy()
 
         idx = int(probs.argmax())
         return RawVerdict(
             action_class=ActionClass(CLASSES[idx]),
             confidence=float(probs[idx]),
             probs={cls: float(p) for cls, p in zip(CLASSES, probs)},
+            atencion=None if atencion is None else [float(w) for w in atencion],
         )
 
 

@@ -23,14 +23,13 @@ from fog.domain.errors import (
     RecursoNoEncontrado,
 )
 from fog.domain.models import lado_de_brazo
+from fog.domain.razonamiento import COLOR_POR_TIRADOR
 from fog.ports.consulta_revision_repository import ConsultaRevisionRepositoryPort
 from fog.ports.file_storage import FileStoragePort
 from shared.feature_extractor import CONF_THR, WEAPON_KPT, angle_three_points, valid_pt
 
 log = logging.getLogger("fog.application")
 
-# Mapeo de colores (contexto_sabre.md): A = ROJ (izquierda en cámara), B = VER.
-COLOR_POR_TIRADOR = {"A": "ROJ", "B": "VER"}
 
 
 @dataclass(frozen=True)

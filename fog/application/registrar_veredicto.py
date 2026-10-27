@@ -24,6 +24,7 @@ from fog.domain.errors import (
 )
 from fog.domain.evidencia import construir_linea
 from fog.domain.models import CLASES_MODELO
+from fog.domain.razonamiento import TIPO_CRITERIO, FilaEvidencia
 from fog.ports.registro_evidencia import RegistroEvidenciaPort
 from fog.ports.unidad_de_trabajo import UnidadDeTrabajoPort
 
@@ -57,7 +58,15 @@ def _a_json(valor: Any) -> Any:
     return valor
 
 
-def construir_snapshot(*, revision, tocado, clasificacion, veredicto, modelo) -> dict:
+def construir_snapshot(
+    *,
+    revision,
+    tocado,
+    clasificacion,
+    veredicto,
+    modelo,
+    justificacion: dict | None = None,
+) -> dict:
     """Arma el snapshot JSON del registro de auditoría (CU-11).
 
     Args:
@@ -66,13 +75,16 @@ def construir_snapshot(*, revision, tocado, clasificacion, veredicto, modelo) ->
         clasificacion: sugerencia registrada (disponible o no).
         veredicto: decisión del árbitro.
         modelo: versión de modelo que produjo la clasificación.
+        justificacion: razonamiento guardado al clasificar (`estado`, `frases`,
+            `articulo_fie`, `params_version`); None en revisiones anteriores a
+            F-035, que no lo llevan (D-17).
 
     Returns:
         Diccionario serializable con revisión, tocado, clasificación,
         veredicto, modelo, reglamento y `vocabulario` (`"modelo"`: nombres
-        de clase del modelo).
+        de clase del modelo), más `justificacion` si existe.
     """
-    return _a_json(
+    snapshot = _a_json(
         {
             "revision": revision,
             "tocado": tocado,
@@ -84,6 +96,22 @@ def construir_snapshot(*, revision, tocado, clasificacion, veredicto, modelo) ->
             "vocabulario": "modelo",
         }
     )
+    if justificacion is not None:
+        snapshot["justificacion"] = justificacion
+    return snapshot
+
+
+def _justificacion(filas: list[FilaEvidencia]) -> dict | None:
+    """Resume la fila `criterio_fie` para el snapshot; None si no hay."""
+    criterio = next((f for f in filas if f.tipo == TIPO_CRITERIO), None)
+    if criterio is None:
+        return None
+    return {
+        "estado": criterio.detalle["estado"],
+        "frases": criterio.detalle["frases"],
+        "articulo_fie": criterio.articulo_fie,
+        "params_version": criterio.detalle["params_version"],
+    }
 
 
 class RegistrarVeredicto:
@@ -150,6 +178,9 @@ class RegistrarVeredicto:
             clasificacion = await tx.clasificaciones.obtener(revision.clasificacion_id)
             modelo = await tx.modelos.obtener(clasificacion.modelo_version_id)
             combate = await tx.combates.obtener(tocado.combate_id)
+            justificacion = _justificacion(
+                await tx.razonamientos.listar(clasificacion.id)
+            )
 
             veredicto = await tx.veredictos.crear(
                 revision_id=revision.id,
@@ -167,6 +198,7 @@ class RegistrarVeredicto:
                     clasificacion=clasificacion,
                     veredicto=veredicto,
                     modelo=modelo,
+                    justificacion=justificacion,
                 ),
             )
         log.info(

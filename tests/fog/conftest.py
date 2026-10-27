@@ -285,7 +285,7 @@ def crear_app(database_url, alembic_cfg, tmp_path):
         *, locked: bool = True, extraccion_falla: bool = False, subscriber=None,
         verdict_timeout_s: float = 30.0, clip_max_mb: float = 200.0,
         clip_timeout_s: float = 60.0, pose_estimator=None, autenticado: bool = True,
-        **opciones_app,
+        extractor=None, **opciones_app,
     ) -> AppAuditable:
         container = Container()
         _config_auth(container)
@@ -309,7 +309,7 @@ def crear_app(database_url, alembic_cfg, tmp_path):
             ExtractedFeatures(sequence=None, stats={"error": "tracking no pudo asignar IDs A/B"})
             if extraccion_falla else None
         )
-        container.feature_extractor.override(FakeFeatureExtractor(result=resultado))
+        container.feature_extractor.override(extractor or FakeFeatureExtractor(result=resultado))
         container.feature_publisher.override(FakeFeaturePublisher())
         container.verdict_subscriber.override(subscriber or FakeVerdictSubscriber(VEREDICTO_DEFAULT))
         container.match_repository.override(InMemoryMatchRepository())

@@ -68,3 +68,23 @@ async def test_no_disponible_sin_match_id_usa_cadena_vacia():
     assert resultado == UnavailableResult(
         match_id="", revision_id="r5", motivo=MotivoNoDisponible.MENSAJE_INVALIDO
     )
+
+
+async def test_lee_la_atencion_si_cloud_la_envia():
+    campos = {
+        b"match_id": b"m", b"disponible": b"true", b"action_class": b"AttackA",
+        b"confidence": b"0.9", b"fencer": b"ROJ", b"atencion": b"[0.25, 0.75]",
+    }
+
+    veredicto = await RedisVerdictSubscriber(_RedisFalso(campos)).wait_for_verdict("r1")
+
+    assert veredicto.atencion == [0.25, 0.75]
+
+
+async def test_acepta_mensajes_sin_atencion_y_deja_la_ventana_nula():
+    """Compatibilidad hacia atrás (F-035): sin `atencion`, Fog sigue funcionando."""
+    campos = {b"action_class": b"AttackA", b"confidence": b"0.5", b"fencer": b"ROJ"}
+
+    veredicto = await RedisVerdictSubscriber(_RedisFalso(campos)).wait_for_verdict("r2")
+
+    assert veredicto.atencion is None

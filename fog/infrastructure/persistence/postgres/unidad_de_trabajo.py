@@ -29,6 +29,9 @@ from fog.infrastructure.persistence.postgres.evento_repository import (
 from fog.infrastructure.persistence.postgres.modelo_version_repository import (
     PostgresModeloVersionRepository,
 )
+from fog.infrastructure.persistence.postgres.razonamiento_repository import (
+    PostgresRazonamientoRepository,
+)
 from fog.infrastructure.persistence.postgres.revision_repository import (
     PostgresRevisionRepository,
 )
@@ -94,6 +97,7 @@ class PostgresUnidadDeTrabajo(UnidadDeTrabajoPort):
                 tocados=PostgresTocadoRepository(compartida),
                 modelos=PostgresModeloVersionRepository(compartida),
                 clasificaciones=PostgresClasificacionRepository(compartida),
+                razonamientos=PostgresRazonamientoRepository(compartida),
                 revisiones=PostgresRevisionRepository(compartida),
                 veredictos=PostgresVeredictoRepository(compartida),
                 auditoria=PostgresAuditoriaRepository(compartida),

@@ -35,6 +35,9 @@ class RedisVerdictPublisher(VerdictPublisherPort):
                 "latencia_inferencia_ms": str(verdict.latencia_inferencia_ms),
                 "modelo": verdict.modelo or "",
             })
+            if verdict.atencion is not None:
+                # Campo opcional (F-035): Fog funciona sin él.
+                fields["atencion"] = json.dumps([round(w, 4) for w in verdict.atencion])
         else:
             fields["motivo_no_disp"] = verdict.motivo_no_disp
 

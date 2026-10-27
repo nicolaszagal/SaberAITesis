@@ -60,6 +60,9 @@ class RawVerdict:
     action_class: ActionClass
     confidence: float
     probs: dict[str, float] = field(default_factory=dict)  # softmax completo, por clase
+    # Pesos de atención del BiLSTM por frame, longitud T de la secuencia, suma 1.
+    # None si el modelo no usa atención (F-035).
+    atencion: list[float] | None = None
 
 
 class MotivoNoDisponible(str, Enum):
@@ -115,3 +118,4 @@ class Verdict:
     latencia_inferencia_ms: int | None = None
     modelo: str | None = None  # "lstm_6class/<run_id>/<archivo>", ver LSTM6ClassAdapter
     motivo_no_disp: str | None = None  # uno de MotivoNoDisponible, si disponible=False
+    atencion: list[float] | None = None  # pesos de atención por frame (F-035), opcional

@@ -6,7 +6,12 @@ import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime
 
-from fog.domain.audit_models import DatosPose, DetalleRevision, ResumenRevision
+from fog.domain.audit_models import (
+    DatosPose,
+    DatosRazonamiento,
+    DetalleRevision,
+    ResumenRevision,
+)
 
 
 class ConsultaRevisionRepositoryPort(ABC):
@@ -54,5 +59,20 @@ class ConsultaRevisionRepositoryPort(ABC):
         Returns:
             Los datos del clip, el tocado, los brazos y los keypoints, o None
             si la revisión no existe.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    async def datos_razonamiento(
+        self, revision_id: uuid.UUID
+    ) -> DatosRazonamiento | None:
+        """Devuelve la clasificación de una revisión para servir su razonamiento.
+
+        Args:
+            revision_id: id de `revision_var`.
+
+        Returns:
+            La clasificación (clase en vocabulario del modelo), o None si la
+            revisión no existe.
         """
         raise NotImplementedError

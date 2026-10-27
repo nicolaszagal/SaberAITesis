@@ -232,10 +232,51 @@ y con `Cache-Control: no-store`. Sale del `.npz` de la clasificación (sección 
   `tiradores: null` y `motivo` igual al `motivo_no_disp` de la clasificación.
 - **404** si la revisión, su clip o su `.npz` no existen; **422** si `revision_id` no es uuid
   (a diferencia de `GET /revisiones/{id}`, que responde 404); **401** sin token.
-- **409** `{"detail": "la revisión aún no tiene una clasificación registrada"}` si la revisión
-  no tiene clasificación; **409** `{"detail": "keypoints alterados"}` si el SHA-256 del `.npz`
-  no coincide con `keypoints_sha256`: se registra en el log técnico (`fog.application`) y no se
-  sirven datos.
+- **409** si la revisión no tiene clasificación o si el SHA-256 del `.npz` no coincide con
+  `keypoints_sha256` (se registra en el log técnico `fog.application` y no se sirven datos).
+  Los dos 409 se distinguen por `codigo`, no por el texto de `detail` (que puede cambiar):
+  `{"detail": "la revisión aún no tiene una clasificación registrada", "codigo": "sin_clasificacion"}`
+  y `{"detail": "keypoints alterados", "codigo": "keypoints_alterados"}`.
+
+`GET /revisiones/{revision_id}/razonamiento` (F-035, F-008, CU-09, D-15 a D-17) — una o dos
+frases cortas que explican la sugerencia. Se calculó al clasificar y se sirve tal como se
+guardó en `evidencia` (D-16); no recalcula nada. Protegida por JWT y con
+`Cache-Control: no-store`. Los campos `null` se omiten.
+```json
+{ "revision_id": "uuid", "estado": "respaldada",
+  "frases": ["A · ROJ inició la extensión del brazo 133 ms antes que B · VER.",
+             "Criterio FIE t.101.2-4: la extensión del brazo precede al ataque."],
+  "criterio_fie": { "articulo": "t.101.2-4", "clase": "AttackA" }, "confianza": 0.74,
+  "ventana_atencion": { "desde_ms": -620, "hasta_ms": -180 }, "frame_clave": 131,
+  "eventos": [
+    { "tipo": "tocado", "frame_idx": 143, "t_ms": 0 },
+    { "tipo": "inicio_extension_brazo", "tirador": "A", "frame_idx": 118, "t_ms": -800 },
+    { "tipo": "inicio_extension_brazo", "tirador": "B", "frame_idx": 122, "t_ms": -667 },
+    { "tipo": "inicio_desplazamiento", "frame_idx": 110, "t_ms": -1100, "censurado_inicio": false } ],
+  "params_version": "1" }
+```
+- `estado`: `respaldada`, `discordante`, `no_concluyente`, `insuficiente` (ver CU-09 en
+  `contexto_sabre.md`), `no_registrado` (revisión anterior al registro de razonamiento, D-17: sin
+  `frases`, `criterio_fie` ni `eventos`) o `no_disponible` (la clasificación no está disponible:
+  trae `motivo`, el `motivo_no_disp`, y no hay razonamiento).
+- Las frases salen de plantillas fijas (D-15), con a lo sumo 2 frases y 220 caracteres (U6). El
+  tirador se escribe como `A · ROJ` o `B · VER`; los tiempos van en ms o en s con coma decimal.
+  El texto no afirma que el modelo decidió ni que aplicó una regla FIE: el BiLSTM no aplica reglas.
+- `eventos[].frame_idx` es el frame del clip (el mismo eje que `frame_inicio` de `/pose`) y
+  `t_ms` los milisegundos respecto al tocado (negativo = antes). `inicio_extension_brazo` sale
+  del `angulo_codo` crudo de `/pose` (no del interpolado que recibe el modelo): un hueco de
+  detección da `insuficiente`, no un inicio rellenado.
+- `inicio_desplazamiento` es **un solo evento sin `tirador`** (acercamiento mutuo): con la
+  corrección DEF-27 la velocidad relativa del CM es idéntica para A y B, así que **no identifica
+  quién se desplaza primero**, y **no entra en las plantillas**. `censurado_inicio: true` indica que el
+  umbral ya se superaba en los primeros 3 frames de la secuencia: el inicio real es anterior y
+  `frame_idx` es el primero de la secuencia.
+- `ventana_atencion` y `frame_clave` (el frame de mayor peso de atención) faltan si Cloud no
+  envió `atencion`. `criterio_fie.clase` usa el vocabulario del modelo (`AttackA`, ...).
+- **404** si la revisión no existe; **422** si `revision_id` no es uuid; **401** sin token;
+  **409** `{"detail": "la revisión aún no tiene una clasificación registrada", "codigo":
+  "sin_clasificacion"}` si la revisión no tiene clasificación. Aquí no aparece
+  `keypoints_alterados`: este endpoint lee `evidencia`, no el `.npz`.
 
 `GET /auditoria/verificar` — resultado de `sabre.fn_verificar_auditoria()` sin filtrar, con
 200 en ambos casos: `{ "integra": true, "alteradas": [] }` o
@@ -574,6 +615,7 @@ distintos. `disponible` distingue dos formas (igual que
 | `probs` | str | JSON `{"AttackA": 0.61, ...}` — softmax completo, post filtro Favero (auditoría, RF-22) |
 | `latencia_inferencia_ms` | str | duración de `ActionClassifierPort.classify` en ms (auditoría, F-027); Fog la persiste en `clasificacion.latencia_inferencia_ms`. El mensaje `disponible=false` no la trae y queda NULL |
 | `modelo` | str | `"lstm_6class/<run_id>/<archivo>"`, derivado de `MODEL_RUN_DIR` (ver `LSTM6ClassAdapter.model_version_name`) |
+| `atencion` | str | **opcional** (F-035). JSON de floats a 4 decimales con los pesos de atención del BiLSTM por frame: largo T (el de la secuencia de `fog:features`, índice `t` = frame `lock_frame + t` del clip) y suma ≈ 1. Se calcula en la misma pasada que el veredicto. Si el modelo no usa atención, el campo no se publica |
 | `ts` | str | timestamp ISO |
 
 **`disponible=false`** (DEF-09, mensaje de `fog:features` inválido — ver sección 5):
@@ -597,7 +639,9 @@ para las reglas de prioridad FIE (t.101-t.106), ver sección 8.
 `RedisVerdictSubscriber` (Fog) lee `disponible`: con `"false"` entrega un "no disponible"
 con `motivo_no_disp` (se reenvía por el WebSocket de la sección 7 y se registra en
 `clasificacion`); con `"true"` conserva además `probs`, `latencia_inferencia_ms` y `modelo`
-para la auditoría (campos opcionales: si faltan, se guardan sin ellos).
+para la auditoría y `atencion` para el razonamiento (campos opcionales: si faltan, se guardan
+sin ellos; sin `atencion`, Fog no calcula la ventana de atención y el resto del razonamiento
+sigue funcionando).
 
 Fog mantiene una tarea de fondo por revisión activa (`revision_id`) que hace `XREAD`
 bloqueante sobre este stream y reenvía el resultado por WebSocket en cuanto llega.
@@ -703,6 +747,11 @@ cualquier paso falla no queda nada. El hash y el encadenamiento los calcula la b
 íntegra). Veredicto y auditoría son de solo adición (RNF-05): un `UPDATE`/`DELETE` falla con
 "Los registros de auditoría no pueden modificarse".
 
+El snapshot de las revisiones nuevas incluye `justificacion` (`estado`, `frases`, `articulo_fie`,
+`params_version`: el razonamiento guardado al clasificar, F-035); el hash lo cubre porque
+`fn_verificar_auditoria()` lo calcula sobre el snapshot completo. Las revisiones anteriores
+no lo llevan y no se recalculan (D-17).
+
 Respuesta (JSON): `match_id` (el combate de la revisión), `revision_id`, `veredicto_id`,
 `decision`, `clase_final`, `arbitro_id`, `registrado_en`, `cerrada_en`, `auditoria_seq`,
 `auditoria_hash`.
@@ -710,7 +759,7 @@ Respuesta (JSON): `match_id` (el combate de la revisión), `revision_id`, `vered
 | código | causa |
 |---|---|
 | `404` | la revisión (o un `revision_id` que no es uuid) o el árbitro no existen |
-| `409` | la revisión ya tiene veredicto; o aún no tiene clasificación registrada (sin ella el registro no podría guardar la versión de modelo, RF-22) |
+| `409` | la revisión ya tiene veredicto (`"codigo": "veredicto_ya_registrado"`); o aún no tiene clasificación registrada (`"codigo": "sin_clasificacion"`; sin ella el registro no podría guardar la versión de modelo, RF-22). Cuerpo: `{"detail": "...", "codigo": "..."}` |
 | `422` | `"mantener"` o `"cambiar"` sin `clase_final`; `"anular"` con `clase_final`; `clase_final` fuera de la taxonomía del modelo |
 
 **Etiqueta de reentrenamiento.** La vista `sabre.v_muestras_confirmadas` (migración `0003`)
@@ -804,6 +853,7 @@ contrato del flujo WebRTC, fuera de la Validación 1):
 | Veredicto (CU-10) | `POST /revisiones/{revision_id}/veredicto` (`clase_final` obligatoria con mantener y cambiar; sin ella con anular) |
 | Historial y detalle (CU-12) | `GET /revisiones?evento_id=`, `GET /revisiones/{id}` |
 | Trazos de pose en el modal (CU-08, F-031): botón "Ver trazos" (tecla T) en Revisión VAR (Paso 2) y en el detalle del Historial (CU-12); se pide solo al abrir el modal y se guarda por revisión mientras la pantalla siga montada | `GET /revisiones/{revision_id}/pose` |
+| Razonamiento de la sugerencia (CU-09, F-035): panel "Razonamiento" bajo demanda en Revisión VAR y en el detalle del Historial | `GET /revisiones/{revision_id}/razonamiento` (los dos 409 de `/pose` y el de `/razonamiento` se distinguen por `codigo`, no por `detail`) |
 | Resumen y exportación de la validación (L02) | `GET /validaciones/{evento_id}/resumen` |
 | Estado del sistema y modelo | `GET /health`, `GET /modelo/activo` |
 

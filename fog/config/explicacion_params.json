@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "u1": {"angulo_min_grados": 135, "incrementos_min": 3},
+  "u2": {"umbral_rel_vel": 0.010, "frames_sostenidos": 3, "frames_censura": 3},
+  "u3": {"margen_frames": 1},
+  "u4": {"articulos": {"Attack": "t.101.2-4", "Contrattack": "t.106", "Riposte": "t.105"}},
+  "u5": {"masa_atencion": 0.5},
+  "u6": {"max_frases": 2, "max_caracteres": 220}
+}
