@@ -244,7 +244,7 @@ guardó en `evidencia` (D-16); no recalcula nada. Protegida por JWT y con
 `Cache-Control: no-store`. Los campos `null` se omiten.
 ```json
 { "revision_id": "uuid", "estado": "respaldada",
-  "frases": ["A · ROJ inició la extensión del brazo 133 ms antes que B · VER.",
+  "frases": ["ROJ inició la extensión del brazo 133 ms antes que VER.",
              "Criterio FIE t.101.2-4: la extensión del brazo precede al ataque."],
   "criterio_fie": { "articulo": "t.101.2-4", "clase": "AttackA" }, "confianza": 0.74,
   "ventana_atencion": { "desde_ms": -620, "hasta_ms": -180 }, "frame_clave": 131,
@@ -265,7 +265,7 @@ guardó en `evidencia` (D-16); no recalcula nada. Protegida por JWT y con
   `eventos`) o `no_disponible` (la clasificación no está disponible:
   trae `motivo`, el `motivo_no_disp`, y no hay razonamiento).
 - Las frases salen de plantillas fijas (D-15), con a lo sumo 2 frases y 220 caracteres (U6). El
-  tirador se escribe como `A · ROJ` o `B · VER`; los tiempos van en ms o en s con coma decimal.
+  tirador se nombra solo por su color (`ROJ` o `VER`), sin la letra A/B; los tiempos van en ms o en s con coma decimal.
   El texto no afirma que el modelo decidió ni que aplicó una regla FIE: el BiLSTM no aplica reglas.
 - `eventos[].frame_idx` es el frame del clip (el mismo eje que `frame_inicio` de `/pose`) y
   `t_ms` los milisegundos respecto al tocado (negativo = antes). `inicio_extension_brazo` sale
