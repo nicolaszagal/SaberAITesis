@@ -22,8 +22,9 @@ class VistaRazonamiento:
     """Razonamiento de una revisión.
 
     `estado` es uno de `respaldada`, `discordante`, `no_concluyente`,
-    `insuficiente`, `no_registrado` (revisión anterior al registro, D-17) o
-    `no_disponible` (sin sugerencia; `motivo` trae el `motivo_no_disp`).
+    `insuficiente`, `no_calculado` (el cálculo falló al clasificar),
+    `no_registrado` (revisión anterior al registro, D-17) o `no_disponible`
+    (sin sugerencia; `motivo` trae el `motivo_no_disp`).
     """
 
     revision_id: uuid.UUID

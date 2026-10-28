@@ -8,8 +8,9 @@ La clase y las probabilidades se pasan con los nombres del modelo
 
 Con una sugerencia disponible y el contexto del clip, calcula el razonamiento
 (F-035, D-15, D-16) y escribe sus filas en `evidencia` en la misma transacción
-que la clasificación. Si el cálculo falla, la clasificación se guarda igual
-sin razonamiento (queda `no_registrado`).
+que la clasificación. Si el cálculo falla, la clasificación se guarda igual, se
+deja el evento `razonamiento.error` en el log técnico y se registra una fila
+`criterio_fie` con estado `no_calculado`.
 """
 
 from __future__ import annotations
@@ -32,9 +33,12 @@ from fog.domain.models import (
 )
 from fog.domain.razonamiento import (
     FilaEvidencia,
+    ParametrosExplicacion,
     PoseEventos,
+    Razonamiento,
     construir_razonamiento,
     detectar_eventos,
+    fila_no_calculado,
     filas_de_razonamiento,
     ventana_atencion,
 )
@@ -94,6 +98,85 @@ def keypoints_a_arrays(tracked: TrackedSequence) -> dict[str, np.ndarray]:
     arrays["locked"] = np.array(tracked.locked)
     arrays["lock_frame"] = np.array(-1 if tracked.lock_frame is None else tracked.lock_frame)
     return arrays
+
+
+def calcular_razonamiento(
+    extractor: FeatureExtractorPort,
+    params: ParametrosExplicacion,
+    tracked: TrackedSequence,
+    arrays: dict[str, np.ndarray],
+    clase: str,
+    atencion: list[float] | None,
+    contexto: ContextoClip,
+    revision_id: str = "",
+) -> Razonamiento:
+    """Calcula el razonamiento de un clip sin escribir nada.
+
+    Los ángulos salen de los mismos arreglos que se guardan en el .npz, así el
+    evento coincide con los trazos de `GET /revisiones/{id}/pose`. La velocidad
+    relativa del CM sale del extractor de features. La usan `RegistrarClasificacion`
+    y el análisis de solo lectura de la Validación 1.
+
+    Args:
+        extractor: extractor de features (para la velocidad relativa del CM).
+        params: parámetros U1 a U6.
+        tracked: pose+tracking del clip.
+        arrays: arreglos del .npz de keypoints crudos.
+        clase: clase sugerida con el vocabulario del modelo.
+        atencion: pesos de atención por frame, o None si Cloud no los envió.
+        contexto: fps, frame del tocado y brazos armados.
+        revision_id: solo para el aviso del log si la atención no calza.
+
+    Returns:
+        El razonamiento con su estado y sus frases.
+
+    Raises:
+        ValueError: si `clase` no es una clase del modelo.
+    """
+    n = int(arrays["a_xy"].shape[0])
+    frame_inicio = int(tracked.lock_frame or 0)
+    brazos = {
+        "A": brazo_de(contexto.weapon_side_a),
+        "B": brazo_de(contexto.weapon_side_b),
+    }
+    angulos = {
+        lado: [
+            angulo_codo_grados(
+                arrays[f"{lado.lower()}_xy"][t],
+                arrays[f"{lado.lower()}_conf"][t],
+                bool(arrays[f"{lado.lower()}_detected"][t]),
+                brazos[lado],
+            )
+            for t in range(n)
+        ]
+        for lado in ("A", "B")
+    }
+    raw, _ = extractor.extract_raw(
+        tracked, contexto.weapon_side_a, contexto.weapon_side_b
+    )
+    eventos = detectar_eventos(
+        PoseEventos(frame_inicio, angulos, [float(v) for v in raw[:, BIO_OFFSET]]),
+        contexto.fps,
+        contexto.frame_tocado,
+        params,
+    )
+    ventana = None
+    if atencion is not None:
+        if len(atencion) == n:
+            ventana = ventana_atencion(
+                atencion,
+                [frame_inicio + t for t in range(n)],
+                contexto.fps,
+                contexto.frame_tocado,
+                params,
+            )
+        else:
+            log.warning(
+                "[%s] atención de largo %d distinta de los %d frames "
+                "de la pose: se omite la ventana",
+                revision_id, len(atencion), n,
+            )
+    return construir_razonamiento(clase, eventos, ventana, params)
 
 
 class RegistrarClasificacion:
@@ -212,64 +295,31 @@ class RegistrarClasificacion:
             contexto: fps, frame del tocado y brazos.
 
         Returns:
-            Las filas a escribir; vacía si no hay extractor o parámetros, la
-            pose no tiene frames o el cálculo falló (se deja en el log técnico).
+            Las filas a escribir; vacía si no hay extractor o parámetros o la
+            pose no tiene frames. Si el cálculo falló, la fila `no_calculado`
+            y el evento `razonamiento.error` en el log técnico.
         """
         n = int(arrays["a_xy"].shape[0])
         if self._extractor is None or self._parametros is None or n == 0:
             return []
+        version = None
         try:
             params = self._parametros.cargar()
-            frame_inicio = int(tracked.lock_frame or 0)
-            brazos = {
-                "A": brazo_de(contexto.weapon_side_a),
-                "B": brazo_de(contexto.weapon_side_b),
-            }
-            angulos = {
-                lado: [
-                    angulo_codo_grados(
-                        arrays[f"{lado.lower()}_xy"][t],
-                        arrays[f"{lado.lower()}_conf"][t],
-                        bool(arrays[f"{lado.lower()}_detected"][t]),
-                        brazos[lado],
-                    )
-                    for t in range(n)
-                ]
-                for lado in ("A", "B")
-            }
-            raw, _ = self._extractor.extract_raw(
-                tracked, contexto.weapon_side_a, contexto.weapon_side_b
-            )
-            eventos = detectar_eventos(
-                PoseEventos(
-                    frame_inicio, angulos, [float(v) for v in raw[:, BIO_OFFSET]]
-                ),
-                contexto.fps,
-                contexto.frame_tocado,
+            version = params.version
+            razonamiento = calcular_razonamiento(
+                self._extractor,
                 params,
-            )
-            ventana = None
-            if resultado.atencion is not None:
-                if len(resultado.atencion) == n:
-                    ventana = ventana_atencion(
-                        resultado.atencion,
-                        [frame_inicio + t for t in range(n)],
-                        contexto.fps,
-                        contexto.frame_tocado,
-                        params,
-                    )
-                else:
-                    log.warning(
-                        "[%s] atención de largo %d distinta de los %d frames "
-                        "de la pose: se omite la ventana",
-                        resultado.revision_id, len(resultado.atencion), n,
-                    )
-            razonamiento = construir_razonamiento(
-                resultado.action, eventos, ventana, params
+                tracked,
+                arrays,
+                resultado.action,
+                resultado.atencion,
+                contexto,
+                resultado.revision_id,
             )
             return filas_de_razonamiento(razonamiento, params.version)
         except Exception:
             log.exception(
-                "[%s] no se pudo calcular el razonamiento", resultado.revision_id
+                "razonamiento.error revision=%s: no se pudo calcular el razonamiento",
+                resultado.revision_id,
             )
-            return []
+            return [fila_no_calculado(version)]

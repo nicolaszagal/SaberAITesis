@@ -1,0 +1,474 @@
+{
+ "descripcion": "42 clips de train recortados (los primeros 7 de cada una de las 6 carpetas de dataset/dataset trimmed/train_trimmed), clase sugerida por lstm_6class/checkpoints/20260928_141021, tocado en la primera luz anotada, brazo armado anotado en Label Studio (proyecto 3), parámetros de explicación versión 1",
+ "params_version": "1",
+ "generado_en": "2026-10-28",
+ "clips": [
+  {
+   "clip": "AttackA_0001.mp4",
+   "clase": "AttackA",
+   "estado": "discordante",
+   "causa": null,
+   "u1_censurados": [
+    "B"
+   ],
+   "u2": true,
+   "lock_frame": 0
+  },
+  {
+   "clip": "AttackA_0003.mp4",
+   "clase": "AttackA",
+   "estado": "no_concluyente",
+   "causa": null,
+   "u1_censurados": [
+    "A",
+    "B"
+   ],
+   "u2": false,
+   "lock_frame": 0
+  },
+  {
+   "clip": "AttackA_0004.mp4",
+   "clase": "AttackA",
+   "estado": "discordante",
+   "causa": null,
+   "u1_censurados": [
+    "B"
+   ],
+   "u2": true,
+   "lock_frame": 0
+  },
+  {
+   "clip": "AttackA_0005.mp4",
+   "clase": "AttackA",
+   "estado": "no_concluyente",
+   "causa": null,
+   "u1_censurados": [
+    "A",
+    "B"
+   ],
+   "u2": true,
+   "lock_frame": 0
+  },
+  {
+   "clip": "AttackA_0006.mp4",
+   "clase": "AttackA",
+   "estado": "no_concluyente",
+   "causa": null,
+   "u1_censurados": [
+    "A",
+    "B"
+   ],
+   "u2": true,
+   "lock_frame": 0
+  },
+  {
+   "clip": "AttackA_0010.mp4",
+   "clase": "AttackA",
+   "estado": "discordante",
+   "causa": null,
+   "u1_censurados": [
+    "B"
+   ],
+   "u2": true,
+   "lock_frame": 0
+  },
+  {
+   "clip": "AttackA_0013.mp4",
+   "clase": "AttackA",
+   "estado": "insuficiente",
+   "causa": "sin_subida",
+   "u1_censurados": [],
+   "u2": false,
+   "lock_frame": 0
+  },
+  {
+   "clip": "AttackB_0001.mp4",
+   "clase": "AttackB",
+   "estado": "no_concluyente",
+   "causa": null,
+   "u1_censurados": [
+    "A",
+    "B"
+   ],
+   "u2": true,
+   "lock_frame": 0
+  },
+  {
+   "clip": "AttackB_0003.mp4",
+   "clase": "AttackB",
+   "estado": "insuficiente",
+   "causa": "sin_subida",
+   "u1_censurados": [
+    "B"
+   ],
+   "u2": false,
+   "lock_frame": 0
+  },
+  {
+   "clip": "AttackB_0004.mp4",
+   "clase": "AttackB",
+   "estado": "insuficiente",
+   "causa": "sin_subida",
+   "u1_censurados": [
+    "B"
+   ],
+   "u2": false,
+   "lock_frame": 0
+  },
+  {
+   "clip": "AttackB_0005.mp4",
+   "clase": "RiposteB",
+   "estado": "no_concluyente",
+   "causa": null,
+   "u1_censurados": [
+    "A",
+    "B"
+   ],
+   "u2": false,
+   "lock_frame": 0
+  },
+  {
+   "clip": "AttackB_0008.mp4",
+   "clase": "AttackB",
+   "estado": "no_concluyente",
+   "causa": null,
+   "u1_censurados": [
+    "A",
+    "B"
+   ],
+   "u2": false,
+   "lock_frame": 0
+  },
+  {
+   "clip": "AttackB_0012.mp4",
+   "clase": "AttackB",
+   "estado": "no_concluyente",
+   "causa": null,
+   "u1_censurados": [
+    "A",
+    "B"
+   ],
+   "u2": false,
+   "lock_frame": 0
+  },
+  {
+   "clip": "AttackB_0013.mp4",
+   "clase": "AttackB",
+   "estado": "no_concluyente",
+   "causa": null,
+   "u1_censurados": [
+    "A",
+    "B"
+   ],
+   "u2": true,
+   "lock_frame": 0
+  },
+  {
+   "clip": "ContrattackA_0001.mp4",
+   "clase": "ContrattackA",
+   "estado": "no_concluyente",
+   "causa": null,
+   "u1_censurados": [
+    "A",
+    "B"
+   ],
+   "u2": true,
+   "lock_frame": 0
+  },
+  {
+   "clip": "ContrattackA_0003.mp4",
+   "clase": "ContrattackA",
+   "estado": "discordante",
+   "causa": null,
+   "u1_censurados": [
+    "A"
+   ],
+   "u2": false,
+   "lock_frame": 0
+  },
+  {
+   "clip": "ContrattackA_0004.mp4",
+   "clase": "RiposteA",
+   "estado": "discordante",
+   "causa": null,
+   "u1_censurados": [
+    "A"
+   ],
+   "u2": false,
+   "lock_frame": 0
+  },
+  {
+   "clip": "ContrattackA_0008.mp4",
+   "clase": "ContrattackA",
+   "estado": "insuficiente",
+   "causa": "deteccion",
+   "u1_censurados": [],
+   "u2": true,
+   "lock_frame": 0
+  },
+  {
+   "clip": "ContrattackA_0009.mp4",
+   "clase": "ContrattackA",
+   "estado": "respaldada",
+   "causa": null,
+   "u1_censurados": [
+    "B"
+   ],
+   "u2": true,
+   "lock_frame": 0
+  },
+  {
+   "clip": "ContrattackA_0011.mp4",
+   "clase": "ContrattackA",
+   "estado": "insuficiente",
+   "causa": "sin_subida",
+   "u1_censurados": [
+    "A"
+   ],
+   "u2": false,
+   "lock_frame": 0
+  },
+  {
+   "clip": "ContrattackA_0012.mp4",
+   "clase": "ContrattackA",
+   "estado": "respaldada",
+   "causa": null,
+   "u1_censurados": [],
+   "u2": true,
+   "lock_frame": 0
+  },
+  {
+   "clip": "ContrattackB_0002.mp4",
+   "clase": "ContrattackB",
+   "estado": "insuficiente",
+   "causa": "sin_subida",
+   "u1_censurados": [
+    "B"
+   ],
+   "u2": null,
+   "lock_frame": 0
+  },
+  {
+   "clip": "ContrattackB_0003.mp4",
+   "clase": "RiposteB",
+   "estado": "discordante",
+   "causa": null,
+   "u1_censurados": [
+    "B"
+   ],
+   "u2": true,
+   "lock_frame": 0
+  },
+  {
+   "clip": "ContrattackB_0004.mp4",
+   "clase": "RiposteB",
+   "estado": "no_concluyente",
+   "causa": null,
+   "u1_censurados": [
+    "A",
+    "B"
+   ],
+   "u2": true,
+   "lock_frame": 0
+  },
+  {
+   "clip": "ContrattackB_0005.mp4",
+   "clase": "ContrattackA",
+   "estado": "discordante",
+   "causa": null,
+   "u1_censurados": [
+    "A"
+   ],
+   "u2": null,
+   "lock_frame": 0
+  },
+  {
+   "clip": "ContrattackB_0007.mp4",
+   "clase": "ContrattackB",
+   "estado": "no_concluyente",
+   "causa": null,
+   "u1_censurados": [
+    "A",
+    "B"
+   ],
+   "u2": true,
+   "lock_frame": 0
+  },
+  {
+   "clip": "ContrattackB_0008.mp4",
+   "clase": "ContrattackB",
+   "estado": "insuficiente",
+   "causa": "sin_subida",
+   "u1_censurados": [
+    "B"
+   ],
+   "u2": null,
+   "lock_frame": 0
+  },
+  {
+   "clip": "ContrattackB_0010.mp4",
+   "clase": "RiposteB",
+   "estado": "no_concluyente",
+   "causa": null,
+   "u1_censurados": [
+    "A",
+    "B"
+   ],
+   "u2": false,
+   "lock_frame": 0
+  },
+  {
+   "clip": "RiposteA_0001.mp4",
+   "clase": "RiposteA",
+   "estado": "no_concluyente",
+   "causa": null,
+   "u1_censurados": [
+    "A",
+    "B"
+   ],
+   "u2": true,
+   "lock_frame": 0
+  },
+  {
+   "clip": "RiposteA_0002.mp4",
+   "clase": "RiposteA",
+   "estado": "no_concluyente",
+   "causa": null,
+   "u1_censurados": [
+    "A",
+    "B"
+   ],
+   "u2": true,
+   "lock_frame": 0
+  },
+  {
+   "clip": "RiposteA_0003.mp4",
+   "clase": "RiposteA",
+   "estado": "no_concluyente",
+   "causa": null,
+   "u1_censurados": [
+    "A",
+    "B"
+   ],
+   "u2": true,
+   "lock_frame": 0
+  },
+  {
+   "clip": "RiposteA_0004.mp4",
+   "clase": "RiposteA",
+   "estado": "no_concluyente",
+   "causa": null,
+   "u1_censurados": [
+    "A",
+    "B"
+   ],
+   "u2": true,
+   "lock_frame": 0
+  },
+  {
+   "clip": "RiposteA_0008.mp4",
+   "clase": "RiposteA",
+   "estado": "respaldada",
+   "causa": null,
+   "u1_censurados": [
+    "B"
+   ],
+   "u2": false,
+   "lock_frame": 0
+  },
+  {
+   "clip": "RiposteA_0009.mp4",
+   "clase": "RiposteA",
+   "estado": "insuficiente",
+   "causa": "sin_subida",
+   "u1_censurados": [],
+   "u2": true,
+   "lock_frame": 0
+  },
+  {
+   "clip": "RiposteA_0010.mp4",
+   "clase": "RiposteA",
+   "estado": "no_concluyente",
+   "causa": null,
+   "u1_censurados": [
+    "A",
+    "B"
+   ],
+   "u2": true,
+   "lock_frame": 0
+  },
+  {
+   "clip": "RiposteB_0001.mp4",
+   "clase": "RiposteB",
+   "estado": "respaldada",
+   "causa": null,
+   "u1_censurados": [],
+   "u2": true,
+   "lock_frame": 0
+  },
+  {
+   "clip": "RiposteB_0003.mp4",
+   "clase": "RiposteB",
+   "estado": "insuficiente",
+   "causa": "deteccion",
+   "u1_censurados": [],
+   "u2": false,
+   "lock_frame": 0
+  },
+  {
+   "clip": "RiposteB_0005.mp4",
+   "clase": "RiposteB",
+   "estado": "discordante",
+   "causa": null,
+   "u1_censurados": [
+    "B"
+   ],
+   "u2": false,
+   "lock_frame": 0
+  },
+  {
+   "clip": "RiposteB_0006.mp4",
+   "clase": "RiposteB",
+   "estado": "respaldada",
+   "causa": null,
+   "u1_censurados": [
+    "A"
+   ],
+   "u2": true,
+   "lock_frame": 0
+  },
+  {
+   "clip": "RiposteB_0008.mp4",
+   "clase": "RiposteB",
+   "estado": "no_concluyente",
+   "causa": null,
+   "u1_censurados": [
+    "A",
+    "B"
+   ],
+   "u2": true,
+   "lock_frame": 0
+  },
+  {
+   "clip": "RiposteB_0009.mp4",
+   "clase": "RiposteB",
+   "estado": "respaldada",
+   "causa": null,
+   "u1_censurados": [],
+   "u2": true,
+   "lock_frame": 0
+  },
+  {
+   "clip": "RiposteB_0010.mp4",
+   "clase": "RiposteB",
+   "estado": "no_concluyente",
+   "causa": null,
+   "u1_censurados": [
+    "A",
+    "B"
+   ],
+   "u2": true,
+   "lock_frame": 0
+  }
+ ]
+}

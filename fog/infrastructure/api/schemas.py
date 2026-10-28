@@ -430,6 +430,7 @@ class RazonamientoResponse(BaseModel):
         "discordante",
         "no_concluyente",
         "insuficiente",
+        "no_calculado",
         "no_registrado",
         "no_disponible",
     ]
