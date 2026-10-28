@@ -344,7 +344,8 @@ def ventana_atencion(
 
 
 def _nombre(tirador: str) -> str:
-    return f"{tirador} · {COLOR_POR_TIRADOR[tirador]}"
+    """Nombre del tirador en las frases: solo su color (`ROJ` o `VER`)."""
+    return COLOR_POR_TIRADOR[tirador]
 
 
 def _segundos(ms: int) -> str:

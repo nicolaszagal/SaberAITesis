@@ -148,17 +148,17 @@ def test_las_seis_clases_y_sus_estados(clase, a_sube, b_sube, estado):
 def test_plantillas_de_las_clases_respaldadas():
     ataque = construir_razonamiento("AttackA", eventos(5, 9), None, PARAMS)
     assert ataque.frases == (
-        "A · ROJ inició la extensión del brazo 133 ms antes que B · VER.",
+        "ROJ inició la extensión del brazo 133 ms antes que VER.",
         "Criterio FIE t.101.2-4: la extensión del brazo precede al ataque.",
     )
     contra = construir_razonamiento("ContrattackB", eventos(5, 9), None, PARAMS)
     assert contra.frases == (
-        "A · ROJ extendió el brazo 133 ms antes; la sugerencia es contraataque de B · VER.",
+        "ROJ extendió el brazo 133 ms antes; la sugerencia es contraataque de VER.",
         "Criterio FIE t.106: golpe de detención sobre el ataque.",
     )
     riposte = construir_razonamiento("RiposteB", eventos(5, 9), None, PARAMS)
     assert riposte.frases == (
-        "A · ROJ extendió el brazo 133 ms antes; la parada de B · VER no es observable con la pose.",
+        "ROJ extendió el brazo 133 ms antes; la parada de VER no es observable con la pose.",
         "Criterio FIE t.105: la parada da derecho a la riposte.",
     )
 
@@ -166,7 +166,7 @@ def test_plantillas_de_las_clases_respaldadas():
 def test_plantilla_discordante_nombra_a_quien_extendio_primero():
     r = construir_razonamiento("AttackA", eventos(9, 5), None, PARAMS)
     assert r.frases == (
-        "La pose muestra que B · VER extendió el brazo primero, lo que no respalda la sugerencia.",
+        "La pose muestra que VER extendió el brazo primero, lo que no respalda la sugerencia.",
         "Revise el video antes de decidir.",
     )
 
@@ -202,14 +202,14 @@ def test_insuficiente_por_deteccion_faltante_nombra_al_tirador():
     b[8] = None
     r = construir_razonamiento("AttackA", eventos(5, None, b=b), None, PARAMS)
     assert r.estado == INSUFICIENTE
-    assert r.frases == ("Evidencia insuficiente: falta la detección de B · VER en el tramo clave.",)
+    assert r.frases == ("Evidencia insuficiente: falta la detección de VER en el tramo clave.",)
 
 
 def test_insuficiente_sin_subida_y_sin_huecos_no_dice_que_falta_la_deteccion():
     r = construir_razonamiento("AttackA", eventos(5, None), None, PARAMS)
     assert r.estado == INSUFICIENTE
     assert "falta la detección" not in r.frases[0]
-    assert r.frases[0].startswith("Evidencia insuficiente: no se observa la extensión del brazo de B · VER")
+    assert r.frases[0].startswith("Evidencia insuficiente: no se observa la extensión del brazo de VER")
 
 
 def test_clase_desconocida_falla():
@@ -241,7 +241,7 @@ def test_ninguna_frase_supera_u6_ni_dice_que_el_modelo_decidio():
 def test_u6_recorta_primero_la_segunda_frase_y_despues_la_primera():
     ajustado = replace(PARAMS, u6_max_caracteres=70)
     r = construir_razonamiento("AttackA", eventos(5, 9), None, ajustado)
-    assert r.frases == ("A · ROJ inició la extensión del brazo 133 ms antes que B · VER.",)
+    assert r.frases == ("ROJ inició la extensión del brazo 133 ms antes que VER.",)
     minimo = replace(PARAMS, u6_max_caracteres=30)
     r = construir_razonamiento("AttackA", eventos(5, 9), None, minimo)
     assert len(r.frases) == 1 and len(r.frases[0]) <= 30 and r.frases[0].endswith("…")
@@ -331,7 +331,7 @@ def test_censurado_precede_a_cualquier_inicio_observado_aunque_su_primer_frame_s
     ataque_a = construir_razonamiento("AttackA", ev, None, PARAMS)
     assert ataque_a.estado == RESPALDADA
     assert ataque_a.frases[0] == (
-        "A · ROJ ya tenía el brazo extendido al comienzo del clip, antes que B · VER."
+        "ROJ ya tenía el brazo extendido al comienzo del clip, antes que VER."
     )
     assert construir_razonamiento("AttackB", ev, None, PARAMS).estado == DISCORDANTE
 
@@ -339,12 +339,12 @@ def test_censurado_precede_a_cualquier_inicio_observado_aunque_su_primer_frame_s
 def test_censurado_respalda_contraataque_y_riposte_sin_inventar_milisegundos():
     ev = eventos(5, None, b=extendido())  # B ya extendido; A observado
     for clase, resto in (
-        ("ContrattackA", "la sugerencia es contraataque de A · ROJ."),
-        ("RiposteA", "la parada de A · ROJ no es observable con la pose."),
+        ("ContrattackA", "la sugerencia es contraataque de ROJ."),
+        ("RiposteA", "la parada de ROJ no es observable con la pose."),
     ):
         r = construir_razonamiento(clase, ev, None, PARAMS)
         assert r.estado == RESPALDADA
-        assert r.frases[0] == f"B · VER ya tenía el brazo extendido al comienzo del clip; {resto}"
+        assert r.frases[0] == f"VER ya tenía el brazo extendido al comienzo del clip; {resto}"
         assert " ms" not in r.frases[0]
 
 
@@ -364,7 +364,7 @@ def test_nunca_extendido_y_sin_subida_sigue_siendo_insuficiente():
     r = construir_razonamiento("AttackA", ev, None, PARAMS)
     assert r.estado == INSUFICIENTE
     assert r.frases == (
-        "Evidencia insuficiente: no se observa la extensión del brazo de A · ROJ "
+        "Evidencia insuficiente: no se observa la extensión del brazo de ROJ "
         "en el tramo clave.",
     )
 

@@ -127,7 +127,7 @@ def test_clip_nuevo_escribe_evidencia_y_el_endpoint_devuelve_lo_mismo(crear_app)
     assert d["revision_id"] == rev
     assert d["estado"] == "respaldada"
     assert d["frases"] == [
-        "A · ROJ inició la extensión del brazo 400 ms antes que B · VER.",
+        "ROJ inició la extensión del brazo 400 ms antes que VER.",
         "Criterio FIE t.101.2-4: la extensión del brazo precede al ataque.",
     ]
     assert d["criterio_fie"] == {"articulo": "t.101.2-4", "clase": "AttackA"}  # vocabulario del modelo
@@ -188,7 +188,7 @@ def test_hueco_de_deteccion_en_la_subida_da_insuficiente_aunque_el_interpolado_e
     d = _razonamiento(app, rev).json()
 
     assert d["estado"] == "insuficiente"
-    assert d["frases"] == ["Evidencia insuficiente: falta la detección de A · ROJ en el tramo clave."]
+    assert d["frases"] == ["Evidencia insuficiente: falta la detección de ROJ en el tramo clave."]
     assert not any(e["tipo"] == "inicio_extension_brazo" and e["tirador"] == "A" for e in d["eventos"])
 
 
