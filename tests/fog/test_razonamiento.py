@@ -69,9 +69,12 @@ def test_u1_la_cima_debe_estar_antes_del_tocado():
 
 def test_u1_toma_la_ultima_subida_valida():
     a = serie(sube_en=3)
-    a[12:17] = [100.0, 110.0, 120.0, 130.0, 140.0]  # segunda subida que llega a 140°
-    a[17:] = [90.0] * (len(a) - 17)
-    assert eventos(None, 5, a=a).extension["A"].frame_idx == 12
+    # Segunda subida que llega a 150°, tras una caída a 90° (la mediana de 3 frames
+    # exige que la caída no se confunda con ruido de una sola muestra).
+    a[12:14] = [90.0, 90.0]
+    a[14:19] = [100.0, 110.0, 120.0, 140.0, 150.0]
+    a[19:] = [90.0] * (len(a) - 19)
+    assert eventos(None, 5, a=a).extension["A"].frame_idx == 13  # última muestra base
 
 
 def test_u1_sobre_el_angulo_crudo_un_hueco_da_evento_faltante_no_inicio_rellenado():
@@ -289,3 +292,116 @@ def test_filas_de_evidencia_una_por_evento_y_un_criterio():
     assert criterio.detalle["params_version"] == "1"
     assert criterio.detalle["frases"] == list(r.frases)
     assert filas[3].detalle == {"censurado_inicio": False}
+
+
+# --- EXP03-b: censura de U1, mediana móvil y fila de fallo ---------------------
+
+def extendido(n: int = 30, desde: int = 0, angulo: float = 150.0):
+    """Brazo ya extendido: `None` antes de `desde` y `angulo` constante después."""
+    return [None] * desde + [angulo] * (n - desde)
+
+
+def test_u1_brazo_extendido_en_el_primer_frame_valido_es_inicio_censurado():
+    ev = eventos(None, 9, a=extendido(), frame_inicio=3)
+    e = ev.extension["A"]
+    assert (e.censurado_inicio, e.frame_idx) == (True, 3)  # el primer frame, desde lock_frame
+    assert e.t_ms == round((3 - 20) / FPS * 1000)
+    assert ev.extension["B"].censurado_inicio is False
+
+
+def test_u1_el_primer_frame_valido_puede_no_ser_el_primero_del_clip():
+    e = eventos(None, 9, a=extendido(desde=4)).extension["A"]
+    assert (e.censurado_inicio, e.frame_idx) == (True, 4)
+
+
+def test_u1_en_135_exactos_ya_es_censurado_y_en_134_no():
+    assert eventos(None, 9, a=extendido(angulo=135.0)).extension["A"].censurado_inicio is True
+    assert eventos(None, 9, a=extendido(angulo=134.0)).extension["A"] is None
+
+
+def test_u1_extendido_que_empieza_despues_del_tocado_no_es_censura():
+    a = extendido(n=30, desde=25)  # primer frame válido tras el tocado (frame 20)
+    assert eventos(None, 9, a=a).extension["A"] is None
+
+
+def test_censurado_precede_a_cualquier_inicio_observado_aunque_su_primer_frame_sea_posterior():
+    a = extendido(desde=8)  # primer frame válido en el 8, después del inicio observado de B
+    ev = eventos(None, 3, a=a)
+    assert ev.extension["A"].frame_idx > ev.extension["B"].frame_idx
+    ataque_a = construir_razonamiento("AttackA", ev, None, PARAMS)
+    assert ataque_a.estado == RESPALDADA
+    assert ataque_a.frases[0] == (
+        "A · ROJ ya tenía el brazo extendido al comienzo del clip, antes que B · VER."
+    )
+    assert construir_razonamiento("AttackB", ev, None, PARAMS).estado == DISCORDANTE
+
+
+def test_censurado_respalda_contraataque_y_riposte_sin_inventar_milisegundos():
+    ev = eventos(5, None, b=extendido())  # B ya extendido; A observado
+    for clase, resto in (
+        ("ContrattackA", "la sugerencia es contraataque de A · ROJ."),
+        ("RiposteA", "la parada de A · ROJ no es observable con la pose."),
+    ):
+        r = construir_razonamiento(clase, ev, None, PARAMS)
+        assert r.estado == RESPALDADA
+        assert r.frases[0] == f"B · VER ya tenía el brazo extendido al comienzo del clip; {resto}"
+        assert " ms" not in r.frases[0]
+
+
+def test_ambos_censurados_es_no_concluyente_con_la_frase_exacta():
+    ev = eventos(None, None, a=extendido(), b=extendido())
+    for clase in CLASES:
+        r = construir_razonamiento(clase, ev, None, PARAMS)
+        assert r.estado == NO_CONCLUYENTE
+        assert r.frases == (
+            "Ambos tiradores tenían el brazo extendido al comienzo del clip; "
+            "la pose no desempata.",
+        )
+
+
+def test_nunca_extendido_y_sin_subida_sigue_siendo_insuficiente():
+    ev = eventos(None, 9, a=[90.0] * 30)
+    r = construir_razonamiento("AttackA", ev, None, PARAMS)
+    assert r.estado == INSUFICIENTE
+    assert r.frases == (
+        "Evidencia insuficiente: no se observa la extensión del brazo de A · ROJ "
+        "en el tramo clave.",
+    )
+
+
+def test_filas_del_inicio_censurado_llevan_detalle_censurado_inicio():
+    ev = eventos(None, 9, a=extendido(), frame_inicio=3)
+    filas = filas_de_razonamiento(construir_razonamiento("AttackA", ev, None, PARAMS), "1")
+    por_tirador = {f.tirador: f for f in filas if f.tipo == "inicio_extension_brazo"}
+    assert por_tirador["A"].detalle == {"censurado_inicio": True}
+    assert por_tirador["A"].frame_idx == 3
+    assert por_tirador["B"].detalle == {"censurado_inicio": False}
+
+
+def test_mediana_de_3_frames_une_una_subida_cortada_por_una_muestra_ruidosa():
+    # Crudo: 90 95 100 | 98 (ruido) 110 120 130 140 -> el crudo solo ve la subida desde el 3.
+    a = [90.0, 95.0, 100.0, 98.0, 110.0, 120.0, 130.0, 140.0] + [140.0] * 22
+    assert eventos(None, 9, a=a).extension["A"].frame_idx == 0
+
+
+def test_mediana_de_3_frames_no_inventa_una_subida_con_un_pico_aislado():
+    a = [90.0] * 10 + [170.0] + [90.0] * 19
+    assert eventos(None, 9, a=a).extension["A"] is None
+
+
+def test_mediana_no_cubre_huecos_ni_toca_los_extremos():
+    from fog.domain.razonamiento import suavizar_mediana3
+
+    assert suavizar_mediana3([10.0, 30.0, 20.0, None, 5.0, 9.0, 7.0]) == [
+        10.0, 20.0, 20.0, None, 5.0, 7.0, 7.0
+    ]
+
+
+def test_fila_no_calculado_es_un_criterio_sin_frases():
+    from fog.domain.razonamiento import NO_CALCULADO, fila_no_calculado
+
+    fila = fila_no_calculado("1")
+    assert fila.tipo == "criterio_fie"
+    assert fila.detalle == {
+        "estado": NO_CALCULADO, "frases": [], "ventana_atencion": None, "params_version": "1"
+    }

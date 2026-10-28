@@ -290,7 +290,7 @@ def test_el_snapshot_de_una_revision_antigua_no_lleva_justificacion(crear_app):
     assert "justificacion" not in snapshot
 
 
-def test_un_fallo_del_razonamiento_no_impide_guardar_la_clasificacion(crear_app):
+def test_un_fallo_del_razonamiento_no_impide_guardar_la_clasificacion(crear_app, caplog):
     class _Rota(FakeFeatureExtractor):
         def extract_raw(self, *args):
             raise RuntimeError("falla simulada")
@@ -305,7 +305,44 @@ def test_un_fallo_del_razonamiento_no_impide_guardar_la_clasificacion(crear_app)
     assert app.sql.escalar(
         "SELECT count(*) FROM sabre.revision_var WHERE id = :i AND clasificacion_id IS NOT NULL", i=rev
     ) == 1
-    assert _razonamiento(app, rev).json()["estado"] == "no_registrado"
+    d = _razonamiento(app, rev).json()
+    assert d["estado"] == "no_calculado"
+    assert d["frases"] == [] and d["eventos"] == []
+    assert any("razonamiento.error" in r.getMessage() and rev in r.getMessage() for r in caplog.records)
+    # El error queda en la evidencia (no se confunde con una revisión anterior a EXP03).
+    assert [f["tipo"] for f in _filas(app, rev)] == ["criterio_fie"]
+
+
+def test_un_fallo_del_razonamiento_queda_en_la_justificacion_del_snapshot(crear_app):
+    class _Rota(FakeFeatureExtractor):
+        def extract_raw(self, *args):
+            raise RuntimeError("falla simulada")
+
+    app = crear_app(
+        pose_estimator=FakePoseEstimator(tracked=_tracked(_serie(5), _serie(9), 3)),
+        extractor=_Rota(),
+        subscriber=FakeVerdictSubscriber(VEREDICTO_DEFAULT),
+    )
+    rev = app.subir_clip(app.configurar(), clip_de_prueba(40), t_tocado_ms=T_TOCADO_MS).json()["revision_id"]
+
+    assert app.veredicto(rev).status_code == 200
+
+    snapshot = app.sql.filas("SELECT snapshot FROM sabre.registro_auditoria WHERE revision_id = :i", i=rev)[0]["snapshot"]
+    assert snapshot["justificacion"]["estado"] == "no_calculado"
+
+
+def test_brazo_ya_extendido_al_inicio_sale_censurado_en_la_api_y_en_la_evidencia(crear_app):
+    app, rev = _subir(crear_app, [150.0] * N, _serie(9))
+
+    d = _razonamiento(app, rev).json()
+
+    ext = {e["tirador"]: e for e in d["eventos"] if e["tipo"] == "inicio_extension_brazo"}
+    assert ext["A"]["censurado_inicio"] is True and ext["A"]["frame_idx"] == 3  # primer frame desde el lock
+    assert ext["B"]["censurado_inicio"] is False
+    assert d["estado"] == "respaldada"
+    fila = next(f for f in _filas(app, rev, "inicio_extension_brazo") if f["tirador"] == "A")
+    assert fila["detalle"] == {"censurado_inicio": True}
+
 
 
 def test_revision_inexistente_404_e_id_invalido_422_y_sin_token_401(crear_app):

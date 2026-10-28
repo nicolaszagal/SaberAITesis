@@ -27,6 +27,8 @@ RESPALDADA = "respaldada"
 DISCORDANTE = "discordante"
 NO_CONCLUYENTE = "no_concluyente"
 INSUFICIENTE = "insuficiente"
+# No es un resultado del razonamiento: marca que el cálculo falló al clasificar.
+NO_CALCULADO = "no_calculado"
 
 TIPO_EXTENSION = "inicio_extension_brazo"
 TIPO_DESPLAZAMIENTO = "inicio_desplazamiento"
@@ -147,43 +149,78 @@ def _t_ms(frame_idx: int, frame_tocado: int, fps: float) -> int:
     return round((frame_idx - frame_tocado) / fps * 1000)
 
 
-def _inicio_extension(
-    angulos: Sequence[float | None], t_tocado: int, params: ParametrosExplicacion
-) -> tuple[int | None, str | None]:
-    """Índice de inicio de la última subida sostenida que llega al ángulo mínimo.
+def suavizar_mediana3(angulos: Sequence[float | None]) -> list[float | None]:
+    """Mediana móvil de 3 frames sobre el ángulo crudo.
 
-    Una subida es una cadena de muestras consecutivas válidas, cada una mayor
-    que la anterior, con al menos `u1_incrementos_min` incrementos. Cuenta si su
-    cima alcanza `u1_angulo_min` en o antes del tocado. Si la muestra previa al
-    inicio es nula, el inicio real podría ser anterior y no se afirma.
+    Solo suaviza donde la ventana de 3 muestras está completa y es válida; en los
+    extremos y junto a un hueco deja el valor crudo, de modo que no inventa
+    muestras ni cubre huecos de detección. Los trazos de `/pose` siguen mostrando
+    el ángulo crudo; esta serie solo alimenta la búsqueda de U1.
+
+    Args:
+        angulos: ángulo de codo crudo por frame (None si falta la detección).
 
     Returns:
-        (índice de inicio, None) o (None, motivo) con el motivo por el que falta.
+        La serie suavizada, del mismo largo.
     """
-    n = len(angulos)
+    salida = list(angulos)
+    for i in range(1, len(angulos) - 1):
+        ventana = angulos[i - 1 : i + 2]
+        if all(a is not None for a in ventana):
+            salida[i] = sorted(ventana)[1]
+    return salida
+
+
+def _inicio_extension(
+    angulos: Sequence[float | None], t_tocado: int, params: ParametrosExplicacion
+) -> tuple[int | None, bool, str | None]:
+    """Índice de inicio de la extensión del brazo armado (U1).
+
+    Trabaja sobre la mediana móvil de 3 frames del ángulo crudo. Si en el primer
+    frame válido (en o antes del tocado) el ángulo ya es `u1_angulo_min` o más,
+    el inicio queda **censurado**: la extensión empezó antes del clip y el
+    índice devuelto es el de ese primer frame. Si no, una subida es una cadena
+    de muestras consecutivas válidas, cada una mayor que la anterior, con al
+    menos `u1_incrementos_min` incrementos; cuenta si su cima alcanza
+    `u1_angulo_min` en o antes del tocado y se toma la última. Si la muestra
+    previa al inicio es nula, el inicio real podría ser anterior y no se afirma.
+
+    Returns:
+        (índice de inicio, censurado, None) o (None, False, motivo) con el
+        motivo por el que falta.
+    """
+    suave = suavizar_mediana3(angulos)
+    n = len(suave)
+    primero = next((i for i, a in enumerate(suave) if a is not None), None)
+    if (
+        primero is not None
+        and primero <= t_tocado
+        and suave[primero] >= params.u1_angulo_min
+    ):
+        return primero, True, None
     mejor: tuple[int, int] | None = None
     i = 0
     while i < n:
-        if angulos[i] is None:
+        if suave[i] is None:
             i += 1
             continue
         j = i
-        while j + 1 < n and angulos[j + 1] is not None and angulos[j + 1] > angulos[j]:
+        while j + 1 < n and suave[j + 1] is not None and suave[j + 1] > suave[j]:
             j += 1
         if (
             j - i >= params.u1_incrementos_min
-            and angulos[j] >= params.u1_angulo_min
+            and suave[j] >= params.u1_angulo_min
             and j <= t_tocado
         ):
             mejor = (i, j)
         i = j + 1
     if mejor is not None:
         inicio = mejor[0]
-        if inicio > 0 and angulos[inicio - 1] is None:
-            return None, MOTIVO_DETECCION
-        return inicio, None
-    hay_hueco = any(a is None for a in angulos[: max(t_tocado, -1) + 1])
-    return None, MOTIVO_DETECCION if hay_hueco else MOTIVO_SIN_SUBIDA
+        if inicio > 0 and suave[inicio - 1] is None:
+            return None, False, MOTIVO_DETECCION
+        return inicio, False, None
+    hay_hueco = any(a is None for a in suave[: max(t_tocado, -1) + 1])
+    return None, False, MOTIVO_DETECCION if hay_hueco else MOTIVO_SIN_SUBIDA
 
 
 def _inicio_desplazamiento(
@@ -202,8 +239,10 @@ def detectar_eventos(
 ) -> EventosDetectados:
     """Detecta el inicio de extensión del brazo armado (U1) y el del acercamiento (U2).
 
-    Usa el ángulo de codo **crudo**, no el interpolado que recibe el modelo: un
-    hueco de detección da evento faltante en vez de un inicio rellenado. El
+    Usa el ángulo de codo **crudo** (con mediana móvil de 3 frames), no el
+    interpolado que recibe el modelo: un hueco de detección da evento faltante en
+    vez de un inicio rellenado. Un brazo ya extendido en el primer frame válido
+    da un inicio censurado (`censurado_inicio`). El
     acercamiento sale de la velocidad relativa del CM (DEF-27), idéntica para A y
     B, así que es un solo evento sin tirador y no identifica quién se desplaza
     primero.
@@ -221,14 +260,20 @@ def detectar_eventos(
     extension: dict[str, Evento | None] = {}
     faltantes: dict[str, str] = {}
     for tirador in ("A", "B"):
-        idx, motivo = _inicio_extension(pose.angulo_codo[tirador], t_tocado, params)
+        idx, censurado, motivo = _inicio_extension(
+            pose.angulo_codo[tirador], t_tocado, params
+        )
         if idx is None:
             extension[tirador] = None
             faltantes[tirador] = motivo
         else:
             frame = pose.frame_inicio + idx
             extension[tirador] = Evento(
-                TIPO_EXTENSION, tirador, frame, _t_ms(frame, frame_tocado, fps)
+                TIPO_EXTENSION,
+                tirador,
+                frame,
+                _t_ms(frame, frame_tocado, fps),
+                censurado,
             )
 
     desplazamiento = None
@@ -378,8 +423,24 @@ def construir_razonamiento(
             "en el tramo clave.",
         )
 
-    diferencia = eventos.extension["B"].frame_idx - eventos.extension["A"].frame_idx
-    if abs(diferencia) < params.u3_margen_frames:
+    ea, eb = eventos.extension["A"], eventos.extension["B"]
+    if ea.censurado_inicio and eb.censurado_inicio:
+        frases = [
+            "Ambos tiradores tenían el brazo extendido al comienzo del clip; "
+            "la pose no desempata."
+        ]
+        if ventana is not None:
+            frases.append(_frase_ventana(ventana))
+        return resultado(NO_CONCLUYENTE, *frases)
+
+    # Un inicio censurado precede a cualquier inicio observado; en ese caso no
+    # hay diferencia que medir y no se aplica el margen U3.
+    censurado = ea.censurado_inicio or eb.censurado_inicio
+    if censurado:
+        diferencia = 1 if ea.censurado_inicio else -1
+    else:
+        diferencia = eb.frame_idx - ea.frame_idx
+    if not censurado and abs(diferencia) < params.u3_margen_frames:
         margen_ms = round(params.u3_margen_frames / eventos.fps * 1000)
         frases = [
             f"Ambos extendieron el brazo con menos de {margen_ms} ms de diferencia; "
@@ -400,23 +461,35 @@ def construir_razonamiento(
             "Revise el video antes de decidir.",
         )
 
+    # Con inicio censurado no hay diferencia en ms: se dice que ya estaba extendido.
+    antes_y = (
+        "ya tenía el brazo extendido al comienzo del clip"
+        if censurado
+        else f"extendió el brazo {delta_ms} ms antes"
+    )
     if ataque:
+        inicio_x = (
+            f"{_nombre(x)} ya tenía el brazo extendido al comienzo del clip, "
+            f"antes que {_nombre(y)}."
+            if censurado
+            else f"{_nombre(x)} inició la extensión del brazo {delta_ms} ms antes que "
+            f"{_nombre(y)}."
+        )
         return resultado(
             RESPALDADA,
-            f"{_nombre(x)} inició la extensión del brazo {delta_ms} ms antes que "
-            f"{_nombre(y)}.",
+            inicio_x,
             f"Criterio FIE {articulo}: la extensión del brazo precede al ataque.",
         )
     if familia == "Contrattack":
         return resultado(
             RESPALDADA,
-            f"{_nombre(y)} extendió el brazo {delta_ms} ms antes; "
+            f"{_nombre(y)} {antes_y}; "
             f"la sugerencia es contraataque de {_nombre(x)}.",
             f"Criterio FIE {articulo}: golpe de detención sobre el ataque.",
         )
     return resultado(
         RESPALDADA,
-        f"{_nombre(y)} extendió el brazo {delta_ms} ms antes; "
+        f"{_nombre(y)} {antes_y}; "
         f"la parada de {_nombre(x)} no es observable con la pose.",
         f"Criterio FIE {articulo}: la parada da derecho a la riposte.",
     )
@@ -468,7 +541,15 @@ def filas_de_razonamiento(
     for tirador in ("A", "B"):
         e = eventos.extension[tirador]
         if e is not None:
-            filas.append(FilaEvidencia(e.tipo, e.tirador, e.frame_idx, e.t_ms))
+            filas.append(
+                FilaEvidencia(
+                    e.tipo,
+                    e.tirador,
+                    e.frame_idx,
+                    e.t_ms,
+                    detalle={"censurado_inicio": e.censurado_inicio},
+                )
+            )
     d = eventos.desplazamiento
     if d is not None:
         filas.append(
@@ -496,3 +577,26 @@ def filas_de_razonamiento(
         )
     )
     return filas
+
+
+def fila_no_calculado(params_version: str | None) -> FilaEvidencia:
+    """Fila `criterio_fie` que deja constancia de que el cálculo falló.
+
+    Distingue una revisión cuyo razonamiento falló (`no_calculado`) de una
+    anterior al registro (`no_registrado`, sin filas).
+
+    Args:
+        params_version: versión de parámetros, o None si no se alcanzó a cargar.
+
+    Returns:
+        La fila a escribir en lugar de las del razonamiento.
+    """
+    return FilaEvidencia(
+        TIPO_CRITERIO,
+        detalle={
+            "estado": NO_CALCULADO,
+            "frases": [],
+            "ventana_atencion": None,
+            "params_version": params_version,
+        },
+    )

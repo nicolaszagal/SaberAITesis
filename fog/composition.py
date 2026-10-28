@@ -17,6 +17,7 @@ from dependency_injector import containers, providers
 from ultralytics import YOLO
 
 from fog.application.abrir_revision import AbrirRevisionVar
+from fog.application.analizar_razonamiento import AnalizarRazonamientoEvento
 from fog.application.autenticar import IniciarSesion, ValidarToken
 from fog.application.configurar_combate import ConfigurarCombate
 from fog.application.forward_verdict import ForwardVerdictToClient
@@ -244,6 +245,13 @@ class Container(containers.DeclarativeContainer):
         ConsultarRazonamiento,
         consulta=consulta_revision_repository,
         uow=unidad_de_trabajo,
+    )
+    analizar_razonamiento = providers.Singleton(
+        AnalizarRazonamientoEvento,
+        consulta=consulta_revision_repository,
+        storage=file_storage,
+        extractor=feature_extractor,
+        parametros=parametros_explicacion,
     )
     verificar_auditoria = providers.Singleton(
         VerificarAuditoria, verificador=verificador_auditoria

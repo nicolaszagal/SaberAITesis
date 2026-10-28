@@ -250,14 +250,19 @@ guardó en `evidencia` (D-16); no recalcula nada. Protegida por JWT y con
   "ventana_atencion": { "desde_ms": -620, "hasta_ms": -180 }, "frame_clave": 131,
   "eventos": [
     { "tipo": "tocado", "frame_idx": 143, "t_ms": 0 },
-    { "tipo": "inicio_extension_brazo", "tirador": "A", "frame_idx": 118, "t_ms": -800 },
-    { "tipo": "inicio_extension_brazo", "tirador": "B", "frame_idx": 122, "t_ms": -667 },
+    { "tipo": "inicio_extension_brazo", "tirador": "A", "frame_idx": 118, "t_ms": -800,
+      "censurado_inicio": false },
+    { "tipo": "inicio_extension_brazo", "tirador": "B", "frame_idx": 122, "t_ms": -667,
+      "censurado_inicio": false },
     { "tipo": "inicio_desplazamiento", "frame_idx": 110, "t_ms": -1100, "censurado_inicio": false } ],
   "params_version": "1" }
 ```
 - `estado`: `respaldada`, `discordante`, `no_concluyente`, `insuficiente` (ver CU-09 en
-  `contexto_sabre.md`), `no_registrado` (revisión anterior al registro de razonamiento, D-17: sin
-  `frases`, `criterio_fie` ni `eventos`) o `no_disponible` (la clasificación no está disponible:
+  `contexto_sabre.md`), `no_calculado` (el cálculo del razonamiento falló al clasificar: la
+  clasificación se guardó igual, sin `frases` ni `eventos`; el fallo queda en el log técnico como
+  `razonamiento.error` y como una fila `criterio_fie` con ese estado), `no_registrado` (solo
+  revisiones anteriores al registro de razonamiento, D-17: sin `frases`, `criterio_fie` ni
+  `eventos`) o `no_disponible` (la clasificación no está disponible:
   trae `motivo`, el `motivo_no_disp`, y no hay razonamiento).
 - Las frases salen de plantillas fijas (D-15), con a lo sumo 2 frases y 220 caracteres (U6). El
   tirador se escribe como `A · ROJ` o `B · VER`; los tiempos van en ms o en s con coma decimal.
@@ -265,7 +270,12 @@ guardó en `evidencia` (D-16); no recalcula nada. Protegida por JWT y con
 - `eventos[].frame_idx` es el frame del clip (el mismo eje que `frame_inicio` de `/pose`) y
   `t_ms` los milisegundos respecto al tocado (negativo = antes). `inicio_extension_brazo` sale
   del `angulo_codo` crudo de `/pose` (no del interpolado que recibe el modelo): un hueco de
-  detección da `insuficiente`, no un inicio rellenado.
+  detección da `insuficiente`, no un inicio rellenado. Antes de buscar la subida se aplica una
+  mediana móvil de 3 frames al ángulo crudo; los trazos de `/pose` siguen mostrando el ángulo
+  crudo. `censurado_inicio: true` en `inicio_extension_brazo` indica que el brazo armado ya estaba
+  extendido (≥ 135°) en el primer frame válido del tirador, a partir de `frame_inicio`: la
+  extensión empezó **antes del clip** y `frame_idx` es ese primer frame. Un inicio censurado
+  precede a cualquier inicio observado; si lo están los dos, el estado es `no_concluyente`.
 - `inicio_desplazamiento` es **un solo evento sin `tirador`** (acercamiento mutuo): con la
   corrección DEF-27 la velocidad relativa del CM es idéntica para A y B, así que **no identifica
   quién se desplaza primero**, y **no entra en las plantillas**. `censurado_inicio: true` indica que el
@@ -833,6 +843,7 @@ Archivos que Fog escribe fuera de la base (rutas fijadas por `STORAGE_DIR` y `EV
 | `STORAGE_DIR/keypoints/<sha[:2]>/<sha>.npz` | keypoints crudos comprimidos (`{a,b}_xy`, `_conf`, `_box`, `_detected`, `frame_w/h`, `locked`, `lock_frame`); `clasificacion.keypoints_uri` y `keypoints_sha256` | al registrar la clasificación |
 | `EVIDENCE_DIR/<evento_id>.jsonl` | una línea por revisión cerrada (campos de la sección 7.1, L01); solo adición, no se corrige | cierre de la revisión |
 | `EVIDENCE_DIR/<evento_id>/resumen.json`, `revisiones.csv`, `resumen.md` | exportación de la sesión de validación (L02); se sobrescriben al reejecutar | `scripts/exportar_evidencia.py --evento <id>` |
+| `EVIDENCE_DIR/<evento_id>/razonamiento_v1.md` | análisis descriptivo y de solo lectura del razonamiento de la Validación 1 junto a una muestra de clips de train (EXP03-b); no escribe en `evidencia` ni en la auditoría (D-17); se sobrescribe al reejecutar | `scripts/analizar_razonamiento_v1.py [--evento <id>] [--muestra-train scripts/datos/muestra_train_razonamiento.json]` |
 
 `EVIDENCE_DIR` y `DATABASE_URL` son obligatorios al arrancar Fog: si falta alguna, Fog no
 arranca (`RuntimeError` al importar `fog.main`, con el nombre de la variable que falta).
