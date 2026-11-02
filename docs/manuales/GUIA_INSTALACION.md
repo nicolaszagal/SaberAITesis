@@ -225,11 +225,11 @@ La base vive en un volumen de Docker (`sabre_pgdata`). Estos comandos la **borra
 Defina `RESPALDO_DIR`, una carpeta **fuera del repo y fuera de Docker** (por ejemplo un disco externo). No tiene valor por defecto: sin ella el script se niega a correr. Se define en el entorno o con una línea `RESPALDO_DIR=...` en `.env`.
 
 ```bash
-export RESPALDO_DIR=/Volumes/Respaldo/sabre
+export RESPALDO_DIR="$HOME/Documents/Respaldo_Validación/Tesis"
 sh scripts/respaldar_sesion.sh --evento <id del evento>
 ```
 
-Con la base del despliegue remoto agregue `POSTGRES_DB_NAME=sabre_expo`. El script crea `RESPALDO_DIR/sabre_<evento>_<fecha UTC>/` con el `.dump` (formato custom de `pg_dump`), el `.tgz` de `datos/storage` y `datos/evidencia`, y `MANIFEST.sha256`. Después **verifica** el respaldo: comprueba los hashes, lee el `.tgz`, restaura el dump en una base temporal (que elimina), compara los conteos de revisiones, clasificaciones, veredictos y auditoría con los de la base, y exige que `fn_verificar_auditoria()` devuelva 0 filas. Resultado esperado: termina con `Respaldo verificado: <carpeta>`. Si algo no cuadra sale con error y renombra la carpeta a `*.FALLIDO`: ese respaldo no sirve; repita el comando (con Fog en reposo, porque falla si la base cambia durante el respaldo).
+Con la base del despliegue remoto agregue `POSTGRES_DB_NAME=sabre_expo`. El script crea `RESPALDO_DIR/R<NNN>-<fecha UTC>/` (por ejemplo `R001-20261102T194746Z`; NNN es el número correlativo del respaldo, que no se reutiliza ni siquiera si un respaldo queda `*.FALLIDO`) con el `.dump` (`sabre_<evento>_<fecha>.dump`, formato custom de `pg_dump`), el `.tgz` de `datos/storage` y `datos/evidencia`, y `MANIFEST.sha256`. Después **verifica** el respaldo: comprueba los hashes, lee el `.tgz`, restaura el dump en una base temporal (que elimina), compara los conteos de revisiones, clasificaciones, veredictos y auditoría con los de la base, y exige que `fn_verificar_auditoria()` devuelva 0 filas. Resultado esperado: termina con `Respaldo verificado: <carpeta>`. Si algo no cuadra sale con error y renombra la carpeta a `*.FALLIDO`: ese respaldo no sirve; repita el comando (con Fog en reposo, porque falla si la base cambia durante el respaldo).
 
 Cuándo respaldar:
 
@@ -243,7 +243,7 @@ Copie además la carpeta de `RESPALDO_DIR` a un segundo disco o a la nube antes 
 Restaure en una base vacía, sin ejecutar antes migraciones: el dump ya trae el esquema y la tabla `alembic_version`. Primero compruebe el respaldo:
 
 ```bash
-sh scripts/respaldar_sesion.sh --verificar "$RESPALDO_DIR/sabre_<evento>_<fecha>"
+sh scripts/respaldar_sesion.sh --verificar "$RESPALDO_DIR/R<NNN>-<fecha>"
 ```
 
 Luego, la base y los archivos:
@@ -251,10 +251,10 @@ Luego, la base y los archivos:
 ```bash
 docker compose exec -T postgres createdb -U sabre sabre_restaurada
 docker compose exec -T postgres pg_restore --exit-on-error -U sabre -d sabre_restaurada \
-    < "$RESPALDO_DIR/sabre_<evento>_<fecha>/sabre_<evento>_<fecha>.dump"
+    < "$RESPALDO_DIR/R<NNN>-<fecha>/sabre_<evento>_<fecha>.dump"
 docker compose exec -T postgres psql -U sabre -d sabre_restaurada \
     -c "select count(*) from sabre.veredicto" -c "select * from sabre.fn_verificar_auditoria()"
-tar -xzf "$RESPALDO_DIR/sabre_<evento>_<fecha>/sabre_<evento>_<fecha>.tgz" -C datos
+tar -xzf "$RESPALDO_DIR/R<NNN>-<fecha>/sabre_<evento>_<fecha>.tgz" -C datos
 ```
 
 Resultado esperado: la cuenta de veredictos coincide con la de la base original y `fn_verificar_auditoria()` devuelve 0 filas. Para usar la base restaurada, apunte Fog a ella con `POSTGRES_DB_NAME=sabre_restaurada` (modo piloto) o renómbrela a `sabre` con Fog detenido.

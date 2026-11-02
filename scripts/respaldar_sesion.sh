@@ -9,7 +9,7 @@
 # Docker (volúmenes, ~/.colima, ~/.docker): un respaldo dentro de lo que se respalda no sirve.
 # No tiene valor por defecto.
 #
-# Escribe RESPALDO_DIR/sabre_<evento>_<fecha UTC>/ con:
+# Escribe RESPALDO_DIR/R<NNN>-<fecha UTC>/ (NNN: número correlativo de respaldo, 3 dígitos) con:
 #   sabre_<evento>_<fecha>.dump   pg_dump en formato custom de la base completa
 #   sabre_<evento>_<fecha>.tgz    datos/storage y datos/evidencia (DATOS_DIR, por defecto ./datos)
 #   MANIFEST.sha256               hash de cada archivo
@@ -125,7 +125,15 @@ DATOS_DIR=$(cd "$DATOS_DIR" && pwd -P)
 
 FECHA=$(date -u +%Y%m%dT%H%M%SZ)
 NOMBRE="sabre_${EVENTO}_${FECHA}"
-CARPETA="$DESTINO_BASE/$NOMBRE"
+# Número correlativo: el mayor R<NNN>- existente (también los *.FALLIDO, para no reutilizarlo) + 1.
+ULTIMO_N=0
+for existente in "$DESTINO_BASE"/R[0-9][0-9][0-9]-*; do
+    [ -e "$existente" ] || continue
+    n=$(basename "$existente" | cut -c2-4 | sed 's/^0*//')
+    n=${n:-0}
+    if [ "$n" -gt "$ULTIMO_N" ]; then ULTIMO_N=$n; fi
+done
+CARPETA="$DESTINO_BASE/$(printf 'R%03d-%s' "$((ULTIMO_N + 1))" "$FECHA")"
 mkdir "$CARPETA" || fallo "no puedo crear $CARPETA"
 echo "Respaldando evento $EVENTO (base $PGBASE) en $CARPETA"
 

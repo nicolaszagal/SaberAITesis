@@ -90,6 +90,11 @@ def _carpeta_respaldo(entorno: dict) -> Path:
     return carpeta
 
 
+def _nombre_base(carpeta: Path) -> str:
+    """Nombre de los archivos del respaldo: sabre_<evento>_<fecha> (la carpeta es R<NNN>-<fecha>)."""
+    return next(carpeta.glob("*.dump")).stem
+
+
 def _conteos(sesion) -> str:
     fila = sesion.sql.filas(
         "SELECT (SELECT count(*) FROM sabre.revision_var) AS r, (SELECT count(*) FROM sabre.clasificacion) AS c, "
@@ -104,10 +109,12 @@ def test_respaldo_y_restauracion_coinciden(sesion, entorno):
     assert r.returncode == 0, r.stdout + r.stderr
     print(r.stdout)  # visible con `pytest -s`: salida de un respaldo y su verificación
     carpeta = _carpeta_respaldo(entorno)
-    assert re.fullmatch(rf"sabre_{sesion.evento_id}_\d{{8}}T\d{{6}}Z", carpeta.name)
+    fecha = carpeta.name.removeprefix("R001-")
+    assert re.fullmatch(r"R001-\d{8}T\d{6}Z", carpeta.name)
+    assert _nombre_base(carpeta) == f"sabre_{sesion.evento_id}_{fecha}"
     assert sorted(p.suffix or p.name for p in carpeta.iterdir()) == [".dump", ".sha256", ".tgz"]
     manifiesto = (carpeta / "MANIFEST.sha256").read_text()
-    assert f"{carpeta.name}.dump" in manifiesto and f"{carpeta.name}.tgz" in manifiesto
+    assert f"{_nombre_base(carpeta)}.dump" in manifiesto and f"{_nombre_base(carpeta)}.tgz" in manifiesto
     conteos = _conteos(sesion)
     assert int(conteos.split(",")[0]) >= 2 and int(conteos.split(",")[3]) > 0  # no es una base vacía
     assert f"conteos restaurados (revisiones,clasificaciones,veredictos,auditoría): {conteos}" in r.stdout
@@ -166,7 +173,20 @@ def test_evento_inexistente_no_deja_respaldo(sesion, entorno):
 
     assert r.returncode != 0
     assert "no existe en la base" in r.stderr
-    assert list(Path(entorno["RESPALDO_DIR"]).glob("sabre_*")) == []
+    assert list(Path(entorno["RESPALDO_DIR"]).glob("R*")) == []
+
+
+def test_los_respaldos_se_numeran_correlativamente(sesion, entorno):
+    nombres = []
+    for _ in range(3):
+        assert _correr(SCRIPT, entorno, "--evento", str(sesion.evento_id)).returncode == 0
+        time.sleep(1)  # la fecha lleva segundos
+        nombres = sorted(p.name for p in Path(entorno["RESPALDO_DIR"]).iterdir() if p.is_dir())
+    assert [n[:5] for n in nombres] == ["R001-", "R002-", "R003-"]
+    # Un respaldo fallido conserva su número: el siguiente no lo reutiliza
+    (Path(entorno["RESPALDO_DIR"]) / "R007-20261102T000000Z.FALLIDO").mkdir()
+    assert _correr(SCRIPT, entorno, "--evento", str(sesion.evento_id)).returncode == 0
+    assert any(p.name.startswith("R008-") for p in Path(entorno["RESPALDO_DIR"]).iterdir())
 
 
 def test_recordatorio_avisa_hasta_que_se_respalda(sesion, entorno):
@@ -217,5 +237,5 @@ def test_exportar_evidencia_llama_al_respaldo(sesion, entorno, monkeypatch):
 
     assert codigo == 0
     carpeta = _carpeta_respaldo(entorno)
-    assert carpeta.name.startswith(f"sabre_{sesion.evento_id}_")
+    assert carpeta.name.startswith("R001-")
     assert next(carpeta.glob("*.dump")).stat().st_size > 0
