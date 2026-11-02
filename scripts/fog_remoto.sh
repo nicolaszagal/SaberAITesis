@@ -4,7 +4,7 @@
 # Uso, desde backend/ y con Fog nativo ya corriendo en modo remoto
 # (ENTORNO=remoto, AUTH_*, PROXY_SHARED_TOKEN, REDIS_URL=rediss://... y REDIS_TLS_*):
 #   sh scripts/fog_remoto.sh start    # verifica /health, abre el túnel hacia Fog, imprime la URL
-#   sh scripts/fog_remoto.sh stop     # cierra el túnel y caffeinate
+#   sh scripts/fog_remoto.sh stop     # cierra el túnel y caffeinate; avisa si falta respaldar (FIX03)
 #   sh scripts/fog_remoto.sh status
 #
 # El túnel apunta directo a Fog (no a un proxy local). Con trycloudflare la URL
@@ -74,6 +74,8 @@ detener() {
     matar "$PID_CAFE"
     rm -f "$URL_FILE"
     echo "Túnel y caffeinate detenidos."
+    # FIX03: recuerda respaldar si hubo revisiones nuevas (POSTGRES_DB_NAME=sabre_expo en el remoto).
+    sh scripts/recordar_respaldo.sh || true
 }
 
 estado() {
