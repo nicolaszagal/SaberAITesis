@@ -675,11 +675,12 @@ def test_script_exportar_evidencia(sesion, database_url, tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DATABASE_URL", database_url)
     monkeypatch.setattr(config, "EVIDENCE_DIR", str(tmp_path))
 
-    codigo = exportar_evidencia.main(["--evento", str(sesion.evento_id)])
+    # --sin-respaldo: esta prueba cubre la exportación; el respaldo va en test_respaldo_sesion.py.
+    codigo = exportar_evidencia.main(["--evento", str(sesion.evento_id), "--sin-respaldo"])
 
     assert codigo == 0
     carpeta = tmp_path / str(sesion.evento_id)
     assert sorted(p.name for p in carpeta.iterdir()) == [
         "resumen.json", "resumen.md", "revisiones.csv",
     ]
-    assert exportar_evidencia.main(["--evento", str(uuid.uuid4())]) == 1
+    assert exportar_evidencia.main(["--evento", str(uuid.uuid4()), "--sin-respaldo"]) == 1

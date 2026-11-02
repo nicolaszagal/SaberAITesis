@@ -50,6 +50,9 @@ for destino in $DESTINOS; do
     }
 done
 
+# FIX03: avisa si hay revisiones sin respaldar de una sesión anterior (no detiene el arranque).
+ENV_FILE="$ENV_FILE" sh scripts/recordar_respaldo.sh || true
+
 alembic upgrade head
 python scripts/registrar_modelo.py "$MODEL_RUN_ID" --solo-si-no-hay-activo
 

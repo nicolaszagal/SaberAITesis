@@ -197,7 +197,7 @@ docker compose down
 docker compose up -d
 ```
 
-Resultado esperado: `down` elimina los contenedores y conserva los datos (volumen de PostgreSQL y carpeta `datos/`). Nunca use `down -v`: borra la base.
+Resultado esperado: `down` elimina los contenedores y conserva los datos (volumen de PostgreSQL y carpeta `datos/`). Nunca use `down -v`: borra la base (ver "Qué borra la base" más abajo).
 
 ### Actualizar
 
@@ -209,32 +209,55 @@ docker compose up -d --build
 
 Resultado esperado: se reconstruyen solo las imágenes que cambiaron y Fog aplica las migraciones pendientes al arrancar.
 
-### Respaldar
+### Qué borra la base
 
-1. Base de datos.
+La base vive en un volumen de Docker (`sabre_pgdata`). Estos comandos la **borran** sin pedir confirmación y, sin respaldo, la evidencia de la sesión se pierde (así se perdió la base de la Validación 1, DEF-31):
+
+- `docker compose down -v` (la opción `-v` elimina los volúmenes).
+- `colima delete` o recrear la máquina de Colima.
+- Cambiar de motor de Docker (Colima, Docker Desktop, OrbStack): cada uno tiene sus propios volúmenes.
+- `docker volume rm sabre_pgdata` o `docker system prune --volumes`.
+
+`docker compose down` sin `-v` conserva la base. La carpeta `datos/` (clips, `.npz`, JSONL) vive en el disco del equipo, pero sin las filas de la base no se puede reconstruir qué revisión es cuál.
+
+### Respaldar una sesión
+
+Defina `RESPALDO_DIR`, una carpeta **fuera del repo y fuera de Docker** (por ejemplo un disco externo). No tiene valor por defecto: sin ella el script se niega a correr. Se define en el entorno o con una línea `RESPALDO_DIR=...` en `.env`.
 
 ```bash
-docker compose exec -T postgres pg_dump -U sabre -d sabre > respaldo_sabre.sql
+export RESPALDO_DIR=/Volumes/Respaldo/sabre
+sh scripts/respaldar_sesion.sh --evento <id del evento>
 ```
 
-2. Clips y evidencia.
+Con la base del despliegue remoto agregue `POSTGRES_DB_NAME=sabre_expo`. El script crea `RESPALDO_DIR/sabre_<evento>_<fecha UTC>/` con el `.dump` (formato custom de `pg_dump`), el `.tgz` de `datos/storage` y `datos/evidencia`, y `MANIFEST.sha256`. Después **verifica** el respaldo: comprueba los hashes, lee el `.tgz`, restaura el dump en una base temporal (que elimina), compara los conteos de revisiones, clasificaciones, veredictos y auditoría con los de la base, y exige que `fn_verificar_auditoria()` devuelva 0 filas. Resultado esperado: termina con `Respaldo verificado: <carpeta>`. Si algo no cuadra sale con error y renombra la carpeta a `*.FALLIDO`: ese respaldo no sirve; repita el comando (con Fog en reposo, porque falla si la base cambia durante el respaldo).
+
+Cuándo respaldar:
+
+- Al cerrar cada sesión: `python scripts/exportar_evidencia.py --evento <id>` exporta la evidencia y llama al respaldo. Sin `RESPALDO_DIR` avisa en grande y sale con código 2.
+- `scripts/fog_nativo.sh` (al arrancar) y `scripts/fog_remoto.sh stop` avisan si hay revisiones nuevas desde el último respaldo verificado. Es solo un aviso: no respaldan por usted.
+
+Copie además la carpeta de `RESPALDO_DIR` a un segundo disco o a la nube antes de apagar el equipo.
+
+### Restaurar
+
+Restaure en una base vacía, sin ejecutar antes migraciones: el dump ya trae el esquema y la tabla `alembic_version`. Primero compruebe el respaldo:
 
 ```bash
-tar -czf respaldo_archivos.tgz datos
+sh scripts/respaldar_sesion.sh --verificar "$RESPALDO_DIR/sabre_<evento>_<fecha>"
 ```
 
-### Restaurar la base
-
-Restaure en una base vacía, sin ejecutar antes migraciones: el respaldo ya trae el esquema y la tabla `alembic_version`.
+Luego, la base y los archivos:
 
 ```bash
 docker compose exec -T postgres createdb -U sabre sabre_restaurada
-docker compose exec -T postgres psql -q -v ON_ERROR_STOP=1 -U sabre -d sabre_restaurada < respaldo_sabre.sql
+docker compose exec -T postgres pg_restore --exit-on-error -U sabre -d sabre_restaurada \
+    < "$RESPALDO_DIR/sabre_<evento>_<fecha>/sabre_<evento>_<fecha>.dump"
 docker compose exec -T postgres psql -U sabre -d sabre_restaurada \
     -c "select count(*) from sabre.veredicto" -c "select * from sabre.fn_verificar_auditoria()"
+tar -xzf "$RESPALDO_DIR/sabre_<evento>_<fecha>/sabre_<evento>_<fecha>.tgz" -C datos
 ```
 
-Resultado esperado: el primer comando imprime `set_config` y `setval`, que son normales. La cuenta de veredictos coincide con la base original y `fn_verificar_auditoria()` devuelve 0 filas. Para restaurar los archivos, extraiga `respaldo_archivos.tgz` en la carpeta `backend`.
+Resultado esperado: la cuenta de veredictos coincide con la de la base original y `fn_verificar_auditoria()` devuelve 0 filas. Para usar la base restaurada, apunte Fog a ella con `POSTGRES_DB_NAME=sabre_restaurada` (modo piloto) o renómbrela a `sabre` con Fog detenido.
 
 ## 6. Prueba de humo
 
