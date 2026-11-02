@@ -864,7 +864,7 @@ contrato del flujo WebRTC, fuera de la Validación 1):
 | Veredicto (CU-10) | `POST /revisiones/{revision_id}/veredicto` (`clase_final` obligatoria con mantener y cambiar; sin ella con anular) |
 | Historial y detalle (CU-12) | `GET /revisiones?evento_id=`, `GET /revisiones/{id}` |
 | Trazos de pose en el modal (CU-08, F-031): botón "Ver trazos" (tecla T) en Revisión VAR (Paso 2) y en el detalle del Historial (CU-12); se pide solo al abrir el modal y se guarda por revisión mientras la pantalla siga montada | `GET /revisiones/{revision_id}/pose` |
-| Razonamiento de la sugerencia (CU-09, F-035): panel "Razonamiento" bajo demanda en Revisión VAR y en el detalle del Historial | `GET /revisiones/{revision_id}/razonamiento` (los dos 409 de `/pose` y el de `/razonamiento` se distinguen por `codigo`, no por `detail`) |
+| Razonamiento (CU-09, F-035, F-008): botón "Ver razonamiento" (tecla J) en Revisión VAR (Paso 2) y en el detalle del Historial (CU-12), que abre un modal; se pide solo al abrir y se guarda por revisión mientras la pantalla siga montada. Muestra las frases tal como llegan, el artículo FIE y los eventos, cada uno con "Ver en trazos" que abre el modal de trazos en su `frame_idx` (un evento con `censurado_inicio` se muestra como "antes del inicio del clip" y abre en el primer frame). Con el razonamiento en caché, la barra de tiempo de los trazos marca los eventos y la ventana de atención | `GET /revisiones/{revision_id}/razonamiento` (los dos 409 de `/pose` y el de `/razonamiento` se distinguen por `codigo`, no por `detail`) |
 | Resumen y exportación de la validación (L02) | `GET /validaciones/{evento_id}/resumen` |
 | Estado del sistema y modelo | `GET /health`, `GET /modelo/activo` |
 
