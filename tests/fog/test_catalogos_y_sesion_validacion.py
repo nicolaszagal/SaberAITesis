@@ -90,7 +90,10 @@ def test_get_usuarios_filtra_por_rol(crear_app):
     assert set(fila_operador) == {"id", "nombre", "rol", "activo"}
     nombres_todos = [u["nombre"] for u in todos.json()]
     assert arbitro in nombres_todos and operador in nombres_todos
-    assert nombres_todos == sorted(nombres_todos)  # ordenados por nombre
+    # Ordenados por nombre (CONTRATO_API §1.2). El orden lo fija el ORDER BY de la
+    # base (su collation), no el de Python: se compara con la misma consulta (DEF-30).
+    esperado = app.sql.filas("SELECT nombre FROM sabre.usuario ORDER BY nombre, id")
+    assert nombres_todos == [f["nombre"] for f in esperado]
 
 
 def test_get_usuarios_con_rol_invalido_responde_422(crear_app):

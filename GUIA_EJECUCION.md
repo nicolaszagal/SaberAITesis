@@ -207,18 +207,16 @@ contenedor `postgres:16-alpine` por módulo con testcontainers (254 pruebas pasa
 ni `TEST_DATABASE_URL` se omiten (~100 pruebas omitidas). Con Colima hay que exportar
 `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`.
 
-**`TEST_DATABASE_URL` sirve para ejecutar un solo módulo de pruebas a la vez.** Es una única
-base compartida por todos los módulos y algunas pruebas exigen base vacía y cadena de
-auditoría propia (`test_migracion_esquema`, `test_flujo_auditable`,
-`test_search_path_funciones`): con `pytest tests/` completo contra esa base fallan 7
-pruebas por interferencia entre módulos, no por el código. Usar una base vacía por módulo
-(`pytest tests/fog/test_flujo_auditable.py`, recreando la base entre ejecuciones) o testcontainers.
+**`TEST_DATABASE_URL`** apunta a una instancia de Postgres (no a una base que se reutilice). Cada
+módulo de pruebas crea su propia base vacía (`test_<módulo>_<aleatorio>`), le aplica las
+migraciones y la elimina al terminar (`DROP DATABASE ... WITH (FORCE)`), por lo que
+`pytest tests/` completo se puede repetir sobre la misma instancia (DEF-29). El usuario de la
+URL necesita permiso `CREATEDB`.
 
 La prueba de κ contra `sklearn` (`tests/fog/test_resumen_validacion.py`) se omite si
 `scikit-learn` no está instalado; no está en `requirements.txt`.
 
-`ruff` con las reglas `E,F,W` reporta hoy 139 hallazgos previos, casi todos `E501` (línea larga
-sobre el límite por defecto de 88 caracteres); no hay configuración de `ruff` en el repo.
+`ruff.toml` fija `line-length = 120`; `ruff check fog cloud shared edge --select E,F,W` no reporta avisos.
 
 `tests/smoke_manual.py` es una herramienta manual para el flujo WebRTC contra Fog+Cloud+Redis
 ya levantados; no es parte de la suite (su nombre evita los patrones `test_*.py` para que

@@ -198,8 +198,20 @@ class ClipUploadResponse(BaseModel):
             "POST /revisiones/{revision_id}/veredicto y de GET /ws/veredicto/{revision_id}."
         ),
     )
-    has_luz_A: bool = Field(..., description="True si se recibió la luz Favero del tirador A (`has_luz_A` o, como alias obsoleto, `luz_frame_a`).")
-    has_luz_B: bool = Field(..., description="True si se recibió la luz Favero del tirador B (`has_luz_B` o, como alias obsoleto, `luz_frame_b`).")
+    has_luz_A: bool = Field(
+        ...,
+        description=(
+            "True si se recibió la luz Favero del tirador A "
+            "(`has_luz_A` o, como alias obsoleto, `luz_frame_a`)."
+        ),
+    )
+    has_luz_B: bool = Field(
+        ...,
+        description=(
+            "True si se recibió la luz Favero del tirador B "
+            "(`has_luz_B` o, como alias obsoleto, `luz_frame_b`)."
+        ),
+    )
     timed_out: bool = Field(
         ...,
         description=(
