@@ -1,18 +1,22 @@
 """Fixtures compartidas para pruebas de Fog contra PostgreSQL real.
 
-Base de pruebas: TEST_DATABASE_URL (servicio de CI, base vacía, formato
-postgresql+asyncpg://...) o, si no está, un contenedor postgres:16-alpine
+Base de pruebas: TEST_DATABASE_URL (instancia de Postgres, formato
+postgresql+asyncpg://...; cada módulo crea y elimina su propia base) o, si no está, un contenedor postgres:16-alpine
 vía testcontainers. Sin ninguna de las dos (sin Docker), se omiten las
 pruebas que dependan de estas fixtures.
 """
 
 import asyncio
 import os
+import re
+import uuid
 from pathlib import Path
 
+import asyncpg
 import pytest
 from alembic import command
 from alembic.config import Config
+from sqlalchemy.engine import make_url
 
 from fog.infrastructure.persistence.database import build_engine, build_session_factory
 from shared import config
@@ -20,11 +24,37 @@ from shared import config
 BACKEND = Path(__file__).resolve().parents[2]
 
 
+def _nombre_base_temporal(modulo: str) -> str:
+    """`test_<módulo>_<aleatorio>`, válido como identificador y de <= 63 caracteres."""
+    limpio = re.sub(r"\W", "_", modulo.rsplit(".", 1)[-1].removeprefix("test_"))[:30]
+    return f"test_{limpio}_{uuid.uuid4().hex[:12]}"
+
+
+async def _ddl(url: str, sentencia: str) -> None:
+    """Ejecuta una sentencia DDL fuera de transacción (CREATE/DROP DATABASE)."""
+    conexion = await asyncpg.connect(make_url(url).set(drivername="postgresql").render_as_string(False))
+    try:
+        await conexion.execute(sentencia)
+    finally:
+        await conexion.close()
+
+
 @pytest.fixture(scope="module")
-def database_url():
+def database_url(request):
+    """URL de una base vacía propia del módulo (DEF-29).
+
+    Con TEST_DATABASE_URL se crea `test_<módulo>_<aleatorio>` en esa instancia
+    y se elimina al terminar; con testcontainers cada módulo recibe un
+    contenedor nuevo.
+    """
     url = os.environ.get("TEST_DATABASE_URL")
     if url:
-        yield url
+        nombre = _nombre_base_temporal(request.module.__name__)
+        asyncio.run(_ddl(url, f'CREATE DATABASE "{nombre}"'))
+        try:
+            yield make_url(url).set(database=nombre).render_as_string(False)
+        finally:
+            asyncio.run(_ddl(url, f'DROP DATABASE IF EXISTS "{nombre}" WITH (FORCE)'))
         return
     try:
         from testcontainers.community.postgres import PostgresContainer
@@ -73,7 +103,6 @@ def session_factory(migrated_engine):
 # ---------------------------------------------------------------------------
 import hashlib  # noqa: E402
 import tempfile  # noqa: E402
-import uuid  # noqa: E402
 from dataclasses import dataclass  # noqa: E402
 from datetime import date  # noqa: E402
 
