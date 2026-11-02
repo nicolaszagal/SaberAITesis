@@ -678,7 +678,11 @@ async def upload_clip(
                 "(`codigo`: `sin_clasificacion`)."
             )
         },
-        422: {"description": "'mantener' o 'cambiar' sin clase_final, 'anular' con clase_final, o clase fuera de dominio."},
+        422: {
+            "description": (
+                "'mantener' o 'cambiar' sin clase_final, 'anular' con clase_final, o clase fuera de dominio."
+            )
+        },
     },
 )
 @inject

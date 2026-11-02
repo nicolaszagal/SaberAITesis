@@ -216,8 +216,7 @@ URL necesita permiso `CREATEDB`.
 La prueba de κ contra `sklearn` (`tests/fog/test_resumen_validacion.py`) se omite si
 `scikit-learn` no está instalado; no está en `requirements.txt`.
 
-`ruff` con las reglas `E,F,W` reporta hoy 139 hallazgos previos, casi todos `E501` (línea larga
-sobre el límite por defecto de 88 caracteres); no hay configuración de `ruff` en el repo.
+`ruff.toml` fija `line-length = 120`; `ruff check fog cloud shared edge --select E,F,W` no reporta avisos.
 
 `tests/smoke_manual.py` es una herramienta manual para el flujo WebRTC contra Fog+Cloud+Redis
 ya levantados; no es parte de la suite (su nombre evita los patrones `test_*.py` para que
