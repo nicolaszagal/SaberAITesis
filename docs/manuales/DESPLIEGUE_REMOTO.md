@@ -38,7 +38,14 @@ Prueba local (puerto 6390): sin TLS → conexión cerrada; TLS sin certificado d
 | frontend | `FOG_UPSTREAM`, `PROXY_SHARED_TOKEN`, `CLIP_MAX_MB` |
 | Fog (Mac) | `ENTORNO=remoto`, `AUTH_USER`, `AUTH_PASSWORD_HASH`, `AUTH_JWT_SECRET`, `PROXY_SHARED_TOKEN`, `CORS_ORIGINS` vacío, `REDIS_URL=rediss://…`, `REDIS_TLS_*` |
 
-PKI: `sh scripts/generar_pki_redis.sh <host-proxy> redis.railway.internal` → `backend/.secrets/redis/` (ignorado por git). Rotación: borrar esa carpeta, regenerar y actualizar las variables; contraseña de Redis, `AUTH_JWT_SECRET` y `PROXY_SHARED_TOKEN` con `openssl rand -base64 48`, cambiando el valor en ambos extremos y reiniciando.
+PKI: la genera `scripts/rotar_secretos.sh` (llama a `generar_pki_redis.sh redis.railway.internal localhost`; `REDIS_SAN_HOSTS` cambia los nombres) → `backend/.secrets/redis/` (ignorado por git).
+
+**Rotación (procedimiento usado en SEC01, 06/11/2026)**
+1. Desde `backend/`: `sh scripts/rotar_secretos.sh`. Mueve lo vigente a `.secrets/_retirado_2026-10-27/` y genera `AUTH_JWT_SECRET`, `PROXY_SHARED_TOKEN`, `POSTGRES_PASSWORD`, la PKI completa (CA incluida) y la contraseña de Redis; pide la contraseña maestra por `getpass` (mínimo 16 caracteres) y escribe el hash. Actualiza `POSTGRES_PASSWORD` en `.env` y regenera `.secrets/fog_remoto.env`. Imprime solo nombre, longitud y huella.
+2. `REDIS_HOST_REMOTO=host:puerto sh scripts/rotar_secretos.sh --forzar` rota de nuevo todo menos el hash de la contraseña (para cambiarla, borrar `.secrets/auth_password_hash.env` antes). Sin esa variable, `REDIS_URL_REMOTO` queda en `PENDIENTE:6379`.
+3. Pegar en el panel de Railway los valores nuevos (redis: `REDIS_PASSWORD` y `REDIS_TLS_*_B64` de servidor; cloud: `REDIS_URL` y `REDIS_TLS_*` de `cloud.*`; frontend: `PROXY_SHARED_TOKEN`), sin imprimirlos en la terminal ni en chats.
+4. Reiniciar Fog: el JWT anterior pasa a dar 401 y el token de proxy anterior, 403.
+5. Al cerrar el incidente, el autor borra `_retirado_2026-10-27/`. Registro: `docs/seguridad/INCIDENTE_2026-10-21_railway.md`.
 
 ## 6. Verificación (Parte D)
 | # | Prueba | Resultado |
