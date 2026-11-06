@@ -1,7 +1,8 @@
 #!/bin/sh
 # PKI propia para Redis con mTLS (DEPLOY07): CA (1 año), certificado de servidor
 # y un certificado de cliente para Fog y otro para Cloud. Salida en
-# .secrets/redis/ (ignorado por git, permisos 600).
+# .secrets/redis/ (ignorado por git, permisos 600). SECRETS_DIR cambia la carpeta
+# base (por defecto .secrets); lo usa scripts/rotar_secretos.sh.
 #
 # Uso, desde backend/:
 #   sh scripts/generar_pki_redis.sh <host-publico> [<otro-nombre> ...]
@@ -12,7 +13,7 @@ set -eu
 
 [ "$#" -ge 1 ] || { echo "Uso: sh scripts/generar_pki_redis.sh <host> [<host> ...]" >&2; exit 2; }
 cd "$(dirname "$0")/.."
-OUT=.secrets/redis
+OUT="${SECRETS_DIR:-.secrets}/redis"
 [ ! -e "$OUT/ca.crt" ] || { echo "$OUT ya existe: bórrelo a mano para regenerar (rotación)." >&2; exit 1; }
 mkdir -p "$OUT"
 umask 077
