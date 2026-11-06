@@ -1,7 +1,7 @@
 """Genera el hash Argon2id de la contraseña del usuario maestro (AUTH_PASSWORD_HASH).
 
 La contraseña se pide por `getpass` (no queda en el historial del shell ni en
-argumentos de proceso) y debe tener al menos 12 caracteres. Imprime solo el
+argumentos de proceso) y debe tener al menos 16 caracteres. Imprime solo el
 hash. El hash contiene `$`: en un `.env` hay que ponerlo entre comillas
 simples para que Docker Compose y `sh` lo lean literal; `--env` imprime la línea
 `AUTH_PASSWORD_HASH='...'` lista para pegar.
@@ -16,7 +16,7 @@ import sys
 
 from argon2 import PasswordHasher
 
-MIN_CARACTERES = 12
+MIN_CARACTERES = 16
 
 
 def validar_password(password: str) -> None:
@@ -26,7 +26,7 @@ def validar_password(password: str) -> None:
         password: contraseña en claro.
 
     Raises:
-        ValueError: si tiene menos de 12 caracteres.
+        ValueError: si tiene menos de 16 caracteres.
     """
     if len(password) < MIN_CARACTERES:
         raise ValueError(f"La contraseña debe tener al menos {MIN_CARACTERES} caracteres.")
