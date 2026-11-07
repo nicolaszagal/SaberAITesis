@@ -58,7 +58,9 @@ docker run -d --name ts-cloud -e TS_HOSTNAME=ts-prueba-cloud -e TS_FORWARDS="637
     sabre-ts-prototipo sleep 600 >/dev/null
 docker run -d --name ts-frontend -e TS_HOSTNAME=ts-prueba-frontend -e TS_FORWARDS="8001:$MAC:8001" \
     -v "$SEC/ts_authkey_frontend.txt:/run/ts_authkey:ro" -e TS_AUTHKEY_FILE=/run/ts_authkey \
-    -v "$TMP/clip.bin:/clip.bin:ro" sabre-ts-prototipo sleep 600 >/dev/null
+    sabre-ts-prototipo sleep 600 >/dev/null
+# docker cp y no un montaje: colima solo comparte el home con la VM, no /var/folders.
+docker cp "$TMP/clip.bin" ts-frontend:/clip.bin
 echo "Uniendo los contenedores a la tailnet (hasta 60 s cada uno)..."
 for c in ts-cloud ts-frontend; do
     for _ in $(seq 1 60); do
@@ -85,7 +87,22 @@ SHA_REMOTO=$(printf '%s' "$RESP" | python3 -c 'import json,sys; print(json.load(
 echo "POST de $MB MB por la tailnet: $((FIN - INICIO)) s"
 [ "$SHA_LOCAL" = "$SHA_REMOTO" ] && echo "Integridad: sha256 coincide" || { echo "Integridad: NO coincide"; exit 1; }
 
-echo "== Aislamiento por etiqueta (todo esto debe fallar) =="
-docker exec ts-cloud sh -c 'curl -s -m 8 http://127.0.0.1:8001/ >/dev/null && echo "ERROR" || echo "cloud sin reenvío a 8001: nada que probar"'
-echo "(La prueba de ACL cruzada se hace en el panel: tests de la política.)"
+echo "== Aislamiento por etiqueta (la ACL de la tailnet, no el firewall del Mac) =="
+# Solo 8001 y 6379 son pruebas de ACL: son los únicos puertos que `tailscale serve` publica; en 22 y 5432
+# nada escucha en la tailnet, así que ahí el bloqueo no distingue ACL de servicio ausente.
+# `tailscale nc` con stdin vacío: conexión permitida -> sale al instante (0); bloqueada -> se agota (124).
+alcanza() { # contenedor puerto -> imprime "permitido" o "BLOQUEADO"
+    if docker exec "$1" sh -c "timeout 8 tailscale --socket=/tmp/tailscaled.sock nc $MAC $2 </dev/null >/dev/null 2>&1"; then
+        echo permitido
+    else
+        echo BLOQUEADO
+    fi
+}
+printf 'cloud    -> mac:6379 (esperado: permitido) : %s\n' "$(alcanza ts-cloud 6379)"
+printf 'cloud    -> mac:8001 (esperado: BLOQUEADO) : %s\n' "$(alcanza ts-cloud 8001)"
+printf 'cloud    -> mac:22   (esperado: BLOQUEADO) : %s\n' "$(alcanza ts-cloud 22)"
+printf 'cloud    -> mac:5432 (esperado: BLOQUEADO) : %s\n' "$(alcanza ts-cloud 5432)"
+printf 'frontend -> mac:8001 (esperado: permitido) : %s\n' "$(alcanza ts-frontend 8001)"
+printf 'frontend -> mac:6379 (esperado: BLOQUEADO) : %s\n' "$(alcanza ts-frontend 6379)"
+printf 'frontend -> mac:22   (esperado: BLOQUEADO) : %s\n' "$(alcanza ts-frontend 22)"
 echo "Listo."
