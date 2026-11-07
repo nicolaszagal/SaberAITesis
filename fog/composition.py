@@ -329,4 +329,5 @@ class Container(containers.DeclarativeContainer):
         ForwardVerdictToClient,
         subscriber=verdict_subscriber,
         sessions=sessions,
+        modelos=modelo_version_repository,
     )

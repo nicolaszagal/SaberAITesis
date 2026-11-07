@@ -64,7 +64,7 @@ class _HangingVerdictSubscriber(VerdictStreamSubscriberPort):
     """Nunca resuelve: simula que Cloud no responde, para ejercitar la
     rama de timeout de POST /matches/{match_id}/clip (DEF-16)."""
 
-    async def wait_for_verdict(self, revision_id: str) -> VerdictView:
+    async def wait_for_verdict(self, revision_id: str, aceptar=None) -> VerdictView:
         await asyncio.Event().wait()
 
 
@@ -208,7 +208,7 @@ def test_upload_clip_marks_session_closed_when_cloud_times_out(crear_app):
 
 def test_websocket_tardio_recibe_el_veredicto_de_la_revision(crear_app):
     app = crear_app(subscriber=FakeVerdictSubscriber(
-        VerdictView(match_id="x", revision_id="x", fencer="ROJ", action="AttackA", confidence=0.9)
+        VerdictView(match_id="x", revision_id="x", fencer="ROJ", action="AttackA", confidence=0.9, modelo="lstm_6class/run/best_model.pt")
     ))
     match_id = app.configurar()
     resp = app.subir_clip(match_id)
@@ -229,7 +229,7 @@ class _SubscriberPorRevision(VerdictStreamSubscriberPort):
     def __init__(self, veredictos: list[dict]):
         self._pendientes = list(veredictos)
 
-    async def wait_for_verdict(self, revision_id: str) -> VerdictView:
+    async def wait_for_verdict(self, revision_id: str, aceptar=None) -> VerdictView:
         return VerdictView(match_id="m", revision_id=revision_id, **self._pendientes.pop(0))
 
 
