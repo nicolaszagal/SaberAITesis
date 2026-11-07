@@ -24,6 +24,12 @@ trap 'for p in $PIDS; do kill "$p" 2>/dev/null || true; done
 for f in "$SEC/ts_authkey_cloud.txt" "$SEC/ts_authkey_frontend.txt" "$SEC/redis/ca.crt" "$SEC/redis/server.crt" "$SEC/redis/server.key"; do
     [ -s "$f" ] || { echo "Falta $f" >&2; exit 1; }
 done
+for f in "$SEC/ts_authkey_cloud.txt" "$SEC/ts_authkey_frontend.txt"; do
+    case "$(cut -c1-6 "$f")" in
+        tskey-) ;;
+        *) echo "$f no tiene formato de clave de Tailscale (debe empezar por tskey-). Copie la clave en el panel y recién ahí ejecute pbpaste." >&2; exit 1 ;;
+    esac
+done
 tailscale status >/dev/null 2>&1 || { echo "Tailscale no está conectado en el Mac." >&2; exit 1; }
 
 # 1. Redis de prueba con la ACL real y TLS 1.3 + mTLS
@@ -53,8 +59,13 @@ docker run -d --name ts-cloud -e TS_HOSTNAME=ts-prueba-cloud -e TS_FORWARDS="637
 docker run -d --name ts-frontend -e TS_HOSTNAME=ts-prueba-frontend -e TS_FORWARDS="8001:$MAC:8001" \
     -v "$SEC/ts_authkey_frontend.txt:/run/ts_authkey:ro" -e TS_AUTHKEY_FILE=/run/ts_authkey \
     -v "$TMP/clip.bin:/clip.bin:ro" sabre-ts-prototipo sleep 600 >/dev/null
+echo "Uniendo los contenedores a la tailnet (hasta 60 s cada uno)..."
 for c in ts-cloud ts-frontend; do
-    for _ in $(seq 1 60); do docker logs "$c" 2>&1 | grep -q 'tailnet lista' && break; sleep 1; done
+    for _ in $(seq 1 60); do
+        docker logs "$c" 2>&1 | grep -q 'tailnet lista' && break
+        docker ps -q -f "name=$c" | grep -q . || break  # el contenedor terminó: no esperar más
+        sleep 1
+    done
     docker logs "$c" 2>&1 | grep -q 'tailnet lista' || { echo "$c no se unió a la tailnet"; docker logs "$c" 2>&1 | sed -E 's/tskey-[A-Za-z0-9-]+/<oculto>/g' | tail -5; exit 1; }
 done
 
