@@ -10,7 +10,7 @@
 #   1. Mueve lo vigente a .secrets/_retirado_2026-10-27/ (no borra evidencia).
 #   2. Genera, solo si falta: AUTH_PASSWORD_HASH (pide la contraseña por getpass),
 #      AUTH_JWT_SECRET, PROXY_SHARED_TOKEN, POSTGRES_PASSWORD y la PKI de Redis
-#      completa (CA, servidor, fog, cloud y contraseña del usuario `sabre`).
+#      completa (CA, servidor, fog, cloud y una contraseña de Redis por usuario: fog y cloud).
 #   3. Actualiza POSTGRES_PASSWORD en .env y regenera .secrets/fog_remoto.env.
 #   4. Imprime solo nombre, longitud y huella (sha256 truncado a 8 caracteres).
 #
@@ -127,7 +127,7 @@ if [ ! -s "$SECRETS_DIR/fog_remoto.env" ]; then
         echo "AUTH_JWT_SECRET=$(cat "$SECRETS_DIR/auth_jwt_secret.txt")"
         echo "PROXY_SHARED_TOKEN=$(cat "$SECRETS_DIR/proxy_token.txt")"
         echo "CORS_ORIGINS=$(valor_previo CORS_ORIGINS)"
-        echo "REDIS_URL_REMOTO=rediss://sabre:$(cat "$SECRETS_DIR/redis/redis_password.txt")@$REDIS_HOST_REMOTO/0"
+        echo "REDIS_URL_REMOTO=rediss://fog:$(cat "$SECRETS_DIR/redis/redis_password_fog.txt")@$REDIS_HOST_REMOTO/0"
         echo "REDIS_TLS_CA=$SECRETS_DIR/redis/ca.crt"
         echo "REDIS_TLS_CERT=$SECRETS_DIR/redis/fog.crt"
         echo "REDIS_TLS_KEY=$SECRETS_DIR/redis/fog.key"
@@ -146,7 +146,8 @@ informar AUTH_PASSWORD_HASH "$HASH_FILE"
 informar AUTH_JWT_SECRET "$SECRETS_DIR/auth_jwt_secret.txt"
 informar PROXY_SHARED_TOKEN "$SECRETS_DIR/proxy_token.txt"
 informar POSTGRES_PASSWORD "$SECRETS_DIR/postgres_password.txt"
-informar REDIS_PASSWORD "$SECRETS_DIR/redis/redis_password.txt"
+informar REDIS_PASSWORD_FOG "$SECRETS_DIR/redis/redis_password_fog.txt"
+informar REDIS_PASSWORD_CLOUD "$SECRETS_DIR/redis/redis_password_cloud.txt"
 for f in ca server fog cloud; do
     informar "PKI_$f.crt" "$SECRETS_DIR/redis/$f.crt"
 done

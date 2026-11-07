@@ -39,7 +39,9 @@ emitir fog sabre-fog clientAuth ""
 emitir cloud sabre-cloud clientAuth ""
 rm -f "$OUT/ca.srl"
 
-# Contraseña aleatoria de 48 bytes para el usuario `sabre`.
-openssl rand -base64 48 | tr -d '\n=+/' > "$OUT/redis_password.txt"
+# Contraseña aleatoria de 48 bytes por usuario de Redis (SEC02: `fog` y `cloud`).
+for u in fog cloud; do
+    openssl rand -base64 48 | tr -d '\n=+/' > "$OUT/redis_password_$u.txt"
+done
 chmod 600 "$OUT"/*
 echo "PKI generada en $OUT (CA válida $DIAS días). Nada de esto va a git."
