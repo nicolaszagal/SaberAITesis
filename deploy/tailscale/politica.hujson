@@ -1,0 +1,24 @@
+// Política de la tailnet de SABRE.AI (SEC02). Se pega en Admin console > Access controls.
+// Nadie de la nube llega a nada que no sea un puerto del Mac, y cada nodo con su propia etiqueta:
+//   tag:cloud    -> Redis del Mac (6379)
+//   tag:frontend -> Fog del Mac (8001)
+// Las dos etiquetas están separadas a propósito: una clave de Cloud filtrada no llega a la API de Fog.
+{
+	"tagOwners": {
+		"tag:mac":      ["autogroup:admin"],
+		"tag:cloud":    ["autogroup:admin"],
+		"tag:frontend": ["autogroup:admin"],
+	},
+
+	"grants": [
+		{"src": ["tag:cloud"],    "dst": ["tag:mac"], "ip": ["tcp:6379"]},
+		{"src": ["tag:frontend"], "dst": ["tag:mac"], "ip": ["tcp:8001"]},
+		// Tus propios dispositivos entre sí (el Mac etiquetado deja de ser "tuyo": ver README).
+		{"src": ["autogroup:member"], "dst": ["autogroup:self"], "ip": ["*"]},
+	],
+
+	"tests": [
+		{"src": "tag:cloud",    "accept": ["tag:mac:6379"], "deny": ["tag:mac:8001", "tag:mac:22", "tag:mac:5432"]},
+		{"src": "tag:frontend", "accept": ["tag:mac:8001"], "deny": ["tag:mac:6379", "tag:mac:22", "tag:mac:5432"]},
+	],
+}
