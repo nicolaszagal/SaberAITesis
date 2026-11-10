@@ -25,11 +25,14 @@ if [ -z "$RESPALDO_DIR" ]; then
 fi
 
 command -v docker >/dev/null 2>&1 && buscar_contenedor || {
-    echo "Respaldo: no pude consultar PostgreSQL; no sé si hay revisiones sin respaldar." >&2
+    aviso "RESPALDO NO VERIFICADO: no encontré el contenedor de PostgreSQL (¿Docker/colima apagado?)." \
+          "NO se verificó si hay revisiones sin respaldar en '$PGBASE'." \
+          "Indique el contenedor con PG_CONTAINER=<nombre> o el puerto con POSTGRES_HOST_PORT."
     exit 0
 }
 actuales=$(psql_base "$PGBASE" "$SQL_CONTEO_REVISIONES" 2>/dev/null) || {
-    echo "Respaldo: no pude contar las revisiones de '$PGBASE'." >&2
+    aviso "RESPALDO NO VERIFICADO: no pude contar las revisiones de '$PGBASE'." \
+          "NO se verificó si hay revisiones sin respaldar (¿base o usuario incorrectos?)."
     exit 0
 }
 respaldadas=0

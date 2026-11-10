@@ -239,3 +239,41 @@ def test_exportar_evidencia_llama_al_respaldo(sesion, entorno, monkeypatch):
     carpeta = _carpeta_respaldo(entorno)
     assert carpeta.name.startswith("R001-")
     assert next(carpeta.glob("*.dump")).stat().st_size > 0
+
+
+def _docker_falso(tmp_path: Path, *, contenedor: str, conteo: str = "7") -> dict:
+    """Entorno con un `docker` de mentira: sin plugin compose (como colima) y un contenedor
+    que publica el puerto 5436 (el que usa Fog nativo). `exec` responde `conteo`."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    falso = bin_dir / "docker"
+    falso.write_text(
+        '#!/bin/sh\n'
+        'case "$1" in\n'
+        '  compose) echo "unknown shorthand flag: q" >&2; exit 125 ;;\n'
+        f'  ps) case "$*" in *publish=5436*) echo "{contenedor}" ;; esac ;;\n'
+        f'  exec) echo "{conteo}" ;;\n'
+        'esac\n'
+    )
+    falso.chmod(0o755)
+    respaldos = tmp_path / "respaldos"
+    respaldos.mkdir()
+    return {
+        "PATH": f"{bin_dir}:/usr/bin:/bin", "HOME": str(tmp_path), "RESPALDO_DIR": str(respaldos),
+        "ENV_FILE": "/no/existe.env", "POSTGRES_HOST_PORT": "5436",
+    }
+
+
+def test_recordatorio_encuentra_el_postgres_por_el_puerto_publicado(tmp_path):
+    """Sin `docker compose` (colima) el contenedor se halla por el puerto que usa Fog."""
+    r = _correr(RECORDAR, _docker_falso(tmp_path, contenedor="abc123"))
+    assert "no pude" not in r.stderr.lower()
+    assert "FALTA RESPALDAR: 7 revisiones" in r.stderr
+
+
+def test_recordatorio_sin_postgres_dice_que_no_verifico(tmp_path):
+    """Si no puede consultar, el aviso es el recuadro y dice que NO verificó el respaldo."""
+    r = _correr(RECORDAR, _docker_falso(tmp_path, contenedor=""))
+    assert r.returncode == 0
+    assert "#  RESPALDO NO VERIFICADO" in r.stderr
+    assert "NO se verificó" in r.stderr

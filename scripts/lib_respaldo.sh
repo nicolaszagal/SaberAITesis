@@ -17,9 +17,13 @@ leer_respaldo_dir() {
     RESPALDO_DIR=${RESPALDO_DIR:-}
 }
 
-# Contenedor de PostgreSQL: PG_CONTAINER o el servicio `postgres` del compose.
+# Contenedor de PostgreSQL, por orden: PG_CONTAINER; el que publica POSTGRES_HOST_PORT (5436 por
+# defecto, el puerto al que se conecta Fog nativo; sirve sin el plugin `docker compose`, que
+# colima no trae); y, al final, el servicio `postgres` del compose.
 buscar_contenedor() {
-    PG_CONT=${PG_CONTAINER:-$(docker compose ps -q postgres 2>/dev/null | head -n 1 || true)}
+    PG_CONT=${PG_CONTAINER:-}
+    [ -n "$PG_CONT" ] || PG_CONT=$(docker ps -q --filter "publish=${POSTGRES_HOST_PORT:-5436}" 2>/dev/null | head -n 1 || true)
+    [ -n "$PG_CONT" ] || PG_CONT=$(docker compose ps -q postgres 2>/dev/null | head -n 1 || true)
     [ -n "$PG_CONT" ]
 }
 
