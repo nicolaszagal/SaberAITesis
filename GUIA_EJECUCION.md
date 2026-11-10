@@ -201,6 +201,12 @@ pytest tests/ -q
 ruff check fog cloud shared edge --select E,F,W
 ```
 
+Cada prueba tiene un límite de 120 s (`timeout = 120` en `pytest.ini`, plugin `pytest-timeout==2.4.0`,
+que viene en `requirements.txt` junto con el resto de dependencias de pruebas). Una prueba que lo
+excede falla con `Timeout >120.0s` y el informe muestra dónde estaba, en vez de dejar colgada la
+suite. Para una prueba puntual más larga use `@pytest.mark.timeout(300)`; con `--timeout=0` se
+desactiva.
+
 `pytest` excluye las pruebas `slow` (ver el final de esta guía). Con Docker disponible, las
 pruebas de PostgreSQL (migración, repositorios, flujo auditable, resumen) levantan un
 contenedor `postgres:16-alpine` por módulo con testcontainers (254 pruebas pasan); sin Docker
