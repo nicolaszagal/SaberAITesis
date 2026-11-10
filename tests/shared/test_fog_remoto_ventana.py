@@ -223,7 +223,8 @@ def test_cloudflared_se_cierra_solo_al_vencer_la_ventana(sim):
     assert "Túnel activo" in estado and "Quedan" in estado
     pid_tunel = int((datos / "fog_remoto_tunel.pid").read_text())
 
-    assert _esperar(lambda: not (datos / "fog_remoto_tunel.pid").exists())
+    # El .pid se borra primero y el resto de estado al final: se espera a lo último.
+    assert _esperar(lambda: not (datos / "fog_remoto_modo.txt").exists())
 
     assert not (datos / "fog_remoto_url.txt").exists()
     with pytest.raises(OSError):
