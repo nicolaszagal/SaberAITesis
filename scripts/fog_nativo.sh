@@ -9,7 +9,9 @@
 #
 # POSTGRES_DB_NAME elige otra base (por defecto sabre), p. ej. sabre_expo para el despliegue remoto.
 # Variables opcionales: ENV_FILE (por defecto .env), DATOS_DIR (por defecto ./datos),
-# MODEL_RUN_ID (por defecto el mismo run que fog/Dockerfile) y FOG_HOST_PORT (8001).
+# MODEL_RUN_ID (por defecto el mismo run que fog/Dockerfile), FOG_HOST_PORT (8001), VENV_DIR
+# (por defecto .venv), DATASET_DIR (por defecto ../dataset) y FOG_BIND_HOST (ver
+# scripts/lib_fog_bind.sh: en modo remoto Fog solo escucha en 127.0.0.1).
 set -eu
 
 cd "$(dirname "$0")/.."
@@ -17,11 +19,14 @@ BACKEND_DIR=$(pwd)
 
 ENV_FILE=${ENV_FILE:-.env}
 [ -f "$ENV_FILE" ] || { echo "Falta $ENV_FILE (cp .env.example .env)" >&2; exit 1; }
-[ -f .venv/bin/activate ] || { echo "Falta .venv (ver GUIA_EJECUCION.md, sección 2)" >&2; exit 1; }
+VENV_DIR=${VENV_DIR:-.venv}
+[ -f "$VENV_DIR/bin/activate" ] || { echo "Falta $VENV_DIR (ver GUIA_EJECUCION.md, sección 2)" >&2; exit 1; }
 set -a
 . "./$ENV_FILE"
 set +a
-. .venv/bin/activate
+. "$VENV_DIR/bin/activate"
+. scripts/lib_fog_bind.sh
+BIND_HOST=$(fog_bind_host) || exit 1
 
 POSTGRES_HOST_PORT=${POSTGRES_HOST_PORT:-5436}
 REDIS_HOST_PORT=${REDIS_HOST_PORT:-6380}
@@ -34,7 +39,7 @@ export DATABASE_URL="postgresql+asyncpg://sabre:${POSTGRES_PASSWORD:?falta POSTG
 export REDIS_URL="${REDIS_URL_REMOTO:-redis://127.0.0.1:${REDIS_HOST_PORT}/0}"
 export STORAGE_DIR="$DATOS_DIR/storage"
 export EVIDENCE_DIR="$DATOS_DIR/evidencia"
-DS=$(cd "$BACKEND_DIR/../dataset" && pwd)
+DS=$(cd "${DATASET_DIR:-$BACKEND_DIR/../dataset}" && pwd)
 export FEATURE_STATS_PATH="$DS/lstm_6class/feature_stats.npz"
 export FEATURE_PREPROCESSING_PROFILE=lstm_6class
 export YOLO_POSE_MODEL_PATH="$DS/yolov8x-pose.pt"
@@ -56,4 +61,4 @@ ENV_FILE="$ENV_FILE" sh scripts/recordar_respaldo.sh || true
 alembic upgrade head
 python scripts/registrar_modelo.py "$MODEL_RUN_ID" --solo-si-no-hay-activo
 
-exec uvicorn fog.main:app --host 0.0.0.0 --port "${FOG_HOST_PORT:-8001}"
+exec uvicorn fog.main:app --host "$BIND_HOST" --port "${FOG_HOST_PORT:-8001}"

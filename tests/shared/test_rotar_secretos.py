@@ -113,7 +113,7 @@ def test_fog_remoto_env_usa_valores_nuevos_y_conserva_los_no_secretos(entorno):
     assert HASH_NUEVO in fog
     assert f"AUTH_JWT_SECRET={(secretos / 'auth_jwt_secret.txt').read_text()}\n" in fog
     assert f"PROXY_SHARED_TOKEN={(secretos / 'proxy_token.txt').read_text()}\n" in fog
-    assert "@PENDIENTE:6379/0" in fog and "REDIS_URL_REMOTO=rediss://fog:" in fog
+    assert "@localhost:6390/0" in fog and "REDIS_URL_REMOTO=rediss://fog:" in fog
 
 
 def test_no_imprime_valores_de_secretos(entorno):

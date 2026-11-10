@@ -15,9 +15,9 @@
 #   4. Imprime solo nombre, longitud y huella (sha256 truncado a 8 caracteres).
 #
 # Variables opcionales: SECRETS_DIR (.secrets), ENV_FILE (.env), PYTHON (.venv/bin/python),
-# REDIS_SAN_HOSTS (nombres del certificado de servidor; por defecto
-# "redis.railway.internal localhost") y REDIS_HOST_REMOTO (host:puerto del Redis para
-# Fog; por defecto PENDIENTE:6379 hasta que exista el despliegue nuevo).
+# REDIS_SAN_HOSTS (nombres del certificado de servidor; por defecto "localhost": Redis corre
+# nativo en el Mac y Cloud lo alcanza por un reenviador local de su contenedor), REDIS_PUERTO_NATIVO
+# (6390) y REDIS_HOST_REMOTO (host:puerto del Redis para Fog; por defecto localhost:6390).
 set -eu
 
 cd "$(dirname "$0")/.."
@@ -25,8 +25,8 @@ BACKEND=$(pwd)
 SECRETS_DIR=${SECRETS_DIR:-.secrets}
 ENV_FILE=${ENV_FILE:-.env}
 PY=${PYTHON:-.venv/bin/python}
-SAN_HOSTS=${REDIS_SAN_HOSTS:-"redis.railway.internal localhost"}
-REDIS_HOST_REMOTO=${REDIS_HOST_REMOTO:-PENDIENTE:6379}
+SAN_HOSTS=${REDIS_SAN_HOSTS:-"localhost"}
+REDIS_HOST_REMOTO=${REDIS_HOST_REMOTO:-localhost:${REDIS_PUERTO_NATIVO:-6390}}
 export SECRETS_DIR
 
 FORZAR=0
