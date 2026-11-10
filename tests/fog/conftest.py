@@ -232,7 +232,7 @@ class SQL:
             if activo is not None:
                 return activo.id
             modelo = await repo.registrar(
-                nombre="lstm6class-prueba", checkpoint_uri="local://modelo.pt",
+                nombre="lstm6class-prueba", checkpoint_uri="local://checkpoints/run/best_model.pt",
                 checkpoint_sha256="a" * 64, pose_modelo="yolov8x-pose",
                 num_features=192, num_clases=6,
             )

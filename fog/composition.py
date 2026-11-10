@@ -38,7 +38,7 @@ from fog.application.registrar_clasificacion import RegistrarClasificacion
 from fog.application.registrar_veredicto import RegistrarVeredicto
 from fog.infrastructure.auth.argon2_verificador import Argon2Verificador
 from fog.infrastructure.auth.jwt_emisor import JwtEmisor
-from fog.infrastructure.auth.redis_limitador import RedisLimitador
+from fog.infrastructure.auth.memoria_limitador import MemoriaLimitador
 from fog.infrastructure.evidencia.fuente_modelo_m01 import FuenteModeloM01
 from fog.infrastructure.evidencia.lector_jsonl import LectorEvidenciaJsonl
 from fog.infrastructure.evidencia.registro_jsonl import RegistroEvidenciaJsonl
@@ -292,9 +292,9 @@ class Container(containers.DeclarativeContainer):
     emisor_tokens = providers.Singleton(
         JwtEmisor, secreto=config.auth_jwt_secret, ttl_s=config.auth_token_ttl_s
     )
+    # SEC02: en la memoria de Fog, no en Redis: la nube escribe en ese Redis.
     limitador_intentos = providers.Singleton(
-        RedisLimitador,
-        client=redis_client,
+        MemoriaLimitador,
         max_fallos=config.auth_max_fallos,
         ventana_s=config.auth_ventana_s,
         bloqueo_s=config.auth_bloqueo_s,
@@ -329,4 +329,5 @@ class Container(containers.DeclarativeContainer):
         ForwardVerdictToClient,
         subscriber=verdict_subscriber,
         sessions=sessions,
+        modelos=modelo_version_repository,
     )

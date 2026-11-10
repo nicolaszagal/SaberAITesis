@@ -327,7 +327,7 @@ def test_pose_incompleta_registra_clasificacion_no_disponible(crear_app):
 
 
 class _NubeCaida(FakeVerdictSubscriber):
-    async def wait_for_verdict(self, revision_id):
+    async def wait_for_verdict(self, revision_id, aceptar=None):
         await asyncio.Event().wait()
 
 
@@ -354,7 +354,7 @@ def test_no_disponible_de_cloud_registra_su_motivo(crear_app):
     )
 
     class _Sub(FakeVerdictSubscriber):
-        async def wait_for_verdict(self, revision_id):
+        async def wait_for_verdict(self, revision_id, aceptar=None):
             return resultado
 
     app = crear_app(subscriber=_Sub(VEREDICTO_DEFAULT))
@@ -432,7 +432,7 @@ class _SubscriberPorLlamada(FakeVerdictSubscriber):
     def __init__(self, veredictos: list[VerdictView]):
         self._pendientes = list(veredictos)
 
-    async def wait_for_verdict(self, revision_id):
+    async def wait_for_verdict(self, revision_id, aceptar=None):
         return self._pendientes.pop(0)
 
 

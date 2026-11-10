@@ -89,7 +89,8 @@ def test_genera_secretos_nuevos_con_permisos_600(entorno):
     for ruta in [
         "auth_jwt_secret.txt", "proxy_token.txt", "postgres_password.txt",
         "fog_remoto.env", "redis/ca.crt", "redis/ca.key", "redis/server.key",
-        "redis/fog.key", "redis/cloud.key", "redis/redis_password.txt",
+        "redis/fog.key", "redis/cloud.key", "redis/redis_password_fog.txt",
+        "redis/redis_password_cloud.txt",
     ]:
         assert stat.S_IMODE((secretos / ruta).stat().st_mode) == 0o600, ruta
     assert len((secretos / "auth_jwt_secret.txt").read_text()) >= 64
@@ -112,7 +113,7 @@ def test_fog_remoto_env_usa_valores_nuevos_y_conserva_los_no_secretos(entorno):
     assert HASH_NUEVO in fog
     assert f"AUTH_JWT_SECRET={(secretos / 'auth_jwt_secret.txt').read_text()}\n" in fog
     assert f"PROXY_SHARED_TOKEN={(secretos / 'proxy_token.txt').read_text()}\n" in fog
-    assert "@PENDIENTE:6379/0" in fog
+    assert "@PENDIENTE:6379/0" in fog and "REDIS_URL_REMOTO=rediss://fog:" in fog
 
 
 def test_no_imprime_valores_de_secretos(entorno):
@@ -125,7 +126,9 @@ def test_no_imprime_valores_de_secretos(entorno):
         valor = (secretos / archivo).read_text()
         assert valor not in salida
         assert _sha(secretos / archivo)[:8] in salida
-    assert (secretos / "redis" / "redis_password.txt").read_text().strip() not in salida
+    for usuario in ("fog", "cloud"):
+        assert (secretos / "redis" / f"redis_password_{usuario}.txt").read_text().strip() not in salida
+        assert f"REDIS_PASSWORD_{usuario.upper()}" in salida
     assert "NEUVO" not in salida and "$argon2id" not in salida
 
 

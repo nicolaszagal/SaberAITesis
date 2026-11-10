@@ -73,10 +73,31 @@ class FakeVerdictSubscriber(VerdictStreamSubscriberPort):
     def __init__(self, verdict: VerdictView):
         self._verdict = verdict
 
-    async def wait_for_verdict(self, revision_id: str) -> VerdictView:
+    async def wait_for_verdict(self, revision_id: str, aceptar=None) -> VerdictView:
         # Igual que RedisVerdictSubscriber: el resultado lleva el revision_id
-        # del stream del que se leyó.
-        return replace(self._verdict, revision_id=revision_id)
+        # del stream del que se leyó y pasa por el filtro `aceptar` (SEC02).
+        resultado = replace(self._verdict, revision_id=revision_id)
+        if aceptar is not None and not await aceptar(resultado):
+            raise SinMasEntradas(revision_id)
+        return resultado
+
+
+class SinMasEntradas(Exception):
+    """El stream simulado se agotó sin un resultado aceptable (el real seguiría esperando)."""
+
+
+class FakeSecuenciaSubscriber(VerdictStreamSubscriberPort):
+    """Entrega en orden varios resultados y devuelve el primero que `aceptar` admita."""
+
+    def __init__(self, *resultados):
+        self._resultados = resultados
+
+    async def wait_for_verdict(self, revision_id: str, aceptar=None):
+        for r in self._resultados:
+            r = replace(r, revision_id=revision_id)
+            if aceptar is None or await aceptar(r):
+                return r
+        raise SinMasEntradas(revision_id)
 
 
 class InlineExecutor:
@@ -91,3 +112,19 @@ class InlineExecutor:
         except Exception as e:  # pragma: no cover
             future.set_exception(e)
         return future
+
+
+class FakeModelos:
+    """ModeloVersionRepositoryPort mínimo: solo `obtener_activo`."""
+
+    def __init__(self, checkpoint_uri: str | None = "/ckpt/checkpoints/run/best_model.pt"):
+        from types import SimpleNamespace
+
+        self._activo = (
+            None
+            if checkpoint_uri is None
+            else SimpleNamespace(nombre="lstm6class-run", checkpoint_uri=checkpoint_uri)
+        )
+
+    async def obtener_activo(self):
+        return self._activo

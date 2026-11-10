@@ -228,7 +228,7 @@ def test_clasificacion_no_disponible_no_escribe_razonamiento(crear_app):
     resultado = UnavailableResult(match_id="x", revision_id="x", motivo=MotivoNoDisponible.POSE_INCOMPLETA)
 
     class _Sub(FakeVerdictSubscriber):
-        async def wait_for_verdict(self, revision_id):
+        async def wait_for_verdict(self, revision_id, aceptar=None):
             return resultado
 
     app, rev = _subir(crear_app, _serie(5), _serie(9), veredicto=VEREDICTO_DEFAULT)

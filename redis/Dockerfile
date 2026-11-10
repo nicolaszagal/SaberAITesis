@@ -5,6 +5,7 @@ FROM redis:7-alpine
 
 COPY redis/redis.conf /etc/redis/redis.conf
 COPY redis/docker-entrypoint.sh /usr/local/bin/sabre-redis-entrypoint.sh
+COPY redis/generar_acl.sh /usr/local/bin/sabre-redis-generar-acl.sh
 
 # Usuario no root de la imagen base (redis); no hay volumen: los streams son
 # transitorios (save "" y appendonly no).
