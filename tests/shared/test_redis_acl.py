@@ -17,7 +17,9 @@ import numpy as np
 import pytest
 import redis
 import redis.asyncio as aredis
+from redis.backoff import NoBackoff
 from redis.exceptions import AuthenticationError, NoPermissionError, ResponseError
+from redis.retry import Retry
 
 from cloud.domain.models import ActionClass, Verdict
 from cloud.infrastructure.messaging.redis_feature_consumer import RedisFeatureConsumer
@@ -25,6 +27,7 @@ from cloud.infrastructure.messaging.redis_verdict_publisher import RedisVerdictP
 from fog.domain.models import ExtractedFeatures, LuzSignal, WeaponSide
 from fog.infrastructure.messaging.redis_feature_publisher import RedisFeaturePublisher
 from fog.infrastructure.messaging.redis_verdict_subscriber import RedisVerdictSubscriber
+from tests.shared.conftest import terminar_grupo
 
 BACKEND = pathlib.Path(__file__).resolve().parents[2]
 GENERADOR = BACKEND / "redis" / "generar_acl.sh"
@@ -51,7 +54,7 @@ def puerto(tmp_path_factory):
     proc = subprocess.Popen(
         [SERVIDOR, "--port", str(puerto), "--bind", "127.0.0.1", "--aclfile", str(acl),
          "--save", "", "--appendonly", "no", "--dir", str(carpeta)],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
     )
     try:
         for _ in range(50):
@@ -64,8 +67,7 @@ def puerto(tmp_path_factory):
             pytest.fail("redis-server no arrancó")
         yield puerto
     finally:
-        proc.terminate()
-        proc.wait(timeout=10)
+        terminar_grupo(proc)
 
 
 def _cliente(puerto, usuario, clave):
@@ -155,9 +157,12 @@ def test_cloud_es_rechazado_fuera_de_lo_suyo(puerto, comando):
 
 
 def test_sin_credenciales_o_con_usuario_default_no_entra(puerto):
+    # redis-py reintenta 3 veces con espera creciente los ConnectionError (incluido el rechazo de
+    # credenciales); aquí el rechazo es el resultado esperado, así que sin reintentos ni esperas.
+    corto = {"retry": Retry(NoBackoff(), 0), "socket_connect_timeout": 2, "socket_timeout": 2}
     for usuario, clave in [("default", ""), ("default", PASS_FOG), ("sabre", PASS_FOG),
                            ("fog", PASS_CLOUD), ("cloud", PASS_FOG), ("fog", "mala")]:
         with pytest.raises((AuthenticationError, ResponseError)):
-            _cliente(puerto, usuario, clave).ping()
+            redis.Redis(port=puerto, username=usuario, password=clave, **corto).ping()
     with pytest.raises((AuthenticationError, ResponseError)):
-        redis.Redis(port=puerto).ping()
+        redis.Redis(port=puerto, **corto).ping()
