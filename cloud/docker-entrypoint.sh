@@ -9,6 +9,14 @@
 # apunta a rediss://cloud:...@localhost:6379/0. Nunca se imprime la clave.
 set -eu
 
+# DIAGNÓSTICO TEMPORAL (DEPLOY09, C2 paso 6): se quita al terminar. Solo huellas y partes no secretas.
+if [ -n "${DIAG_HUELLAS:-}" ]; then
+    h() { printf '%s' "$1" | sha256sum | cut -c1-8; }
+    resto=${REDIS_URL#*://}
+    echo "diag REDIS_URL: esquema=${REDIS_URL%%://*} usuario=${resto%%:*} destino=${resto#*@} huella=$(h "$REDIS_URL")"
+    echo "diag CA_B64 huella=$(h "${REDIS_TLS_CA_B64:-}") CERT_B64 huella=$(h "${REDIS_TLS_CERT_B64:-}") KEY_B64 huella=$(h "${REDIS_TLS_KEY_B64:-}")"
+fi
+
 if [ -n "${TS_AUTHKEY:-}" ]; then
     SOCK=/tmp/tailscaled.sock
     tailscaled --tun=userspace-networking --statedir=/tmp/ts --socket="$SOCK" >/tmp/tailscaled.log 2>&1 &
