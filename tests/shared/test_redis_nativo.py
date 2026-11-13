@@ -3,12 +3,15 @@
 import os
 import pathlib
 import shutil
+import signal
 import socket
 import subprocess
 
 import pytest
 import redis
+from redis.backoff import NoBackoff
 from redis.exceptions import NoPermissionError
+from redis.retry import Retry
 
 BACKEND = pathlib.Path(__file__).resolve().parents[2]
 pytestmark = pytest.mark.skipif(
@@ -21,6 +24,14 @@ def _puerto_libre() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
+
+
+def _matar_si_sigue(pid_file: pathlib.Path) -> None:
+    """Respaldo del teardown: si `stop` no pudo (o `start` falló a medias), mata el pid anotado."""
+    try:
+        os.kill(int(pid_file.read_text()), signal.SIGKILL)
+    except (OSError, ValueError):
+        pass
 
 
 @pytest.fixture(scope="module")
@@ -38,10 +49,17 @@ def nativo(tmp_path_factory):
         return subprocess.run(["sh", "scripts/redis_nativo.sh", *args], cwd=BACKEND, env=entorno,
                               capture_output=True, text=True, timeout=60)
 
-    arranque = correr("start")
-    assert arranque.returncode == 0, arranque.stderr
-    yield secretos, datos, puerto, correr
-    correr("stop")
+    try:
+        arranque = correr("start")
+        assert arranque.returncode == 0, arranque.stderr
+        yield secretos, datos, puerto, correr
+    finally:
+        correr("stop")
+        _matar_si_sigue(datos / "redis_nativo" / "redis.pid")
+
+
+# Sin reintentos de redis-py (3 con espera creciente): aquí el rechazo es el resultado esperado.
+SIN_REINTENTOS = {"retry": Retry(NoBackoff(), 0), "socket_connect_timeout": 2, "socket_timeout": 2}
 
 
 def _cliente(secretos, puerto, usuario, clave_archivo):
@@ -49,7 +67,7 @@ def _cliente(secretos, puerto, usuario, clave_archivo):
     return redis.Redis(
         host="localhost", port=puerto, ssl=True, username=usuario,
         password=(pki / clave_archivo).read_text(), ssl_ca_certs=str(pki / "ca.crt"),
-        ssl_certfile=str(pki / f"{usuario}.crt"), ssl_keyfile=str(pki / f"{usuario}.key"),
+        ssl_certfile=str(pki / f"{usuario}.crt"), ssl_keyfile=str(pki / f"{usuario}.key"), **SIN_REINTENTOS,
     )
 
 
@@ -97,7 +115,8 @@ def test_sin_certificado_de_cliente_o_con_otra_clave_no_entra(nativo):
     pki = secretos / "redis"
 
     sin_cert = redis.Redis(host="localhost", port=puerto, ssl=True, username="fog",
-                           password=(pki / "redis_password_fog.txt").read_text(), ssl_ca_certs=str(pki / "ca.crt"))
+                           password=(pki / "redis_password_fog.txt").read_text(), ssl_ca_certs=str(pki / "ca.crt"),
+                           **SIN_REINTENTOS)
     with pytest.raises(redis.RedisError):
         sin_cert.ping()
     otra_clave = _cliente(secretos, puerto, "fog", "redis_password_cloud.txt")
