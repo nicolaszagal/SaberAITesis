@@ -3,9 +3,20 @@
 # Worker", NO como "Web Service" (Render espera que un Web Service abra un
 # puerto HTTP para su health check; Cloud no expone ninguno — ver
 # https://render.com/docs/background-workers).
+# DEPLOY09: Tailscale fijo en la versión probada en la Parte 0. Solo se copian los binarios; se
+# activan únicamente si el entorno trae TS_AUTHKEY (ver docker-entrypoint.sh).
+ARG TS_VERSION=1.104.4
+FROM tailscale/tailscale:v${TS_VERSION} AS tailscale
+
 FROM python:3.12-slim
 
 WORKDIR /app/backend
+
+# socat: reenviador local hacia Redis del Mac por la tailnet (modo userspace, sin NET_ADMIN).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends socat \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=tailscale /usr/local/bin/tailscaled /usr/local/bin/tailscale /usr/local/bin/
 
 # El run del checkpoint desplegado vive en
 # backend/dataset/lstm_6class/checkpoints/<run_id>/ (run_config.json +

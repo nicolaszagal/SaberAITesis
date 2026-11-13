@@ -67,6 +67,26 @@ Notas: la PKI se reemplazó completa, incluida la CA (válida 365 días desde el
 
 **Verificación (06/11/2026):** Fog arranca en local con los secretos nuevos sobre un PostgreSQL vacío (migraciones aplicadas); `/eventos` responde 401 con un JWT firmado con el secreto anterior, 200 con uno firmado con el nuevo, y 403 con el token de proxy anterior. `pytest tests/` da 445 pasan y 2 saltadas (línea base de `main` con la misma base: 438 pasan y 3 saltadas); ruff sin hallazgos en ambos.
 
+### 6.1 Segunda rotación (DEPLOY09, 13/11/2026, `rotar_secretos.sh --forzar`)
+Se rotó de nuevo todo menos el hash de la contraseña maestra, antes de cargar nada en el proyecto nuevo de Railway. Lo vigente pasó a `.secrets/_retirado_2026-10-27/forzado_<marca de tiempo>/`. La contraseña del rol `sabre` de PostgreSQL se actualizó con `ALTER ROLE` para que coincida con el archivo, y se comprobó la conexión por TCP.
+
+Antes de esta rotación, el 13/11, se generaron a mano las contraseñas por usuario de Redis (`fog` `37b4e5e4`, `cloud` `20752ee9`) porque `.secrets/redis/` era anterior a SEC02 y solo tenía una contraseña; también quedaron retiradas.
+
+| Secreto | Longitud | Huella vigente |
+|---|---|---|
+| `AUTH_PASSWORD_HASH` (sin cambio) | 118 | `ca2bb747` |
+| `AUTH_JWT_SECRET` | 64 | `7d7f5083` |
+| `PROXY_SHARED_TOKEN` | 64 | `53da32cf` |
+| `POSTGRES_PASSWORD` | 32 | `194f5342` |
+| `REDIS_PASSWORD_FOG` | 63 | `daa8f614` |
+| `REDIS_PASSWORD_CLOUD` | 64 | `e254ba6f` |
+| PKI Redis: CA | n/a | `39d53027` |
+| PKI Redis: servidor | n/a | `971f33f9` |
+| PKI Redis: cliente Fog | n/a | `efeb71a7` |
+| PKI Redis: cliente Cloud | n/a | `178ef876` |
+
+La PKI vigente (CA válida 365 días desde el 13/11/2026) lleva `localhost` como único nombre del servidor: en el diseño Tailscale Cloud alcanza Redis por un reenviador local de su contenedor, sin hostname público.
+
 ## 7. Indicadores revisados y resultado
 Sin indicadores de compromiso en lo revisable: sin clips nuevos en disco, sin secretos en git, túnel cerrado. Lo no revisable (4.1 a 4.3, 4.5) impide descartar compromiso: no se puede demostrar que nadie inyectó revisiones o veredictos en la base anterior.
 
