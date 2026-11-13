@@ -16,6 +16,8 @@ Las horas están en UTC; Lima = UTC−5.
 | 27/10/2026 | El autor consulta las fuentes y abre el plan SEC (README del incidente) | README del incidente |
 | Antes de SEC01 (fecha no registrada) | Contención del paso 0 completa, según el autor: túnel detenido, Redis público y despliegues de cloud y frontend retirados, cuenta Railway y GitHub asegurados | Declarado por el autor |
 | 06/11/2026 | SEC01: evidencia (Parte A) y rotación completa (Parte B) | Este documento |
+| 10/11/2026 | Railway publica el informe completo del incidente (escape del aislamiento en la infraestructura de builds y configuración OIDC errónea; alcance de hasta 1,85 % de los workspaces; 353 historiales de build leídos, "sealed variables included"; informe forense externo y denuncia al FBI aún en curso) | [blog.railway.com/p/incident-report-october-security-incident](https://blog.railway.com/p/incident-report-october-security-incident) |
+| 13/11/2026 | DEPLOY09: segunda rotación, rediseño con Tailscale y verificación | Sección 11 de este documento |
 
 La causa no fue publicada. Railway la atribuye a una campaña contra plataformas, no a la vulnerabilidad de PHP de la misma semana; SABRE.AI no usa PHP.
 
@@ -117,3 +119,21 @@ Total de 1,01 USD: memoria 0,99 USD (4.260 GB-minuto, unos 430 MB constantes), C
 | 5.26 Respuesta a incidentes | Secciones 5 y 6 |
 | 5.27 Aprendizaje de los incidentes | Sección 9 |
 | 5.28 Recopilación de evidencia | Sección 4 y la carpeta `_retirado`, conservada hasta el cierre |
+
+## 11. Cierre (DEPLOY09, 13/11/2026)
+
+**Qué se rotó.** Segunda rotación completa (sección 6.1) antes de cargar nada en Railway; los valores del proyecto anterior no se reutilizaron y el proyecto anterior se borró. Las claves de Tailscale usadas en las pruebas se revocaron y sus nodos se borraron.
+
+**Arquitectura nueva.** En Railway solo `frontend` y `cloud`, unidos a una tailnet con Tailscale 1.104.4 y claves efímeras con etiqueta (`tag:frontend`, `tag:cloud`). No hay servicio Redis ni TCP proxy público, y Fog no tiene URL pública: Redis nativo (TLS 1.3, mTLS, ACL por usuario), Fog y PostgreSQL corren en el Mac y se publican a la tailnet solo durante una ventana con vencimiento. Detalle en `docs/manuales/DESPLIEGUE_REMOTO.md`.
+
+**Verificación.** Resultados completos en la sección 6 de `DESPLIEGUE_REMOTO.md`; prueba de viabilidad previa en `PRUEBA_TAILSCALE_RAILWAY_2026-11-13.md`. Puntos que importan para el incidente:
+- Ninguna credencial anterior al 06/11 es aceptada (JWT, token del proxy, contraseñas y certificados de Redis).
+- Cada etiqueta llega a un único puerto del Mac, medido desde los contenedores.
+- Revocar la clave y borrar el nodo cortó a Cloud en menos de 1 min 39 s y no volvió a unirse (5 min de observación).
+- Consumo del proyecto anterior: ver 7.1. No hay indicadores de uso ajeno de los contenedores.
+
+**Defectos encontrados y corregidos durante el cierre.** Cloud y Fog usaban `redis://localhost:6379/0` sin TLS cuando faltaba `REDIS_URL` y se reiniciaban en bucle; ahora, con `ENTORNO=remoto`, se niegan a arrancar nombrando la variable (`require_redis_remoto`); lo mismo el frontend sin `PROXY_SHARED_TOKEN`. El frontend desplegado antes del segundo intento corría la imagen genérica sin Tailscale porque los proyectos nuevos de Railway ignoran `railway.json`. Un MTU de 1280 en el túnel impedía que respuestas de 1300 bytes o más llegaran a Railway (se fijó 1100).
+
+**Riesgos aceptados.** Los de la sección 8 de `DESPLIEGUE_REMOTO.md`: Fog depende del Mac encendido; `TS_DEBUG_MTU=1100` es una variable de depuración ligada a Tailscale 1.104.4 y hay que volver a probarla si cambia la versión; el plan Free no tiene tope ni alerta configurados; Cloud puede colgarse sin error si pierde la tailnet; el escenario de peor caso de la sección 3 sigue sin poder descartarse para lo que estuvo en Railway antes del 21/10/2026 (la cuenta se trata como afectada porque Railway lo notificó al autor, aunque este no halló pruebas propias).
+
+**Pendiente.** Healthcheck o tiempo de espera en Cloud; confirmar con el panel si el plan Free admite alertas de uso; DEF-32 (RF-01 sin implementar), registrado en `contexto_sabre.md`.
