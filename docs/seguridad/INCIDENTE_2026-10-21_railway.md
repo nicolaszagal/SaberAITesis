@@ -70,6 +70,12 @@ Notas: la PKI se reemplazó completa, incluida la CA (válida 365 días desde el
 ## 7. Indicadores revisados y resultado
 Sin indicadores de compromiso en lo revisable: sin clips nuevos en disco, sin secretos en git, túnel cerrado. Lo no revisable (4.1 a 4.3, 4.5) impide descartar compromiso: no se puede demostrar que nadie inyectó revisiones o veredictos en la base anterior.
 
+### 7.1 Consumo del proyecto anterior (panel Usage, revisado el 13/11/2026)
+Total de 1,01 USD: memoria 0,99 USD (4.260 GB-minuto, unos 430 MB constantes), CPU 0,02 USD y tráfico de salida 0,0006 USD (10 MB). 4.260 GB-minuto entre 0,43 GB son unos 9.900 minutos: el crédito del plan Free se agotó en unos 7 días con los servicios encendidos sin uso.
+- **Descarta** que alguien haya usado los contenedores: con 10 MB de salida en una semana no se extrajeron datos por ahí.
+- **No descarta** el robo de variables, que ocurrió del lado de Railway y no aparece en el panel.
+- Railway notificó por correo al autor que su cuenta se vio afectada; el autor no halló pruebas propias de ello. Se trata como cuenta afectada.
+
 ## 8. Riesgos residuales
 - La ventana del 10/10 al 21/10 queda sin evidencia (sin logs de Fog, del túnel ni de Railway; sin base).
 - Railway sigue sin tener los valores nuevos: el autor los pega en el panel después de SEC02. Hasta entonces el despliegue remoto no funciona, y `REDIS_URL_REMOTO` en `fog_remoto.env` apunta a `PENDIENTE:6379`. Si el nuevo TCP proxy tiene otro nombre, hay que reemitir el certificado de servidor.
