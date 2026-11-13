@@ -9,6 +9,8 @@ del LSTM en `run_config.json` dentro de MODEL_RUN_DIR, no en este módulo.
 import os
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+# Valor crudo de REDIS_URL (None si falta): `require_redis_remoto` no acepta el valor por defecto.
+REDIS_URL_ENV = os.environ.get("REDIS_URL")
 
 # TLS mutuo hacia Redis (DEPLOY07). Rutas a archivos PEM: CA propia, certificado
 # y clave de cliente. Sin ellas (modo local) el cliente no cambia. Las claves
@@ -212,6 +214,29 @@ def redis_tls_kwargs() -> dict:
         "ssl_cert_reqs": "required",
         "ssl_check_hostname": True,
     }
+
+
+def require_redis_remoto() -> None:
+    """Exige Redis con TLS explícito cuando `ENTORNO` es `remoto`.
+
+    Cloud y Fog la llaman al arrancar. Sin ella, un `REDIS_URL` ausente caía en el valor por
+    defecto (`redis://localhost:6379/0`, sin TLS) y el servicio se reiniciaba en bucle (DEPLOY09).
+    En entorno local no exige nada.
+
+    Raises:
+        RuntimeError: si falta `REDIS_URL`, si no empieza por `rediss://` o si falta alguna
+            de `REDIS_TLS_CA`, `REDIS_TLS_CERT` y `REDIS_TLS_KEY`. El mensaje nombra la
+            variable y nunca incluye valores.
+    """
+    if ENTORNO != "remoto":
+        return
+    if not REDIS_URL_ENV:
+        raise RuntimeError("ENTORNO=remoto exige REDIS_URL (sin valor por defecto): falta.")
+    if not REDIS_URL_ENV.startswith("rediss://"):
+        raise RuntimeError("ENTORNO=remoto exige que REDIS_URL empiece por rediss:// (TLS).")
+    faltan = [n for n in ("REDIS_TLS_CA", "REDIS_TLS_CERT", "REDIS_TLS_KEY") if not globals().get(n)]
+    if faltan:
+        raise RuntimeError("ENTORNO=remoto exige " + ", ".join(faltan) + ": falta.")
 
 
 def cors_origins() -> list[str]:

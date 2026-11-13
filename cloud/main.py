@@ -29,6 +29,7 @@ log = logging.getLogger("cloud")
 
 
 async def main() -> None:
+    config.require_redis_remoto()
     config.require_paths("MODEL_RUN_DIR")
 
     container = Container()
