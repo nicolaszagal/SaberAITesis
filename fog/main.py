@@ -52,6 +52,8 @@ config.require_paths(
 )
 # DEPLOY05: sin usuario maestro ni secreto JWT de >= 32 bytes, Fog no arranca.
 config.require_auth()
+# DEPLOY09: en remoto Redis exige rediss:// y los tres REDIS_TLS_*, sin valor por defecto.
+config.require_redis_remoto()
 
 container = Container()
 container.config.redis_url.from_value(config.REDIS_URL)
