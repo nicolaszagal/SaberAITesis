@@ -18,6 +18,8 @@ if [ -n "${DIAG_HUELLAS:-}" ]; then
 fi
 
 if [ -n "${TS_AUTHKEY:-}" ]; then
+    # Unirse a la tailnet implica despliegue remoto: activa la validación estricta de Redis.
+    export ENTORNO="${ENTORNO:-remoto}"
     SOCK=/tmp/tailscaled.sock
     tailscaled --tun=userspace-networking --statedir=/tmp/ts --socket="$SOCK" >/tmp/tailscaled.log 2>&1 &
     n=0
