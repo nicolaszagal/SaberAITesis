@@ -29,3 +29,4 @@ datos-humo/
 fog/Dockerfile
 cloud/Dockerfile
 docker-compose*.yml
+.secrets/
