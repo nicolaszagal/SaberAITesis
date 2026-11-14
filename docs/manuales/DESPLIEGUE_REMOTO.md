@@ -6,7 +6,7 @@ Estado (13/11/2026): tras el incidente de Railway del 21/10/2026 el despliegue s
 Navegador → HTTPS → [Railway] `frontend` (nginx: estático + `/api`) → `127.0.0.1:18001` → [tailnet, WireGuard] → `mac:8001` → Fog (`127.0.0.1:8011`) → PostgreSQL local.
 [Railway] `cloud` → `localhost:6379` (reenviador `socat` + `tailscale nc`) → [tailnet] → `mac:6379` → Redis nativo (`127.0.0.1:6390`, TLS 1.3 con mTLS y ACL). Fog usa el mismo Redis por `localhost:6390`.
 
-- Cada contenedor se une a la tailnet con Tailscale **1.104.4** fijo, en modo userspace (sin `NET_ADMIN`), con una clave efímera, preaprobada y de 7 días: `tag:frontend` para el frontend y `tag:cloud` para Cloud. Sin `TS_AUTHKEY` el frontend no arranca, y Cloud arranca en modo local.
+- Cada contenedor se une a la tailnet con Tailscale **1.104.4** fijo, en modo userspace (sin `NET_ADMIN`), con una clave efímera y preaprobada (7 días en la prueba de viabilidad, 90 en las claves de uso): `tag:frontend` para el frontend y `tag:cloud` para Cloud. Sin `TS_AUTHKEY` el frontend no arranca, y Cloud arranca en modo local.
 - La política de la tailnet (`deploy/tailscale/politica.hujson`) deja a `tag:frontend` llegar solo a `mac:8001` y a `tag:cloud` solo a `mac:6379`.
 - `tailscale serve` publica esos dos puertos a la tailnet solo mientras dura la ventana que abre `scripts/fog_remoto.sh start --horas N` (N de 1 a 8); no hay Funnel.
 - Los reenviadores de cada imagen apuntan a un único puerto: el de Cloud a `mac:6379` y el del frontend a `mac:8001`.
@@ -43,6 +43,8 @@ Prueba local (puerto 6390): sin TLS → conexión cerrada; TLS sin certificado d
 | Fog (Mac) | `ENTORNO=remoto`, `AUTH_USER`, `AUTH_PASSWORD_HASH`, `AUTH_JWT_SECRET`, `PROXY_SHARED_TOKEN`, `REDIS_URL_REMOTO` (`rediss://fog:…@localhost:6390/0`), `REDIS_TLS_*`, `POSTGRES_PASSWORD` | todo en `.secrets/fog_remoto.env` |
 
 No van a Railway: `ca.key`, `server.*`, `fog.*`, `postgres_password.txt` y `auth_*`. Con `ENTORNO=remoto`, Cloud y Fog se niegan a arrancar si falta `REDIS_URL`, si no empieza por `rediss://` o si falta alguna de `REDIS_TLS_CA/CERT/KEY` (`shared/config.py: require_redis_remoto`), y el frontend si falta `PROXY_SHARED_TOKEN`.
+
+Tiempos de Redis de Cloud (opcionales, con valor por defecto; FIX04): `REDIS_SOCKET_TIMEOUT_S` (5), `REDIS_CONNECT_TIMEOUT_S` (3), `REDIS_HEALTH_CHECK_S` (3), `CLOUD_XREAD_BLOCK_MS` (2000), `CLOUD_REDIS_FALLOS_MAX` (3) y `CLOUD_REDIS_ESPERA_S` (1). `REDIS_SOCKET_TIMEOUT_S` debe superar `CLOUD_XREAD_BLOCK_MS` en al menos 1 s; si no, Cloud no arranca.
 
 Para cargar un valor sin verlo: `sh scripts/copiar_secreto.sh NOMBRE` lo copia al portapapeles e imprime su huella; `--vaciar` limpia el portapapeles. Las claves de Tailscale las crea el autor en el panel de Tailscale. Los proyectos nuevos de Railway ignoran `railway.json`: el Dockerfile se elige por `RAILWAY_DOCKERFILE_PATH` y la política de reinicio (On Failure, 3 reintentos) se fija en el panel de cada servicio.
 
@@ -82,7 +84,7 @@ PKI: la genera `scripts/rotar_secretos.sh` (llama a `generar_pki_redis.sh localh
 
 Notas:
 - **Clip de la prueba 9:** es un clip recortado (54 fotogramas) recodificado a mayor bitrate. Los clips originales de varios MB (300+ fotogramas) superan el plazo de extracción de 60 s de Fog y se rechazan (ver DEF-32 en `contexto_sabre.md`).
-- **Cloud queda colgado sin error** si pierde la tailnet: el cliente de Redis no tiene tiempo de espera, el proceso no sale ni escribe errores y Railway no lo reinicia. No hay healthcheck. Queda pendiente.
+- **Cloud quedaba colgado sin error** si perdía la tailnet: el cliente de Redis no tenía tiempo de espera, el proceso no salía ni escribía errores y Railway no lo reiniciaba. Corregido en FIX04 (rama `fix/cloud-redis-vivo`): ver el riesgo correspondiente en la sección 8.
 - Las pruebas 4 y 17 bloquean la IP de quien las hace durante 15 min.
 - Datos de la verificación: se creó un evento y un árbitro de prueba en `sabre_expo`; al terminar se recreó la base vacía y se borraron los 5 ficheros de la prueba en `datos/`. El material del piloto de octubre no se tocó.
 
@@ -118,7 +120,7 @@ Todo se ejecuta en el Mac del autor, en `backend/`. Fog, Redis nativo y la venta
 ### 1. Antes de empezar (10 min antes)
 1. Docker (Colima) y PostgreSQL arriba: `docker ps --format '{{.Names}} {{.Status}}' | grep sabre-postgres-1`. Si no: `colima start` y `docker compose -f docker-compose.yml -f docker-compose.nativo.yml up -d postgres`.
 2. Tailscale conectado (`tailscale status`) y sesión de Railway (`railway whoami`).
-3. Claves de Tailscale vigentes (7 días): si caducaron, crear dos nuevas (`tag:cloud` y `tag:frontend`, efímeras, preaprobadas) y pegarlas como `TS_AUTHKEY` *sealed* en cada servicio.
+3. Claves de Tailscale vigentes (las del autor se crearon con 90 días de vigencia el 13/11/2026): si caducaron o se revocaron, crear dos nuevas (`tag:cloud` y `tag:frontend`, efímeras, preaprobadas) y pegarlas como `TS_AUTHKEY` *sealed* en cada servicio.
 
 ### 2. Arrancar el Mac
 ```bash
@@ -147,13 +149,14 @@ Desde la carpeta de cada repo (`backend/` para Cloud y `SaberAISoftware/` para e
 | Cloud o frontend no se unen a la tailnet | `TS_AUTHKEY` caducada, revocada o sin cargar. Una variable nueva en Railway queda pendiente hasta aplicar **Deploy** en el panel |
 | Handshake TLS a Redis expira, aunque `tailscale ping` responde | MTU. Las imágenes fijan `TS_DEBUG_MTU=1100`; ver riesgos aceptados |
 | La sugerencia sale `no disponible` por `timeout` con un clip largo | Fog agota el plazo de extracción de 60 s (DEF-32) |
+| Cloud sale con `Redis no responde tras 3 fallos seguidos` | Redis del Mac o la tailnet cayeron: es lo esperado (FIX04). Railway lo reinicia hasta 3 veces; si el corte persiste, el servicio queda en `FAILED` |
 | `/api/` responde 502 | La ventana de la tailnet está cerrada o Fog no corre |
 
 ## 8. Riesgos aceptados
 - **Fog depende del Mac encendido**, con Redis nativo, PostgreSQL y la ventana de la tailnet abiertos.
 - **`TS_DEBUG_MTU=1100`:** es una variable de depuración de Tailscale, ligada a la versión 1.104.4 y sin garantía de compatibilidad. Sin ella, con el MTU por defecto (1280), las respuestas del Mac de 1300 bytes o más no llegaban a Railway y el handshake TLS a Redis expiraba (medido: respuestas de hasta 1000 bytes pasaban, y 3000 bytes pasan con 1100). La causa probable está en la red del Mac, pero no se verificó. **Volver a probarla si cambia la versión de Tailscale** (en el contenedor o en el Mac) o la red.
 - **Plan Free de Railway:** el crédito de 1 USD al mes se agota en unos 7 días con los servicios encendidos sin uso (medido en el proyecto anterior). No hay tope ni alerta configurados; se mitiga apagando los servicios al terminar cada sesión. La documentación describe alertas por correo (límite blando) y no aclara si el plan Free las admite ni qué ocurre al agotarse el crédito: verificarlo en el panel antes de depender de ello.
-- **Cloud puede colgarse sin error** si pierde la tailnet o Redis (sin tiempo de espera ni healthcheck); no se reinicia solo.
+- **Cloud ante la pérdida de Redis (corregido en FIX04):** el cliente tiene tiempo de espera de socket de 5 s (mayor que el bloqueo de 2 s del `XREADGROUP`), de conexión de 3 s y `health_check_interval` de 3 s. Tras 3 fallos seguidos Cloud sale con código 1 y un log que dice que Redis no responde; con la política de 3 reintentos de Railway, un corte que persiste deja el servicio en `FAILED`. Medido con un Redis real de prueba: sale en ~5 s si el servidor muere y en ~15 s si queda congelado (socket abierto sin respuesta). Con un corte breve de la tailnet Cloud puede reiniciarse hasta 3 veces antes de recuperarse. El `/health` de Fog ya reporta `redis: error` (503) con un `PING` de 2 s, y el suscriptor de veredictos de Fog sigue sin tiempo de espera de socket, así que un corte silencioso hace que cada clip espere hasta el plazo de 60 s.
 - **Cloud puede inundar Redis** con streams propios (escribe en `fog:features:dead` y en `cloud:verdicts:*`); Redis tiene `maxmemory 200mb` con `noeviction`.
 - **Cuenta de Railway tratada como afectada** por el incidente del 21/10/2026: todo valor anterior se descartó y nada se reutilizó.
 - JWT sin revocación; los certificados de Redis vencen a los 365 días (13/11/2027); la contraseña maestra y el token del proxy viven solo en `backend/.secrets/`.

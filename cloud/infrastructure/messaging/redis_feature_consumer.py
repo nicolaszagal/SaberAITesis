@@ -16,17 +16,20 @@ disponible" correspondiente.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import AsyncIterator
 
 import numpy as np
 import redis.asyncio as redis
+from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import ResponseError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from cloud.domain.models import (
     FeatureSequence, InvalidFeatureMessage, LuzSignal, MotivoNoDisponible,
 )
-from cloud.ports.feature_consumer import FeatureStreamConsumerPort
+from cloud.ports.feature_consumer import ColaPerdidaError, FeatureStreamConsumerPort
 from shared import config
 
 log = logging.getLogger("cloud.infrastructure")
@@ -41,14 +44,33 @@ _REQUIRED_FIELDS = (
 )
 
 
+# Errores que indican que Redis o la red hasta él no responden (no los de contenido).
+_ERRORES_DE_CONEXION = (RedisConnectionError, RedisTimeoutError, asyncio.TimeoutError, OSError)
+
+
 class InvalidMessageError(ValueError):
     """Una entrada de `fog:features` no respeta el contrato."""
 
 
 class RedisFeatureConsumer(FeatureStreamConsumerPort):
-    def __init__(self, client: "redis.Redis"):
+    def __init__(
+        self,
+        client: "redis.Redis",
+        fallos_max: int | None = None,
+        espera_s: float | None = None,
+    ):
+        """Crea el consumidor.
+
+        Args:
+            client: cliente asíncrono de Redis (con tiempos de espera: ver `config.cloud_redis_kwargs`).
+            fallos_max: fallos de conexión seguidos tras los cuales `consume` lanza
+                `ColaPerdidaError`. Por defecto `config.CLOUD_REDIS_FALLOS_MAX`.
+            espera_s: pausa entre un fallo y el reintento. Por defecto `config.CLOUD_REDIS_ESPERA_S`.
+        """
         self._client = client
         self._group_ensured = False
+        self._fallos_max = config.CLOUD_REDIS_FALLOS_MAX if fallos_max is None else fallos_max
+        self._espera_s = config.CLOUD_REDIS_ESPERA_S if espera_s is None else espera_s
 
     async def _ensure_group(self) -> None:
         if self._group_ensured:
@@ -171,19 +193,36 @@ class RedisFeatureConsumer(FeatureStreamConsumerPort):
     async def consume(
         self,
     ) -> AsyncIterator[tuple[str, FeatureSequence | InvalidFeatureMessage]]:
-        await self._ensure_group()
+        try:
+            await self._ensure_group()
+            pendientes = await self._reclaim_pending()
+        except _ERRORES_DE_CONEXION as e:
+            raise ColaPerdidaError(f"Redis no responde al arrancar: {e}") from e
 
-        for entry_id, fields in await self._reclaim_pending():
+        for entry_id, fields in pendientes:
             yield await self._handle_entry(entry_id, fields)
 
+        fallos = 0
         while True:
-            result = await self._client.xreadgroup(
-                groupname=config.GROUP_CLOUD,
-                consumername=config.CONSUMER_CLOUD,
-                streams={config.STREAM_FEATURES: ">"},
-                count=1,
-                block=5000,
-            )
+            try:
+                result = await self._client.xreadgroup(
+                    groupname=config.GROUP_CLOUD,
+                    consumername=config.CONSUMER_CLOUD,
+                    streams={config.STREAM_FEATURES: ">"},
+                    count=1,
+                    block=config.CLOUD_XREAD_BLOCK_MS,
+                )
+            except _ERRORES_DE_CONEXION as e:
+                fallos += 1
+                log.error("Redis no responde (fallo %d de %d): %s", fallos, self._fallos_max, e)
+                if fallos >= self._fallos_max:
+                    raise ColaPerdidaError(
+                        f"Redis no responde tras {fallos} fallos seguidos; Cloud termina "
+                        "para que la plataforma lo reinicie"
+                    ) from e
+                await asyncio.sleep(self._espera_s)
+                continue
+            fallos = 0
             if not result:
                 continue
 

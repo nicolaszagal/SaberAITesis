@@ -6,6 +6,14 @@ from typing import AsyncIterator
 from cloud.domain.models import FeatureSequence, InvalidFeatureMessage
 
 
+class ColaPerdidaError(Exception):
+    """La cola de features dejó de responder tras varios fallos seguidos de conexión (FIX04).
+
+    El proceso debe terminar con error en vez de quedarse esperando: así la política de reinicio de
+    la plataforma actúa y, si el problema persiste, el servicio queda en FAILED a la vista.
+    """
+
+
 class FeatureStreamConsumerPort(ABC):
     @abstractmethod
     def consume(
@@ -18,7 +26,10 @@ class FeatureStreamConsumerPort(ABC):
         el adaptador, así que el llamador no debe volver a invocar `ack`
         para ella; solo debe publicar el veredicto "no disponible"
         correspondiente. Para una `FeatureSequence` válida, el llamador
-        debe invocar `ack(entry_id)` después de procesarla exitosamente."""
+        debe invocar `ack(entry_id)` después de procesarla exitosamente.
+
+        Raises:
+            ColaPerdidaError: tras varios fallos de conexión seguidos con la cola."""
         raise NotImplementedError
 
     @abstractmethod
