@@ -19,8 +19,10 @@ Ejecutar (desde backend/):
 
 import asyncio
 import logging
+import sys
 
 from cloud.composition import Container
+from cloud.ports.feature_consumer import ColaPerdidaError
 from shared import config
 from shared.logging_config import configurar_logging_tecnico
 
@@ -40,7 +42,12 @@ async def main() -> None:
     use_case = container.classify_and_publish()
     use_case.precalentar()  # F-027: si falla, la excepción impide arrancar
     log.info("Cloud escuchando '%s' como '%s'...", config.STREAM_FEATURES, config.CONSUMER_CLOUD)
-    await use_case.run_forever()
+    try:
+        await use_case.run_forever()
+    except ColaPerdidaError as e:
+        # Código distinto de 0: la política de reinicio de la plataforma actúa (FIX04).
+        log.critical("%s", e)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

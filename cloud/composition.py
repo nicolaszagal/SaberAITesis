@@ -29,16 +29,13 @@ def _select_device() -> "torch.device":
 
 
 def _build_redis_client(redis_url: str) -> "redis.Redis":
-    # socket_timeout=None: redis-py 8.x pone un default de 5s en el socket de
-    # lectura. RedisFeatureConsumer hace xreadgroup(..., block=5000) en loop
-    # (espera bloqueante del lado del servidor) — con el timeout de socket
-    # también en 5s, el cliente puede cortar la lectura antes de que Redis
-    # devuelva el BLOCK vacío, lanzando TimeoutError. La espera ya está
-    # acotada por el BLOCK de cada comando; el socket no necesita timeout propio.
+    # FIX04: con socket_timeout=None un corte de la red dejaba a Cloud bloqueado para siempre.
+    # El socket tiene tiempo de espera (mayor que el BLOCK del XREADGROUP; ver
+    # shared.config.cloud_redis_kwargs) y RedisFeatureConsumer sale tras N fallos seguidos.
     return redis.from_url(
         redis_url,
         decode_responses=False,
-        socket_timeout=None,
+        **shared_config.cloud_redis_kwargs(),
         **shared_config.redis_tls_kwargs(),
     )
 

@@ -216,6 +216,44 @@ def redis_tls_kwargs() -> dict:
     }
 
 
+# --- Cloud vivo ante la pérdida de Redis (FIX04) ---------------------------------------------------
+# Tiempos del cliente Redis de Cloud. `socket_timeout` debe superar el BLOCK del XREADGROUP con margen
+# (la espera bloqueante la corta Redis, no el socket). Con estos valores un corte silencioso (socket
+# abierto que no contesta) hace salir a Cloud en ~17 s: 3 fallos de 5 s más 1 s de espera entre ellos.
+REDIS_SOCKET_TIMEOUT_S = float(os.environ.get("REDIS_SOCKET_TIMEOUT_S", "5.0"))
+REDIS_CONNECT_TIMEOUT_S = float(os.environ.get("REDIS_CONNECT_TIMEOUT_S", "3.0"))
+REDIS_HEALTH_CHECK_S = int(os.environ.get("REDIS_HEALTH_CHECK_S", "3"))
+CLOUD_XREAD_BLOCK_MS = int(os.environ.get("CLOUD_XREAD_BLOCK_MS", "2000"))
+# Fallos de conexión seguidos tras los cuales Cloud sale con código distinto de 0.
+CLOUD_REDIS_FALLOS_MAX = int(os.environ.get("CLOUD_REDIS_FALLOS_MAX", "3"))
+CLOUD_REDIS_ESPERA_S = float(os.environ.get("CLOUD_REDIS_ESPERA_S", "1.0"))
+
+
+def cloud_redis_kwargs() -> dict:
+    """Argumentos de tiempo de `redis.from_url` para Cloud, validados.
+
+    Returns:
+        `socket_timeout`, `socket_connect_timeout` y `health_check_interval`.
+
+    Raises:
+        RuntimeError: si `REDIS_SOCKET_TIMEOUT_S` no supera en al menos 1 s el bloqueo del
+            XREADGROUP (`CLOUD_XREAD_BLOCK_MS`) o si algún tiempo no es positivo.
+    """
+    if min(REDIS_SOCKET_TIMEOUT_S, REDIS_CONNECT_TIMEOUT_S, REDIS_HEALTH_CHECK_S,
+           CLOUD_XREAD_BLOCK_MS, CLOUD_REDIS_FALLOS_MAX) <= 0:
+        raise RuntimeError("Los tiempos y el máximo de fallos de Redis deben ser positivos.")
+    if REDIS_SOCKET_TIMEOUT_S * 1000 < CLOUD_XREAD_BLOCK_MS + 1000:
+        raise RuntimeError(
+            "REDIS_SOCKET_TIMEOUT_S debe superar CLOUD_XREAD_BLOCK_MS en al menos 1 s: con el "
+            "socket más corto que el bloqueo, cada lectura vacía se contaría como fallo."
+        )
+    return {
+        "socket_timeout": REDIS_SOCKET_TIMEOUT_S,
+        "socket_connect_timeout": REDIS_CONNECT_TIMEOUT_S,
+        "health_check_interval": REDIS_HEALTH_CHECK_S,
+    }
+
+
 def require_redis_remoto() -> None:
     """Exige Redis con TLS explícito cuando `ENTORNO` es `remoto`.
 
