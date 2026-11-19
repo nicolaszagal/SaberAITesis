@@ -76,6 +76,33 @@ YOLO_POSE_MODEL_PATH = os.environ.get(
     os.path.join(os.path.dirname(__file__), "..", "..", "dataset", "yolov8x-pose.pt"),
 )
 
+# Dispositivo de cómputo de YOLO en Fog (DEPLOY10). `cpu` es lo que corrió en la Validación 1;
+# `mps` (Apple) o `cuda`/`cuda:N` son opcionales y solo se aceptan si `scripts/instalar_fog.sh probar`
+# pasa con ese dispositivo (la equivalencia de features no se da por supuesta). Nunca se deja que
+# ultralytics elija solo: sin este valor explícito, un equipo con GPU CUDA cambiaría de dispositivo.
+FOG_DEVICE = os.environ.get("FOG_DEVICE", "cpu").strip() or "cpu"
+DISPOSITIVOS_VALIDOS = ("cpu", "mps", "cuda")
+
+
+def validar_dispositivo(dispositivo: str) -> str:
+    """Comprueba que `FOG_DEVICE` sea `cpu`, `mps`, `cuda` o `cuda:<N>`.
+
+    Args:
+        dispositivo: valor de `FOG_DEVICE`.
+
+    Returns:
+        El mismo valor, si es válido.
+
+    Raises:
+        RuntimeError: si el valor no es uno de los admitidos.
+    """
+    base, dos_puntos, indice = dispositivo.partition(":")
+    if base not in DISPOSITIVOS_VALIDOS or (dos_puntos and (base != "cuda" or not indice.isdigit())):
+        raise RuntimeError(
+            f"FOG_DEVICE={dispositivo!r} no es válido: use cpu, mps, cuda o cuda:<N>."
+        )
+    return dispositivo
+
 # Directorio de la corrida del modelo LSTM desplegado (DEF-03): apunta a
 # dataset/lstm_6class/checkpoints/<run_id>/, que contiene run_config.json
 # (hiperparámetros: hidden_size, num_layers, dropout, luz_size, use_attention,

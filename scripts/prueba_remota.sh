@@ -10,11 +10,10 @@
 set -eu
 
 cd "$(dirname "$0")/.."
-if docker compose version >/dev/null 2>&1; then
-    COMPOSE="docker compose -f docker-compose.remoto.yml"
-else
-    COMPOSE="docker-compose -f docker-compose.remoto.yml"
-fi
+# `docker compose` o `docker-compose` según el equipo (DEPLOY10: función común).
+. scripts/lib_compose.sh
+detectar_compose || { echo "No hay Docker Compose" >&2; exit 1; }
+COMPOSE="$COMPOSE_CMD -f docker-compose.remoto.yml"
 PUERTO_PROXY=8090
 URL_FILE=datos/prueba_remota_url.txt
 PID_FILE=datos/prueba_remota_tunel.pid

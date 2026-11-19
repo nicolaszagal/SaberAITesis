@@ -5,6 +5,8 @@
 # se lee RESPALDO_DIR si no está en el entorno), PG_CONTAINER (por defecto el servicio
 # `postgres` de docker compose), POSTGRES_USER (sabre) y POSTGRES_DB_NAME (sabre).
 
+. scripts/lib_compose.sh
+
 ENV_FILE=${ENV_FILE:-.env}
 PGUSR=${POSTGRES_USER:-sabre}
 PGBASE=${POSTGRES_DB_NAME:-sabre}
@@ -23,7 +25,7 @@ leer_respaldo_dir() {
 buscar_contenedor() {
     PG_CONT=${PG_CONTAINER:-}
     [ -n "$PG_CONT" ] || PG_CONT=$(docker ps -q --filter "publish=${POSTGRES_HOST_PORT:-5436}" 2>/dev/null | head -n 1 || true)
-    [ -n "$PG_CONT" ] || PG_CONT=$(docker compose ps -q postgres 2>/dev/null | head -n 1 || true)
+    [ -n "$PG_CONT" ] || PG_CONT=$(compose ps -q postgres 2>/dev/null | head -n 1 || true)
     [ -n "$PG_CONT" ]
 }
 

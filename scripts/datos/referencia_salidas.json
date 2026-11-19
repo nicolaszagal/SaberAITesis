@@ -1,0 +1,142 @@
+{
+  "equipo": "mac-referencia",
+  "fecha": "2026-11-19T01:48:54Z",
+  "commit": "bd95591ed3fcf11535ea6df42a9849d453c8f798",
+  "dispositivo": "cpu",
+  "modelo_run_id": "20260928_141021",
+  "sistema": "Darwin arm64",
+  "python": "3.14.5",
+  "versiones": {
+    "torch": "2.12.1",
+    "torchvision": "0.27.1",
+    "ultralytics": "8.4.75",
+    "numpy": "2.3.4",
+    "opencv-python": "4.13.0.92",
+    "lap": "0.5.13",
+    "scipy": "1.18.1"
+  },
+  "decimales": 4,
+  "cota_probabilidad": null,
+  "clips": {
+    "AttackA_0023": {
+      "clase": "AttackB",
+      "probabilidades": {
+        "AttackA": 0.1463,
+        "AttackB": 0.7449,
+        "ContrattackA": 0.0272,
+        "ContrattackB": 0.0127,
+        "RiposteA": 0.0477,
+        "RiposteB": 0.0213
+      },
+      "keypoints_sha256": "f121ec7ce311a67fcf04a1da7ddcf6ef0fc3d63c485a641f5c895bafcf8eb85c"
+    },
+    "AttackB_0006": {
+      "clase": "AttackB",
+      "probabilidades": {
+        "AttackA": 0.0,
+        "AttackB": 0.9731,
+        "ContrattackA": 0.0,
+        "ContrattackB": 0.0136,
+        "RiposteA": 0.0,
+        "RiposteB": 0.0133
+      },
+      "keypoints_sha256": "30a8ac7cc76bf8661367181397c954f0ed111b5678bdad5e781f275afc724a3b"
+    },
+    "ContrattackA_0005": {
+      "clase": "ContrattackA",
+      "probabilidades": {
+        "AttackA": 0.1716,
+        "AttackB": 0.0,
+        "ContrattackA": 0.4885,
+        "ContrattackB": 0.0,
+        "RiposteA": 0.3399,
+        "RiposteB": 0.0
+      },
+      "keypoints_sha256": "7ba9652235cefc485c880c16484c1a8e3a7dba0a62f4459a006db88e0ebc71bd"
+    },
+    "ContrattackB_0015": {
+      "clase": "AttackB",
+      "probabilidades": {
+        "AttackA": 0.0,
+        "AttackB": 0.3615,
+        "ContrattackA": 0.0,
+        "ContrattackB": 0.3224,
+        "RiposteA": 0.0,
+        "RiposteB": 0.3161
+      },
+      "keypoints_sha256": "c8a64cfceca4e235f63cdbb4b5aea68a1ba9122f5960149c43d65e9bc71dd2e2"
+    },
+    "RiposteA_0055": {
+      "clase": "ContrattackA",
+      "probabilidades": {
+        "AttackA": 0.0433,
+        "AttackB": 0.0,
+        "ContrattackA": 0.7508,
+        "ContrattackB": 0.0,
+        "RiposteA": 0.206,
+        "RiposteB": 0.0
+      },
+      "keypoints_sha256": "b74be764e6f3435f04c6f79bd9a4e3f80ff6a7bd38373b01391820373c5e7cd6"
+    },
+    "RiposteB_0062": {
+      "clase": "ContrattackB",
+      "probabilidades": {
+        "AttackA": 0.0,
+        "AttackB": 0.0618,
+        "ContrattackA": 0.0,
+        "ContrattackB": 0.7616,
+        "RiposteA": 0.0,
+        "RiposteB": 0.1766
+      },
+      "keypoints_sha256": "ca4bba9cd18bd10469fcab428e9025f784d7c22777f0f49865f6c060518a5c37"
+    },
+    "AttackA_0007": {
+      "clase": "AttackB",
+      "probabilidades": {
+        "AttackA": 0.2177,
+        "AttackB": 0.5341,
+        "ContrattackA": 0.041,
+        "ContrattackB": 0.0219,
+        "RiposteA": 0.1224,
+        "RiposteB": 0.0628
+      },
+      "keypoints_sha256": "49e618d76e31f1c995bc32390fbfec4d03d60e2e0c31cbda95b8c0f2cf457cef"
+    },
+    "AttackB_0016": {
+      "clase": "AttackB",
+      "probabilidades": {
+        "AttackA": 0.0,
+        "AttackB": 0.469,
+        "ContrattackA": 0.0,
+        "ContrattackB": 0.1966,
+        "RiposteA": 0.0,
+        "RiposteB": 0.3344
+      },
+      "keypoints_sha256": "d4eec3ccb2573f4d18b0c06653edc059d8f3a6b4ff9e1e6cf93134932755e166"
+    },
+    "ContrattackB_0001": {
+      "clase": "RiposteB",
+      "probabilidades": {
+        "AttackA": 0.2278,
+        "AttackB": 0.0507,
+        "ContrattackA": 0.1502,
+        "ContrattackB": 0.1928,
+        "RiposteA": 0.0243,
+        "RiposteB": 0.3543
+      },
+      "keypoints_sha256": "0cc64a964aa4be9b5b1e835b78d7fd645a15e2336a1a751f3f83cdb2bd96ddc3"
+    },
+    "ContrattackA_0002": {
+      "clase": "ContrattackA",
+      "probabilidades": {
+        "AttackA": 0.0154,
+        "AttackB": 0.0,
+        "ContrattackA": 0.4963,
+        "ContrattackB": 0.0,
+        "RiposteA": 0.4883,
+        "RiposteB": 0.0
+      },
+      "keypoints_sha256": "a0b74838cc037767e931bcb3a90cce75e79ac5c1ce98cec67450992968b51d7a"
+    }
+  }
+}

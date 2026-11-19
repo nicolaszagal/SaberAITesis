@@ -134,7 +134,9 @@ class Container(containers.DeclarativeContainer):
         _load_yolo_model, model_path=config.yolo_pose_model_path
     )
 
-    pose_estimator = providers.Singleton(YoloV8PoseAdapter, model=yolo_model)
+    pose_estimator = providers.Singleton(
+        YoloV8PoseAdapter, model=yolo_model, device=config.fog_device
+    )
 
     feature_extractor = providers.Singleton(
         _build_feature_extractor,

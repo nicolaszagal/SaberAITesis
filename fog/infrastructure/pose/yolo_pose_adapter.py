@@ -75,22 +75,28 @@ def _load_tracker_cfg() -> IterableSimpleNamespace:
 
 
 class YoloV8PoseAdapter(PoseEstimatorPort):
-    def __init__(self, model):
+    def __init__(self, model, device: str = "cpu"):
         """model: instancia ultralytics.YOLO ya cargada (yolov8x-pose.pt),
         inyectada por composition.py como Singleton. Este adaptador no
         carga pesos. El lock serializa model.predict() entre todas las
-        sesiones activas (ver docstring del módulo)."""
+        sesiones activas (ver docstring del módulo).
+
+        device: dispositivo de cómputo que se pasa a model.predict() (DEPLOY10).
+        `cpu` por defecto, que es lo que corrió en la Validación 1; ultralytics no
+        elige solo."""
         self._model = model
+        self._device = device
         self._predict_lock = threading.Lock()
 
     def start_session(self) -> PoseTrackingSession:
-        return _YoloTrackingSession(self._model, self._predict_lock)
+        return _YoloTrackingSession(self._model, self._predict_lock, self._device)
 
 
 class _YoloTrackingSession(PoseTrackingSession):
-    def __init__(self, model, predict_lock: threading.Lock):
+    def __init__(self, model, predict_lock: threading.Lock, device: str = "cpu"):
         self._model = model
         self._predict_lock = predict_lock
+        self._device = device
         self._tracker = BOTSORT(args=_load_tracker_cfg())
 
         self._frame_w = 0
@@ -114,7 +120,7 @@ class _YoloTrackingSession(PoseTrackingSession):
 
         with self._predict_lock:
             results = self._model.predict(
-                frame, conf=_TRACK_CONF, batch=_TRACK_BATCH, verbose=False
+                frame, conf=_TRACK_CONF, batch=_TRACK_BATCH, verbose=False, device=self._device
             )
         r = self._postprocess(results[0])
         self._frame_idx += 1
