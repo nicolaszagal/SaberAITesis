@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from concurrent.futures import Executor
 
 from fog.domain.models import (
@@ -39,6 +40,7 @@ from fog.infrastructure.webrtc.session_registry import SessionRegistry
 from fog.ports.feature_extractor import FeatureExtractorPort
 from fog.ports.feature_publisher import FeatureStreamPublisherPort
 from fog.ports.match_repository import MatchRepositoryPort
+from shared import tiempos
 
 log = logging.getLogger("fog.application")
 
@@ -71,11 +73,16 @@ class ProcessIncomingMatch:
     ) -> UnavailableResult | None:
         loop = asyncio.get_running_loop()
 
-        features = await loop.run_in_executor(
-            self._executor,
-            self._feature_extractor.extract,
-            tracked, weapon_side_a, weapon_side_b, self._min_frames,
-        )
+        t_envio = time.perf_counter()
+        inicio_hilo: list[float] = []  # ESTRES01: cuándo un hilo del executor tomó el trabajo
+
+        def _extraer():
+            if tiempos.activo():
+                inicio_hilo.append(time.perf_counter())
+            return self._feature_extractor.extract(tracked, weapon_side_a, weapon_side_b, self._min_frames)
+
+        features = await loop.run_in_executor(self._executor, _extraer)
+        t_features = time.perf_counter()
 
         if features.sequence is None:
             log.warning("[%s] extracción no disponible: %s", revision_id, features.stats.get("error"))
@@ -99,6 +106,13 @@ class ProcessIncomingMatch:
         await self._publisher.publish(
             match_id, revision_id, features, effective_luz, weapon_side_a, weapon_side_b
         )
+        if tiempos.activo():
+            tiempos.registrar(
+                "features", revision=revision_id,
+                espera_executor_s=(inicio_hilo[0] - t_envio) if inicio_hilo else 0.0,
+                features_s=t_features - (inicio_hilo[0] if inicio_hilo else t_envio),
+                publicar_s=time.perf_counter() - t_features,
+            )
         await self._repository.save(Match(
             match_id=match_id,
             weapon_side_a=weapon_side_a,

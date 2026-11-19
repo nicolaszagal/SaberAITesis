@@ -114,6 +114,7 @@ from fog.infrastructure.webrtc.track_consumer import consume_track
 from fog.ports.file_storage import FileStoragePort
 from fog.ports.pose_estimator import PoseEstimatorPort
 from fog.ports.unidad_de_trabajo import UnidadDeTrabajoPort
+from shared import tiempos
 
 # Toda ruta exige `Authorization: Bearer` (DEPLOY05), salvo /health y
 # /auth/login. `router_publico` solo contiene /health. El WebSocket va en su
@@ -668,6 +669,7 @@ async def upload_clip(
     # Si la extracción falló (pose incompleta) no se publicó nada en Redis:
     # no tiene sentido esperar a Cloud (DEF-08).
     if resultado is None:
+        t_espera = time.monotonic()
         try:
             restante_s = max(0.0, clip_timeout_s - (time.monotonic() - recibido))
             await asyncio.wait_for(
@@ -687,6 +689,10 @@ async def upload_clip(
                 resultado = UnavailableResult(
                     match_id=match_id, revision_id=revision_id, motivo=MotivoNoDisponible.TIMEOUT
                 )
+        tiempos.registrar(
+            "espera_cloud", revision=revision_id, match=match_id, archivo=file.filename,
+            espera_s=time.monotonic() - t_espera, desde_recepcion_s=time.monotonic() - recibido,
+        )
 
     await registrar_clasificacion.execute(
         tocado_id=revision.tocado.id,
