@@ -251,3 +251,34 @@ def test_ningun_script_escribe_docker_compose_a_mano():
             if linea.lstrip().startswith("#") or 'echo "' in linea:
                 continue
             assert not re.search(r"docker compose|docker-compose(?![.\w])", linea), f"{sh.name}:{n}: {linea}"
+
+
+# --- Configuración real del Mac: .env mínimo + .secrets/fog_remoto.env ---------------------
+
+
+def _cargar(tmp_path, explicito: str | None = None):
+    (tmp_path / ".secrets").mkdir(exist_ok=True)
+    (tmp_path / ".env").write_text("POSTGRES_PASSWORD=desde_env\nRESPALDO_DIR=/r\n")
+    (tmp_path / ".secrets" / "fog_remoto.env").write_text("AUTH_USER=maestro\nPOSTGRES_PASSWORD=desde_secretos\nENTORNO=remoto\n")
+    pre = f"ENV_FILE={explicito}; ENV_FILE_EXPLICITO=1;" if explicito else "ENV_FILE=.env;"
+    cmd = f'{pre} . {BACKEND}/scripts/lib_fog_env.sh; cargar_archivos_env; echo "$AUTH_USER|$POSTGRES_PASSWORD|$RESPALDO_DIR|$ENTORNO"'
+    return subprocess.run(["sh", "-c", cmd], cwd=tmp_path, capture_output=True, text=True).stdout.strip()
+
+
+def test_sin_env_file_explicito_usa_env_y_encima_el_archivo_de_secretos(tmp_path):
+    assert _cargar(tmp_path) == "maestro|desde_secretos|/r|remoto"
+
+
+def test_con_env_file_explicito_usa_solo_ese_archivo(tmp_path):
+    assert _cargar(tmp_path, explicito=".env") == "|desde_env|/r|"
+
+
+def test_sin_ningun_archivo_no_falla_y_no_carga_nada(tmp_path):
+    cmd = f'ENV_FILE=.env; . {BACKEND}/scripts/lib_fog_env.sh; [ -z "$(archivos_env)" ] && echo vacio'
+    assert subprocess.run(["sh", "-c", cmd], cwd=tmp_path, capture_output=True, text=True).stdout.strip() == "vacio"
+
+
+def test_instalar_no_exige_auth_en_el_env_minimo():
+    fuente = (BACKEND / "scripts" / "instalar_fog.sh").read_text()
+    assert "archivos_env" in fuente and "ENV_FILE_EXPLICITO" in fuente
+    assert "--env-file" not in fuente

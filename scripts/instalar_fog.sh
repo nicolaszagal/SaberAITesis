@@ -10,7 +10,7 @@
 #   sh scripts/instalar_fog.sh probar                    prueba de equivalencia (10 clips de referencia)
 #   sh scripts/instalar_fog.sh estado
 #
-# Variables opcionales: ENV_FILE (.env), VENV_DIR (.venv), DATOS_DIR (./datos), DATASET_DIR (../dataset),
+# Variables opcionales: ENV_FILE (por defecto .env y, si existe, .secrets/fog_remoto.env encima), VENV_DIR (.venv), DATOS_DIR (./datos), DATASET_DIR (../dataset),
 # MODEL_RUN_ID, FOG_DEVICE (cpu), POSTGRES_DB_NAME (sabre), PYTHON_BIN (python3), ESPACIO_MIN_GB (7).
 # Ver docs/manuales/GUIA_INSTALACION.md, sección "Instalar o migrar Fog a otro equipo".
 set -eu
@@ -19,7 +19,9 @@ cd "$(dirname "$0")/.."
 BACKEND_DIR=$(pwd)
 . scripts/lib_compose.sh
 
+[ -z "${ENV_FILE:-}" ] || ENV_FILE_EXPLICITO=1
 ENV_FILE=${ENV_FILE:-.env}
+. scripts/lib_fog_env.sh
 VENV_DIR=${VENV_DIR:-.venv}
 PY_SIS=${PYTHON_BIN:-python3}
 COMPOSE_ARCHIVOS="-f docker-compose.yml -f docker-compose.nativo.yml"
@@ -55,17 +57,8 @@ archivo_lock() {
     esac
 }
 
-# Ruta de ENV_FILE usable con `.`: relativa a backend/ o absoluta.
-ruta_env() {
-    case "$ENV_FILE" in /*) printf '%s' "$ENV_FILE" ;; *) printf './%s' "$ENV_FILE" ;; esac
-}
-
 cargar_env() {
-    if [ -f "$ENV_FILE" ]; then
-        set -a
-        . "$(ruta_env)"
-        set +a
-    fi
+    cargar_archivos_env
 }
 
 puerto_ocupado() {
@@ -162,8 +155,16 @@ cmd_verificar() {
         if puerto_ocupado "$puerto"; then
             propio=""
             command -v docker >/dev/null 2>&1 && propio=$(docker ps --filter "publish=$puerto" --format '{{.Names}}' 2>/dev/null | grep '^sabre-' | head -n 1 || true)
+            fog_propio=""
+            if [ "$nombre" = FOG_HOST_PORT ] && command -v lsof >/dev/null 2>&1; then
+                for pid in $(lsof -nP -iTCP:"$puerto" -sTCP:LISTEN -t 2>/dev/null); do
+                    ps -p "$pid" -o command= 2>/dev/null | grep -q 'fog\.main:app' && fog_propio=$pid
+                done
+            fi
             if [ -n "$propio" ]; then
                 ok "Puerto $puerto ($nombre): lo publica $propio, el compose de SABRE.AI"
+            elif [ -n "$fog_propio" ]; then
+                ok "Puerto $puerto ($nombre): lo usa Fog ya en marcha (pid $fog_propio)"
             else
                 falta "Puerto $puerto ($nombre) ocupado" "Cambie $nombre en $ENV_FILE o detenga lo que lo usa (lsof -i :$puerto)"
             fi
@@ -257,15 +258,16 @@ volumen_pg_existe() {
 }
 
 paso_env() {
-    echo "[3/4] Configuración ($ENV_FILE)"
-    if [ -f "$ENV_FILE" ]; then
+    echo "[3/4] Configuración"
+    if [ -n "$(archivos_env)" ]; then
         faltan=""
         for clave in POSTGRES_PASSWORD AUTH_USER AUTH_PASSWORD_HASH AUTH_JWT_SECRET; do
-            valor=$( (set +u; . "$(ruta_env)" >/dev/null 2>&1; eval "printf '%s' \"\${$clave:-}\"") )
+            valor=$( (set +u; cargar_archivos_env >/dev/null 2>&1; eval "printf '%s' \"\${$clave:-}\"") )
             [ -n "$valor" ] || faltan="$faltan $clave"
         done
-        [ -z "$faltan" ] || fallo "$ENV_FILE existe y no define:$faltan. No se modifica; complételo a mano (ver .env.example)."
-        ok "$ENV_FILE existe y define lo necesario (no se toca)"
+        [ -z "$faltan" ] || fallo "la configuración ($(archivos_env | tr '\n' ' ')) no define:$faltan. No se modifica; complétela a mano."
+        ok "configuración existente (no se toca): $(archivos_env | tr '\n' ' ')"
+        [ -n "${RESPALDO_DIR:-}" ] || aviso "RESPALDO_DIR no está definida (sin ella no hay respaldo; ver .env.example)"
     else
         opcion=""
         volumen_pg_existe && opcion="--volumen-existente"
@@ -303,8 +305,15 @@ paso_base() {
     if volumen_pg_existe; then
         ok "el volumen de PostgreSQL (sabre_pgdata) ya existe: se conserva sin tocarlo"
     fi
-    # shellcheck disable=SC2086
-    compose --env-file "$ENV_FILE" $COMPOSE_ARCHIVOS up -d postgres redis || fallo "compose no pudo levantar postgres y redis"
+    # Si ya están en marcha no se vuelve a correr `up`: con otra configuración (p. ej. otra POSTGRES_PASSWORD
+    # en .secrets) Compose recrearía el contenedor en vez de dejarlo como está.
+    redis_activo=$(docker ps -q --filter "publish=${REDIS_HOST_PORT:-6380}" 2>/dev/null | head -n 1 || true)
+    if buscar_contenedor && [ -n "$redis_activo" ]; then
+        ok "PostgreSQL y Redis ya están en marcha: no se tocan"
+    else
+        # shellcheck disable=SC2086
+        compose $COMPOSE_ARCHIVOS up -d postgres redis || fallo "compose no pudo levantar postgres y redis"
+    fi
     buscar_contenedor || fallo "no encuentro el contenedor de PostgreSQL"
     esperar_postgres
     asegurar_base

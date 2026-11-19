@@ -28,3 +28,30 @@ exportar_entorno_fog() {
     # DEPLOY10: dispositivo de YOLO explícito (cpu es lo que corrió en la Validación 1).
     export FOG_DEVICE="${FOG_DEVICE:-cpu}"
 }
+
+# --- Archivos de configuración -------------------------------------------------------------------
+# Con ENV_FILE explícito se usa solo ese archivo. Sin él, `.env` (si existe) y, encima, el archivo de
+# secretos del Mac, `.secrets/fog_remoto.env` (ENV_SECRETO), si existe: ahí viven AUTH_*, ENTORNO,
+# REDIS_* y POSTGRES_DB_NAME de la configuración real; el `.env` puede ser mínimo.
+
+# archivos_env: imprime, uno por línea, los archivos a cargar (los que existen).
+archivos_env() {
+    if [ -n "${ENV_FILE_EXPLICITO:-}" ]; then
+        [ -f "$ENV_FILE" ] && printf '%s\n' "$ENV_FILE"
+        return 0
+    fi
+    [ -f "$ENV_FILE" ] && printf '%s\n' "$ENV_FILE"
+    [ -f "${ENV_SECRETO:-.secrets/fog_remoto.env}" ] && printf '%s\n' "${ENV_SECRETO:-.secrets/fog_remoto.env}"
+    return 0
+}
+
+# cargar_archivos_env: exporta las variables de todos los archivos de archivos_env, en orden.
+cargar_archivos_env() {
+    for archivo in $(archivos_env); do
+        case "$archivo" in /*) ruta=$archivo ;; *) ruta=./$archivo ;; esac
+        set -a
+        . "$ruta"
+        set +a
+    done
+    return 0
+}

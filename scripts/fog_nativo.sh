@@ -8,7 +8,7 @@
 #   sh scripts/fog_nativo.sh
 #
 # POSTGRES_DB_NAME elige otra base (por defecto sabre), p. ej. sabre_expo para el despliegue remoto.
-# Variables opcionales: ENV_FILE (por defecto .env), DATOS_DIR (por defecto ./datos),
+# Variables opcionales: ENV_FILE (por defecto .env y, si existe, .secrets/fog_remoto.env encima; ver lib_fog_env.sh), DATOS_DIR (por defecto ./datos),
 # MODEL_RUN_ID (por defecto el mismo run que fog/Dockerfile), FOG_HOST_PORT (8001), VENV_DIR
 # (por defecto .venv), DATASET_DIR (por defecto ../dataset) y FOG_BIND_HOST (ver
 # scripts/lib_fog_bind.sh: en modo remoto Fog solo escucha en 127.0.0.1).
@@ -17,18 +17,17 @@ set -eu
 cd "$(dirname "$0")/.."
 BACKEND_DIR=$(pwd)
 
+[ -z "${ENV_FILE:-}" ] || ENV_FILE_EXPLICITO=1
 ENV_FILE=${ENV_FILE:-.env}
-[ -f "$ENV_FILE" ] || { echo "Falta $ENV_FILE (cp .env.example .env)" >&2; exit 1; }
+. scripts/lib_fog_env.sh
+[ -n "$(archivos_env)" ] || { echo "Falta $ENV_FILE (cp .env.example .env) y no hay ${ENV_SECRETO:-.secrets/fog_remoto.env}" >&2; exit 1; }
 VENV_DIR=${VENV_DIR:-.venv}
 [ -f "$VENV_DIR/bin/activate" ] || { echo "Falta $VENV_DIR (ver GUIA_EJECUCION.md, sección 2)" >&2; exit 1; }
-set -a
-. "./$ENV_FILE"
-set +a
+cargar_archivos_env
 . "$VENV_DIR/bin/activate"
 . scripts/lib_fog_bind.sh
 BIND_HOST=$(fog_bind_host) || exit 1
 
-. scripts/lib_fog_env.sh
 exportar_entorno_fog
 
 # DEPLOY10: en modo remoto (ENTORNO=remoto) Fog solo arranca si la última `probar` de este equipo pasó
