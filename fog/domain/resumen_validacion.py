@@ -32,8 +32,6 @@ MOTIVOS_NO_DISPONIBLE = (
     "mensaje_invalido",
 )
 
-VALIDACIONES = ("V1", "V2")
-
 # Cota inferior de cada banda de Landis & Koch (1977), de mayor a menor.
 # Se aplica sobre κ sin redondear, así κ ≥ 0.61 equivale a "sustancial" o más.
 _BANDAS = (
@@ -271,10 +269,10 @@ def resumen_latencia_inferencia(
 
 
 def resumir_validacion(lineas: Sequence[LineaEvidencia]) -> dict[str, Any]:
-    """Métricas de un grupo de revisiones de una misma validación.
+    """Métricas de la validación (todas las revisiones con veredicto de la sesión).
 
     Args:
-        lineas: líneas de evidencia (`construir_linea`) de V1 o de V2.
+        lineas: líneas de evidencia (`construir_linea`) de la sesión.
 
     Returns:
         `n_revisiones`, `disponibles`, `no_disponibles` (con `por_motivo`),

@@ -25,7 +25,7 @@ from fog.infrastructure.evidencia.registro_jsonl import RegistroEvidenciaJsonl
 from shared.logging_config import configurar_logging_tecnico
 
 CAMPOS = [
-    "ts", "evento_id", "revision_id", "validacion", "modelo", "luz_A", "luz_B",
+    "ts", "evento_id", "revision_id", "modelo", "luz_A", "luz_B",
     "disponible", "motivo", "clase_sugerida", "confianza", "latencia_ms",
     "decision", "clase_final_arbitro", "concordancia", "hash_auditoria",
     "latencia_inferencia_ms", "t_luz_a_ms", "t_luz_b_ms",
@@ -55,14 +55,14 @@ def test_revision_cerrada_produce_una_linea_con_los_campos_exactos(crear_app):
     assert list(linea) == CAMPOS  # exactamente estos campos, sin extras
     assert linea["evento_id"] == str(app.evento_id)
     assert linea["revision_id"] == revision_id
-    assert linea["validacion"] == "V1"
+    assert "validacion" not in linea
     assert (linea["luz_A"], linea["luz_B"]) == (True, False)
     assert linea["disponible"] is True
     assert linea["motivo"] is None
     assert linea["clase_sugerida"] == "AttackA"
     assert linea["confianza"] == pytest.approx(0.74)
     assert linea["latencia_ms"] is not None
-    assert linea["latencia_inferencia_ms"] == 12  # campo 17, el que informó Cloud
+    assert linea["latencia_inferencia_ms"] == 12  # campo 16, el que informó Cloud
     assert (linea["t_luz_a_ms"], linea["t_luz_b_ms"]) == (300, None)  # campos 18 y 19
     assert (linea["decision"], linea["clase_final_arbitro"]) == ("mantener", "AttackA")
     assert linea["concordancia"] is True
@@ -150,11 +150,11 @@ def _entidades(fuente: str, disponible: bool = True):
                 veredicto=veredicto, modelo=modelo, auditoria=auditoria)
 
 
-@pytest.mark.parametrize("fuente,validacion", [("simulado", "V1"), ("favero", "V2")])
-def test_validacion_se_deriva_de_tocado_fuente(fuente, validacion):
+@pytest.mark.parametrize("fuente", ["simulado", "favero"])
+def test_la_linea_no_distingue_validaciones_por_la_fuente_del_tocado(fuente):
     linea = construir_linea(evento_id=uuid.uuid4(), **_entidades(fuente))
 
-    assert linea.validacion == validacion
+    assert "validacion" not in LineaEvidencia.__dataclass_fields__
     assert linea.concordancia is True
 
 
@@ -165,8 +165,8 @@ def test_latencia_inferencia_es_el_campo_17_y_las_luces_los_campos_18_y_19():
     )
 
     campos = list(LineaEvidencia.__dataclass_fields__)
-    assert campos[16:] == ["latencia_inferencia_ms", "t_luz_a_ms", "t_luz_b_ms"]
-    assert len(campos) == 19
+    assert campos[15:] == ["latencia_inferencia_ms", "t_luz_a_ms", "t_luz_b_ms"]
+    assert len(campos) == 18
     assert disponible.latencia_inferencia_ms == 18
     assert no_disponible.latencia_inferencia_ms is None
     assert (disponible.t_luz_a_ms, disponible.t_luz_b_ms) == (300, 300)

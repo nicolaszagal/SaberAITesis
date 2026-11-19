@@ -308,25 +308,23 @@ no hay regla de autorización por rol documentada. **404** si el evento no exist
                     "faltantes_en_jsonl": ["<revision_id>"], "sobrantes_en_jsonl": [] },
   "integridad": { "fn_verificar_auditoria": "ok", "integra": true,
                   "registros_alterados": 0, "seq_alterados": [] },
-  "por_validacion": {
-    "V1": { "n_revisiones": 8, "disponibles": 7,
-            "no_disponibles": { "n": 1, "por_motivo": { "pose_incompleta": 1, "confianza_baja": 0,
-              "clase_fuera_mvp": 0, "timeout": 0, "sin_senal_favero": 0, "mensaje_invalido": 0 } },
-            "latencia": { "n_total": 8, "n_disponibles": 7, "n_no_disponibles": 1,
-                          "sin_medicion": 0, "mediana_ms": 48, "max_ms": 55, "p95_ms": null,
-                          "p95_excede_umbral": true, "pct_le_60s": 87.5,
-                          "umbral_ms": 60000, "cumple": false },
-            "latencia_inferencia": { "n_disponibles": 7, "n_medidas": 7, "sin_medicion": 0,
-                                     "mediana_ms": 14, "p95_ms": 34, "max_ms": 34,
-                                     "pct_le_50ms": 100.0, "umbral_ms": 50, "cumple": true },
-            "kappa": { "n": 6, "calculable": true, "kappa": 0.3333, "banda": "aceptable",
-                       "umbral": 0.61, "cumple": false, "motivo": null },
-            "concordancia": { "n": 6, "pct": 66.67 },
-            "matriz_confusion": { "clases": ["AttackA", "AttackB", "ContrattackA", "ContrattackB",
-                                             "RiposteA", "RiposteB"],
-                                  "filas": "sistema", "columnas": "arbitro",
-                                  "matriz": [[2, 0, 0, 0, 0, 1], "... 6 filas de 6"] } },
-    "V2": { "...": "misma estructura" } },
+  "validacion": { "n_revisiones": 8, "disponibles": 7,
+        "no_disponibles": { "n": 1, "por_motivo": { "pose_incompleta": 1, "confianza_baja": 0,
+          "clase_fuera_mvp": 0, "timeout": 0, "sin_senal_favero": 0, "mensaje_invalido": 0 } },
+        "latencia": { "n_total": 8, "n_disponibles": 7, "n_no_disponibles": 1,
+                      "sin_medicion": 0, "mediana_ms": 48, "max_ms": 55, "p95_ms": null,
+                      "p95_excede_umbral": true, "pct_le_60s": 87.5,
+                      "umbral_ms": 60000, "cumple": false },
+        "latencia_inferencia": { "n_disponibles": 7, "n_medidas": 7, "sin_medicion": 0,
+                                 "mediana_ms": 14, "p95_ms": 34, "max_ms": 34,
+                                 "pct_le_50ms": 100.0, "umbral_ms": 50, "cumple": true },
+        "kappa": { "n": 6, "calculable": true, "kappa": 0.3333, "banda": "aceptable",
+                   "umbral": 0.61, "cumple": false, "motivo": null },
+        "concordancia": { "n": 6, "pct": 66.67 },
+        "matriz_confusion": { "clases": ["AttackA", "AttackB", "ContrattackA", "ContrattackB",
+                                         "RiposteA", "RiposteB"],
+                              "filas": "sistema", "columnas": "arbitro",
+                              "matriz": [[2, 0, 0, 0, 0, 1], "... 6 filas de 6"] } },
   "modelo": { "nota": "Referencia offline: F1 macro se mide sobre el test set, no en la sesión. ...",
               "activo": { "nombre": "...", "num_clases": 6, "f1_macro_test": 0.5249,
                           "f1_macro_test_rotulo": "checkpoint desplegado (test)",
@@ -334,7 +332,7 @@ no hay regla de autorización por rol documentada. **404** si el evento no exist
               "modelos_en_revisiones": ["..."], "tabla_m01": "## Tabla resumen — ...\n..." } }
 ```
 Definiciones (solo las de `docs_claude/protocolo_validacion.md`):
-- **V1/V2**: `tocado.fuente` = `simulado` / `favero`. Las métricas van separadas; no hay total.
+- **Validación**: única (κ sistema-árbitro). Un solo bloque `validacion` con todas las revisiones con veredicto del evento; `tocado.fuente` no separa el resumen.
 - **Disponibilidad y motivos**: `clasificacion.disponible` y `motivo_no_disp` (los seis valores
   del esquema, siempre presentes aunque valgan 0).
 - **Latencia**: `clasificacion.latencia_ms` (la misma de L01), que mide desde que se envía el
@@ -350,7 +348,7 @@ Definiciones (solo las de `docs_claude/protocolo_validacion.md`):
     `latencia_ms` registrada no se puede medir: queda fuera de todos los cálculos y se cuenta
     en `sin_medicion`.
 - **Latencia de inferencia** (`latencia_inferencia`, F-027): `clasificacion.latencia_inferencia_ms`
-  (la del campo 17 de L01), el tiempo del clasificador por clip en Cloud. Solo sobre las
+  (la del campo 16 de L01), el tiempo del clasificador por clip en Cloud. Solo sobre las
   revisiones **disponibles** (las no disponibles no tuvieron inferencia): `mediana_ms`, `p95_ms`
   (rango más cercano, ⌈0.95·n⌉-ésimo), `max_ms` y `pct_le_50ms` (sobre las medidas).
   `cumple` = p95 ≤ 50 ms. Una disponible con `latencia_inferencia_ms` nulo (p. ej. anterior a la
@@ -804,13 +802,12 @@ concordancia sistema-árbitro es `clase_sugerida == clase_final`.
 Al cerrarse la revisión, Fog agrega una línea al log de evidencia
 `EVIDENCE_DIR/<evento_id>.jsonl` (logger `sabre.evidencia`, L01), armada con lo
 ya registrado en la base. Campos, en este orden: `ts` (`veredicto.registrado_en`),
-`evento_id`, `revision_id`, `validacion` (`V1` si `tocado.fuente = simulado`,
-`V2` si `favero`), `modelo`, `luz_A`, `luz_B`, `disponible`, `motivo`,
+`evento_id`, `revision_id`, `modelo`, `luz_A`, `luz_B`, `disponible`, `motivo`,
 `clase_sugerida`, `confianza`, `latencia_ms`, `decision`, `clase_final_arbitro`,
 `concordancia` (`clase_sugerida == clase_final_arbitro`; `null` si no disponible
-o anulada), `hash_auditoria` y `latencia_inferencia_ms` (campo 17, al final;
-`clasificacion.latencia_inferencia_ms`, `null` si no disponible), `t_luz_a_ms` (campo 18) y
-`t_luz_b_ms` (campo 19), de `tocado.t_luz_a_ms/t_luz_b_ms` (`null` = luz apagada), también en
+o anulada), `hash_auditoria` y `latencia_inferencia_ms` (campo 16;
+`clasificacion.latencia_inferencia_ms`, `null` si no disponible), `t_luz_a_ms` (campo 17) y
+`t_luz_b_ms` (campo 18), de `tocado.t_luz_a_ms/t_luz_b_ms` (`null` = luz apagada), también en
 `revisiones.csv`. Las clases usan los nombres del modelo. Si la
 escritura falla, el veredicto ya registrado no se revierte; el error queda en el
 log técnico.

@@ -36,7 +36,7 @@ from fog.infrastructure.evidencia.fuente_modelo_m01 import FuenteModeloM01
 from tests.fog.conftest import VEREDICTO_DEFAULT
 
 CAMPOS_L01 = [
-    "ts", "evento_id", "revision_id", "validacion", "modelo", "luz_A", "luz_B",
+    "ts", "evento_id", "revision_id", "modelo", "luz_A", "luz_B",
     "disponible", "motivo", "clase_sugerida", "confianza", "latencia_ms",
     "decision", "clase_final_arbitro", "concordancia", "hash_auditoria",
     "latencia_inferencia_ms", "t_luz_a_ms", "t_luz_b_ms",
@@ -45,12 +45,12 @@ LOG_M01 = Path(__file__).resolve().parents[3] / "dataset/lstm_6class/EXPERIMENT_
 
 
 def _linea(
-    sugerida, final, *, validacion="V1", disponible=True, motivo=None,
+    sugerida, final, *, disponible=True, motivo=None,
     decision="mantener", latencia=100, inferencia=None,
 ) -> LineaEvidencia:
     return LineaEvidencia(
         ts="2026-09-29T12:00:00+00:00", evento_id="e", revision_id=str(uuid.uuid4()),
-        validacion=validacion, modelo="m", luz_A=True, luz_B=False,
+        modelo="m", luz_A=True, luz_B=False,
         disponible=disponible, motivo=motivo, clase_sugerida=sugerida,
         confianza=0.7 if disponible else None, latencia_ms=latencia,
         decision=decision, clase_final_arbitro=final,
@@ -207,10 +207,10 @@ def test_latencia_inferencia_sin_medicion_queda_fuera_y_sin_datos_es_nula():
     assert resumen_latencia_inferencia([])["cumple"] is None
 
 
-def test_resumen_separa_la_latencia_de_inferencia_por_validacion():
+def test_resumen_calcula_la_latencia_de_inferencia_de_cada_grupo_de_lineas():
     v1 = [_linea("AttackA", "AttackA", inferencia=x) for x in (10, 20, 30)]
     v1.append(_linea(None, "AttackB", disponible=False, motivo="timeout", inferencia=None))
-    v2 = [_linea("AttackA", "AttackA", validacion="V2", inferencia=x) for x in (40, 70)]
+    v2 = [_linea("AttackA", "AttackA", inferencia=x) for x in (40, 70)]
 
     m1 = resumir_validacion(v1)["latencia_inferencia"]
     m2 = resumir_validacion(v2)["latencia_inferencia"]
@@ -388,15 +388,7 @@ def _revisar(app, sugerida, decision, final, *, disponible=True, fuente="simulad
     return revision_id
 
 
-@pytest.fixture
-def sesion(crear_app):
-    """Sesión piloto con 8 revisiones: 6 comparables en V1 (κ = 1/3 a mano),
-    una anulada y una no disponible en V1, y 2 en V2 (κ = 1)."""
-    app = crear_app()
-    app.feature_ok = app.container.feature_extractor().result
-    app.match_id = app.configurar()
-    ids = {}
-    for etiqueta, sugerida, decision, final, extra in [
+_REVISIONES_SIMULADAS = [
         ("v1_1", "AttackA", "mantener", "AttackA", {}),
         ("v1_2", "AttackA", "mantener", "AttackA", {}),
         ("v1_3", "AttackA", "cambiar", "RiposteB", {}),
@@ -405,12 +397,36 @@ def sesion(crear_app):
         ("v1_6", "RiposteB", "cambiar", "AttackA", {}),
         ("v1_anulada", "AttackA", "anular", None, {}),
         ("v1_nodisp", None, "mantener", "AttackB", {"disponible": False}),
+]
+_REVISIONES_FAVERO = [
         ("v2_1", "AttackA", "mantener", "AttackA", {"fuente": "favero"}),
         ("v2_2", "RiposteB", "mantener", "RiposteB", {"fuente": "favero"}),
-    ]:
-        ids[etiqueta] = _revisar(app, sugerida, decision, final, **extra)
-    app.ids = ids
+]
+
+
+def _sesion(crear_app, revisiones):
+    app = crear_app()
+    app.feature_ok = app.container.feature_extractor().result
+    app.match_id = app.configurar()
+    app.ids = {
+        etiqueta: _revisar(app, sugerida, decision, final, **extra)
+        for etiqueta, sugerida, decision, final, extra in revisiones
+    }
     return app
+
+
+@pytest.fixture
+def sesion_simulada(crear_app):
+    """Sesión piloto con 8 revisiones simuladas: 6 comparables (κ = 1/3 a mano),
+    una anulada y una no disponible."""
+    return _sesion(crear_app, _REVISIONES_SIMULADAS)
+
+
+@pytest.fixture
+def sesion(crear_app):
+    """Las 8 revisiones simuladas más 2 con `tocado.fuente = favero` (el CHECK de
+    la base lo conserva): el resumen no las separa por fuente."""
+    return _sesion(crear_app, _REVISIONES_SIMULADAS + _REVISIONES_FAVERO)
 
 
 def _resumen(app) -> dict:
@@ -419,30 +435,48 @@ def _resumen(app) -> dict:
     return resp.json()
 
 
-def test_resumen_desde_la_base_separa_v1_y_v2(sesion):
-    r = _resumen(sesion)
+def test_resumen_desde_la_base_es_una_sola_validacion_con_las_cifras_de_la_v1(sesion_simulada):
+    """Las cifras son las que antes salían en el bloque V1 de la misma sesión."""
+    r = _resumen(sesion_simulada)
 
-    v1, v2 = r["por_validacion"]["V1"], r["por_validacion"]["V2"]
-    assert (v1["n_revisiones"], v1["disponibles"]) == (8, 7)
-    assert v1["no_disponibles"] == {
+    assert "por_validacion" not in r
+    v = r["validacion"]
+    assert (v["n_revisiones"], v["disponibles"]) == (8, 7)
+    assert v["no_disponibles"] == {
         "n": 1,
         "por_motivo": {**dict.fromkeys(
             ["pose_incompleta", "confianza_baja", "clase_fuera_mvp", "timeout",
              "sin_senal_favero", "mensaje_invalido"], 0), "pose_incompleta": 1},
     }
-    # κ sobre disponibles no anuladas: las 6 comparables de V1.
-    assert v1["kappa"]["n"] == 6
-    assert v1["kappa"]["kappa"] == pytest.approx(1 / 3, abs=1e-4)
-    assert v1["kappa"]["banda"] == "aceptable" and v1["kappa"]["cumple"] is False
-    assert v1["concordancia"] == {"n": 6, "pct": pytest.approx(66.67)}
-    assert v1["matriz_confusion"]["matriz"][0][0] == 2  # AttackA / AttackA
-    assert v1["matriz_confusion"]["matriz"][5][0] == 1  # RiposteB / AttackA
-    assert v1["latencia"]["n_total"] == 8 and v1["latencia"]["n_disponibles"] == 7
-    assert v1["latencia"]["n_no_disponibles"] == 1
+    # κ sobre disponibles no anuladas: las 6 comparables.
+    assert v["kappa"]["n"] == 6
+    assert v["kappa"]["kappa"] == pytest.approx(1 / 3, abs=1e-4)
+    assert v["kappa"]["banda"] == "aceptable" and v["kappa"]["cumple"] is False
+    assert v["concordancia"] == {"n": 6, "pct": pytest.approx(66.67)}
+    assert v["matriz_confusion"]["matriz"][0][0] == 2  # AttackA / AttackA
+    assert v["matriz_confusion"]["matriz"][5][0] == 1  # RiposteB / AttackA
+    assert v["latencia"]["n_total"] == 8 and v["latencia"]["n_disponibles"] == 7
+    assert v["latencia"]["n_no_disponibles"] == 1
+    assert r["conciliacion"]["n_base"] == 8
 
-    assert (v2["n_revisiones"], v2["disponibles"]) == (2, 2)
-    assert v2["kappa"]["kappa"] == 1.0 and v2["kappa"]["cumple"] is True
-    assert v2["kappa"]["banda"] == "casi perfecta"
+
+def test_las_cifras_desde_el_jsonl_son_las_mismas_que_desde_la_base(sesion_simulada):
+    """El JSONL de L01 (sin campo `validacion`) reproduce el resumen de la base."""
+    jsonl = (sesion_simulada.evidencia_dir / f"{sesion_simulada.evento_id}.jsonl")
+    filas = [json.loads(x) for x in jsonl.read_text(encoding="utf-8").splitlines()]
+    assert all("validacion" not in f for f in filas)
+    lineas = [LineaEvidencia(**f) for f in filas]
+
+    assert resumir_validacion(lineas) == _resumen(sesion_simulada)["validacion"]
+
+
+def test_la_fuente_del_tocado_no_separa_el_resumen(sesion):
+    r = _resumen(sesion)
+
+    assert "por_validacion" not in r
+    v = r["validacion"]
+    assert (v["n_revisiones"], v["disponibles"]) == (10, 9)
+    assert v["kappa"]["n"] == 8  # las 6 comparables + las 2 con fuente favero
     assert r["conciliacion"]["n_base"] == 10
 
 
@@ -476,12 +510,12 @@ def test_conciliacion_reporta_faltantes_y_sobrantes_sin_corregir_el_jsonl(sesion
 
 
 def test_las_metricas_no_dependen_del_jsonl(sesion):
-    con_jsonl = _resumen(sesion)["por_validacion"]
+    con_jsonl = _resumen(sesion)["validacion"]
     (sesion.evidencia_dir / f"{sesion.evento_id}.jsonl").unlink()
 
     r = _resumen(sesion)
 
-    assert r["por_validacion"] == con_jsonl
+    assert r["validacion"] == con_jsonl
     assert r["conciliacion"]["jsonl_presente"] is False
     assert r["conciliacion"]["n_jsonl"] == 0
     assert len(r["conciliacion"]["faltantes_en_jsonl"]) == 10
@@ -600,7 +634,7 @@ async def test_revisiones_csv_tiene_los_16_campos_de_l01_desde_la_base(sesion, t
     for linea in jsonl:  # con el JSONL completo, la base y el JSONL coinciden
         esperado = {k: _celda(v) for k, v in linea.items()}
         assert por_revision[linea["revision_id"]] == esperado
-    assert {f["validacion"] for f in filas} == {"V1", "V2"}
+    assert "validacion" not in filas[0]
     anulada = por_revision[sesion.ids["v1_anulada"]]
     assert (anulada["decision"], anulada["clase_final_arbitro"], anulada["concordancia"]) == (
         "anular", "", "",
@@ -614,7 +648,7 @@ async def test_resumen_md_cabe_en_una_pantalla_y_lleva_los_umbrales(sesion):
 
     assert len(md.splitlines()) <= 50
     for esperado in (
-        "## V1", "## V2", "κ de Cohen", "umbral 0.61", "p95 ≤ 60000 ms: cumple",
+        "## Validación (κ sistema-árbitro)", "κ de Cohen", "umbral 0.61", "p95 ≤ 60000 ms: no cumple",  # la revisión no disponible cuenta como > 60 s
         "Conciliación", "Faltantes en JSONL: ninguno", "sabre.fn_verificar_auditoria: ok",
         "Latencia de inferencia", "umbral p95 ≤ 50 ms",
     ):
@@ -628,7 +662,7 @@ def test_bloque_md_muestra_denominador_y_p95_sobre_60s():
         _linea(None, None, disponible=False, motivo="timeout")
     ] * 2
 
-    texto = "\n".join(_bloque_validacion("V1", resumir_validacion(lineas)))
+    texto = "\n".join(_bloque_validacion("Validación", resumir_validacion(lineas)))
 
     assert "N total=20 · disponibles=18 · no disponibles=2" in texto
     assert "p95 > 60 s" in texto
@@ -661,10 +695,9 @@ def test_evento_sin_revisiones_no_calcula_kappa(crear_app):
 
     r = app.client.get(f"/validaciones/{app.evento_id}/resumen").json()
 
-    for v in ("V1", "V2"):
-        assert r["por_validacion"][v]["n_revisiones"] == 0
-        assert r["por_validacion"][v]["kappa"]["calculable"] is False
-        assert r["por_validacion"][v]["kappa"]["kappa"] is None
+    assert r["validacion"]["n_revisiones"] == 0
+    assert r["validacion"]["kappa"]["calculable"] is False
+    assert r["validacion"]["kappa"]["kappa"] is None
     assert r["conciliacion"]["n_base"] == 0 and r["conciliacion"]["jsonl_presente"] is False
 
 

@@ -17,7 +17,7 @@ from typing import Any
 
 from fog.domain.errors import RecursoNoEncontrado
 from fog.domain.evidencia import LineaEvidencia, construir_linea
-from fog.domain.resumen_validacion import VALIDACIONES, resumir_validacion
+from fog.domain.resumen_validacion import resumir_validacion
 from fog.ports.consulta_evidencia_repository import ConsultaEvidenciaRepositoryPort
 from fog.ports.fuente_evidencia_modelo import FuenteEvidenciaModeloPort
 from fog.ports.lector_evidencia import LectorEvidenciaPort
@@ -61,7 +61,7 @@ class ResumirValidacion:
             evento_id: evento (sesión de validación) a resumir.
 
         Returns:
-            El resumen (separado en V1 y V2, con conciliación, integridad y
+            El resumen (una sola validación (κ sistema-árbitro), con conciliación, integridad y
             evidencia del modelo) y las líneas de evidencia armadas con
             `construir_linea` desde la base, en orden estable.
 
@@ -88,10 +88,7 @@ class ResumirValidacion:
             "generado_en": self._reloj().isoformat(timespec="seconds"),
             "conciliacion": self._conciliar(evento_id, lineas),
             "integridad": await self._integridad(),
-            "por_validacion": {
-                v: resumir_validacion([x for x in lineas if x.validacion == v])
-                for v in VALIDACIONES
-            },
+            "validacion": resumir_validacion(lineas),
             "modelo": await self._modelo(lineas),
         }
         return ResumenValidacion(resumen=resumen, lineas=lineas)

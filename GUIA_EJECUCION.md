@@ -146,8 +146,8 @@ export M01_EXPERIMENT_LOG=../dataset/lstm_6class/EXPERIMENT_LOG.md
 python scripts/exportar_evidencia.py --evento <evento_id>
 ```
 
-Genera en `EVIDENCE_DIR/<evento_id>/`: `resumen.json`, `revisiones.csv` (los 17 campos de L01,
-armados desde la base) y `resumen.md` (métricas por V1 y V2, umbrales, conciliación con
+Genera en `EVIDENCE_DIR/<evento_id>/`: `resumen.json`, `revisiones.csv` (los 18 campos de L01,
+armados desde la base) y `resumen.md` (métricas de la validación, umbrales, conciliación con
 `EVIDENCE_DIR/<evento_id>.jsonl` e integridad de la auditoría). Todo se calcula desde
 PostgreSQL; el JSONL solo se concilia y no se modifica. Es idempotente: al reejecutarlo se
 sobrescriben los tres archivos y con los mismos datos solo cambia `generado_en`. El mismo

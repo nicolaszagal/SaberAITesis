@@ -1,7 +1,7 @@
 """Exportación de la evidencia de una sesión de validación (L02).
 
 Escribe en `EVIDENCE_DIR/<evento_id>/`: `resumen.json`, `revisiones.csv`
-(los 17 campos de L01, mismo orden, armados desde la base) y `resumen.md`
+(los 18 campos de L01, mismo orden, armados desde la base) y `resumen.md`
 (como máximo una pantalla). Idempotente: reescribe los tres archivos y, con
 los mismos datos, solo cambia `generado_en`.
 """
@@ -18,7 +18,6 @@ from typing import Any
 from fog.application.resumir_validacion import ResumenValidacion
 from fog.domain.evidencia import LineaEvidencia
 
-ETIQUETA_VALIDACION = {"V1": "tocado simulado", "V2": "señal Favero"}
 
 
 def _celda(valor: Any) -> str:
@@ -74,7 +73,7 @@ def _bloque_validacion(nombre: str, m: dict[str, Any]) -> list[str]:
     pct = m["concordancia"]["pct"]
     matriz = m["matriz_confusion"]
     lineas = [
-        f"## {nombre} ({ETIQUETA_VALIDACION[nombre]})",
+        f"## {nombre}",
         f"- Revisiones: {m['n_revisiones']} · disponibles {m['disponibles']} · "
         f"no disponibles {nd['n']}" + (f" ({motivos})" if motivos else ""),
         f"- Latencia (N total={lat['n_total']} · disponibles={lat['n_disponibles']} · "
@@ -130,8 +129,7 @@ def renderizar_md(resumen: dict[str, Any]) -> str:
         f"Generado: {resumen['generado_en']}",
         "",
     ]
-    for nombre in ("V1", "V2"):
-        lineas += _bloque_validacion(nombre, resumen["por_validacion"][nombre]) + [""]
+    lineas += _bloque_validacion("Validación (κ sistema-árbitro)", resumen["validacion"]) + [""]
     lineas += [
         "## Conciliación con el JSONL",
         f"- En base: {c['n_base']} · en JSONL: {c['n_jsonl']}"
