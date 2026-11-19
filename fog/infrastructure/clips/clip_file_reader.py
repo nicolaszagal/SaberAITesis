@@ -26,6 +26,7 @@ import logging
 import os
 import tempfile
 import threading
+import time
 from concurrent.futures import Executor
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,7 +36,7 @@ import cv2
 from fastapi import UploadFile
 
 from fog.domain.models import TrackedSequence
-from shared import config
+from shared import config, tiempos
 from fog.ports.file_storage import FileStoragePort
 from fog.ports.pose_estimator import PoseEstimatorPort
 
@@ -234,6 +235,7 @@ async def process_uploaded_clip(
         ExtraccionAgotadaError: si la pose no termina en `plazo_s`. El hilo de
             lectura se cancela y el clip se guarda; la excepción lo trae.
     """
+    t_inicio = time.perf_counter()
     suffix = os.path.splitext(file.filename or "")[1] or ".mp4"
     content = await file.read()
 
@@ -251,6 +253,7 @@ async def process_uploaded_clip(
         with os.fdopen(fd, "wb") as tmp:
             tmp.write(content)
 
+        t_recorte = time.perf_counter()
         if instantes_ms:
             recorte = await asyncio.to_thread(
                 recortar_ventana, tmp_path, instantes_ms,
@@ -267,7 +270,11 @@ async def process_uploaded_clip(
         cancelar = threading.Event()
         pose_session = pose_estimator.start_session()
 
+        inicio_hilo: list[float] = []  # ESTRES01: cuándo un hilo del executor tomó el trabajo
+
         def _read_all_frames() -> tuple[int, float, int, int]:
+            if tiempos.activo():
+                inicio_hilo.append(time.perf_counter())
             cap = cv2.VideoCapture(tmp_path)
             if not cap.isOpened():
                 raise InvalidClipError(f"no se pudo abrir el clip subido ({file.filename!r})")
@@ -325,12 +332,26 @@ async def process_uploaded_clip(
                 guardado = dataclasses.replace(guardado, desfase_recorte_ms=desfase_ms)
                 raise ExtraccionAgotadaError(guardado) from None
 
+        t_pose = time.perf_counter()
         n_frames, fps, ancho, alto = await _con_plazo(_read_all_frames)
+        t_pose_fin = time.perf_counter()
         duracion_ms = max(1, round(n_frames / fps * 1000))
         _validar_instantes(duracion_ms)
         tracked = await _con_plazo(pose_session.finish)
         uri, sha256 = await storage.save_clip(Path(tmp_path))
         log.info("clip subido (%s): %d frames procesados", file.filename, n_frames)
+        if tiempos.activo():
+            tiempos.registrar(
+                "clip", archivo=file.filename, frames=n_frames,
+                recorte_s=t_pose - t_recorte,
+                espera_executor_s=(inicio_hilo[0] - t_pose) if inicio_hilo else 0.0,
+                lectura_y_pose_s=t_pose_fin - (inicio_hilo[0] if inicio_hilo else t_pose),
+                espera_cola_pose_s=getattr(pose_session, "espera_lock_s", 0.0),
+                predict_s=getattr(pose_session, "predict_s", 0.0),
+                tracking_s=getattr(pose_session, "tracking_s", 0.0),
+                finish_y_guardado_s=time.perf_counter() - t_pose_fin,
+                total_clip_s=time.perf_counter() - t_inicio,
+            )
         return ClipProcesado(
             tracked=tracked,
             uri=uri,

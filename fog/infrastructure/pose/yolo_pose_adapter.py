@@ -46,6 +46,7 @@ por todas las sesiones del proceso.
 from __future__ import annotations
 
 import threading
+import time
 
 import numpy as np
 import torch
@@ -55,6 +56,7 @@ from ultralytics.utils.checks import check_yaml
 
 from fog.domain.models import PersonPose, TrackedFrame, TrackedSequence
 from fog.ports.pose_estimator import PoseEstimatorPort, PoseTrackingSession
+from shared import tiempos
 from shared.feature_extractor import try_lock_ids
 
 # Mismo tracker que ultralytics usaría por default hoy (ver nota de
@@ -110,6 +112,10 @@ class _YoloTrackingSession(PoseTrackingSession):
         self._tracked: list[TrackedFrame] = []
         self._frame_idx = 0
         self._finished = False
+        # ESTRES01: solo se llenan con ESTRES_TIEMPOS=1 (espera del lock de YOLO, predict y tracking).
+        self.espera_lock_s = 0.0
+        self.predict_s = 0.0
+        self.tracking_s = 0.0
 
     def add_frame(self, frame: np.ndarray) -> None:
         if self._finished:
@@ -118,11 +124,19 @@ class _YoloTrackingSession(PoseTrackingSession):
         if self._frame_idx == 0:
             self._frame_h, self._frame_w = frame.shape[:2]
 
+        medir = tiempos.activo()
+        t0 = time.perf_counter() if medir else 0.0
         with self._predict_lock:
+            t1 = time.perf_counter() if medir else 0.0
             results = self._model.predict(
                 frame, conf=_TRACK_CONF, batch=_TRACK_BATCH, verbose=False, device=self._device
             )
+            t2 = time.perf_counter() if medir else 0.0
         r = self._postprocess(results[0])
+        if medir:
+            self.espera_lock_s += t1 - t0
+            self.predict_s += t2 - t1
+            self.tracking_s += time.perf_counter() - t2
         self._frame_idx += 1
 
         if not self._locked and r.boxes is not None and len(r.boxes) > 0:
