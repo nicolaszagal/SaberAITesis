@@ -21,17 +21,20 @@ class PurgarClips:
         self._tocados = tocados
         self._storage = storage
 
-    async def execute(self, combate_id: uuid.UUID | None = None) -> int:
+    async def execute(
+        self, combate_id: uuid.UUID | None = None, evento_id: uuid.UUID | None = None
+    ) -> int:
         """Borra los archivos de clip.
 
         Args:
-            combate_id: solo los clips de ese combate; `None` = todos los de la base.
+            combate_id: solo los clips de ese combate.
+            evento_id: solo los clips de esa sesión (evento). Sin filtros, todos los de la base.
 
         Returns:
             Cuántos archivos se borraron (los que ya no existían no cuentan).
         """
         borrados = 0
-        for uri in set(await self._tocados.uris_clips(combate_id)):
+        for uri in set(await self._tocados.uris_clips(combate_id, evento_id)):
             if await self._storage.eliminar_clip(uri):
                 borrados += 1
         log.info("clips purgados: %d archivo(s)", borrados)

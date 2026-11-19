@@ -444,8 +444,8 @@ El servicio de Edge corre en el mismo equipo que Fog (nativo, no en Docker: nece
 
 ```bash
 cd backend && source .venv/bin/activate
-# Credenciales de Edge hacia Fog (el usuario maestro; nunca en el repo):
-export EDGE_FOG_USER=...; export EDGE_FOG_PASSWORD=...     # o .secrets/edge_fog_user.txt y edge_fog_password.txt
+# Token de servicio de Edge hacia Fog (una vez; al azar, en .secrets/edge_token.txt, nunca en el repo):
+sh scripts/crear_edge_token.sh        # Fog (fog_nativo.sh) y Edge lo leen de ahí, o de la variable EDGE_TOKEN
 # Sin cable RJ12: botón de señal de prueba (los tocados quedan como fuente 'simulado')
 MODO_PRUEBA_SENAL=1 python -m edge.captura.servicio --sin-lector
 # Con el aparato:
@@ -458,5 +458,6 @@ Fog debe tener `EDGE_URL` (por defecto `http://127.0.0.1:8765`) apuntando a la A
 - **Cámara:** se elige en Configuración → Cámara (o `datos/edge/config.json`). Permiso de macOS: Ajustes del Sistema → Privacidad y seguridad → Cámara, para la aplicación desde la que corres Python (Terminal, iTerm, VS Code). Sin permiso OpenCV abre pero no entrega frames.
 - **Medir el buffer con tu cámara:** `python -m edge.medir_buffer --camara 0 --segundos 20` (RAM, CPU y fps de frames crudos frente a JPEG).
 - **Calibrar la latencia:** `python -m edge.calibrar_latencia ...` (ver `edge/captura/LEEME.md`).
-- **Cerrar la sesión:** primero el respaldo (`exportar_evidencia.py`, que excluye los clips) y después `python scripts/purgar_clips.py --confirmar`.
+- **Cerrar la sesión:** botón "Cerrar sesión de validación" en Configuración (`POST /sesion/cerrar`): hace el respaldo verificado (sin clips) y, solo si pasa, borra los clips. Necesita `RESPALDO_DIR` y las variables del respaldo en el entorno de Fog (ver `scripts/respaldar_sesion.sh`).
+- **Combate activo:** `POST /matches/config` marca el combate como activo (uno por nodo); Edge sube los tocados a ese. Se limpia al cerrar la sesión.
 - **Variables:** `VENTANA_PRE_MS` (2000) y `VENTANA_POST_MS` (500) en Fog y Edge; `EDGE_K_TOCADOS`, `EDGE_FPS`, `EDGE_DIR_TOCADOS`.

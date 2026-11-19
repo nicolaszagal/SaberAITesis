@@ -38,6 +38,8 @@ export DATABASE_URL="postgresql+asyncpg://sabre:${POSTGRES_PASSWORD:?falta POSTG
 # DEPLOY07: con REDIS_URL_REMOTO (rediss://... hacia Railway) Fog no usa el Redis local.
 export REDIS_URL="${REDIS_URL_REMOTO:-redis://127.0.0.1:${REDIS_HOST_PORT}/0}"
 export STORAGE_DIR="$DATOS_DIR/storage"
+# EDGE02: token de servicio de Edge (scripts/crear_edge_token.sh); el entorno manda sobre el archivo.
+[ -n "${EDGE_TOKEN:-}" ] || { [ -s .secrets/edge_token.txt ] && EDGE_TOKEN=$(cat .secrets/edge_token.txt) && export EDGE_TOKEN; } || true
 export EVIDENCE_DIR="$DATOS_DIR/evidencia"
 DS=$(cd "${DATASET_DIR:-$BACKEND_DIR/../dataset}" && pwd)
 export FEATURE_STATS_PATH="$DS/lstm_6class/feature_stats.npz"

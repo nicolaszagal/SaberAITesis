@@ -18,7 +18,7 @@ from edge.api_local import ApiLocal
 from edge.captura.camara import evaluar_fps, listar_camaras, parsear_ffmpeg, parsear_system_profiler
 from edge.captura.config import ConfigCaptura
 from edge.captura.config_edge import ConfigEdge, ConfigInvalida, cargar, guardar
-from edge.captura.envio import EnvioFog, cuerpo_multipart
+from edge.captura.envio import EnvioFog, cuerpo_multipart, token_desde_entorno
 from edge.captura.nucleo import NucleoEdge
 from edge.favero.lector import Flanco
 
@@ -205,16 +205,18 @@ class _FogFalso(BaseHTTPRequestHandler):
     def do_POST(self):
         largo = int(self.headers.get("Content-Length") or 0)
         cuerpo = self.rfile.read(largo)
-        if self.path == "/auth/login":
-            return self._json(200, {"access_token": "tok", "expires_in": 60})
+        if self.headers.get("X-Edge-Token") != "token-de-servicio":
+            return self._json(401, {"detail": "No autenticado"})
         if self.caido:
             return self._json(503, {"detail": "caído"})
         if self.rechazar:
             return self._json(self.rechazar, {"detail": "rechazado"})
-        self.recibidos.append((self.path, self.headers.get("Authorization"), cuerpo))
+        self.recibidos.append((self.path, self.headers.get("X-Edge-Token"), cuerpo))
         self._json(200, {"tocado_id": "t-1", "estado": "procesando"})
 
     def do_GET(self):
+        if self.headers.get("X-Edge-Token") != "token-de-servicio":
+            return self._json(401, {"detail": "No autenticado"})
         if self.path == "/matches/activo":
             return self._json(200, {"match_id": self.combate})
         self._json(404, {})
@@ -238,13 +240,13 @@ def _tocado_en_disco(directorio: Path, nombre="tocado_20261118T100000_000_0001",
     return directorio / f"{nombre}.json"
 
 
-def test_envio_sube_el_tocado_con_jwt_y_lo_marca_enviado(tmp_path, fog_falso):
+def test_envio_sube_el_tocado_con_el_token_de_servicio_y_lo_marca_enviado(tmp_path, fog_falso):
     _, url = fog_falso
     ruta = _tocado_en_disco(tmp_path / "t")
-    envio = EnvioFog(tmp_path / "t", url, ("maestro", "clave"))
+    envio = EnvioFog(tmp_path / "t", url, "token-de-servicio")
     assert envio.enviar(ruta) is True
     (peticion,) = _FogFalso.recibidos
-    assert peticion[0] == f"/matches/{_FogFalso.combate}/tocados" and peticion[1] == "Bearer tok"
+    assert peticion[0] == f"/matches/{_FogFalso.combate}/tocados" and peticion[1] == "token-de-servicio"
     cuerpo = peticion[2].decode("latin1")
     for esperado in ('name="fuente"\r\n\r\nsimulado', 'name="origen"\r\n\r\nboton', 'name="t_luz_a_ms"\r\n\r\n2000'):
         assert esperado in cuerpo
@@ -257,7 +259,7 @@ def test_si_fog_no_responde_queda_pendiente_y_se_reintenta(tmp_path, fog_falso):
     _, url = fog_falso
     ruta = _tocado_en_disco(tmp_path / "t")
     _FogFalso.caido = True
-    envio = EnvioFog(tmp_path / "t", url, ("m", "c"), espera_inicial_s=0.05, espera_max_s=0.1)
+    envio = EnvioFog(tmp_path / "t", url, "token-de-servicio", espera_inicial_s=0.05, espera_max_s=0.1)
     assert envio.enviar(ruta) is False
     assert json.loads(ruta.read_text())["envio"] == "pendiente"
     envio.iniciar()
@@ -273,7 +275,7 @@ def test_si_fog_no_responde_queda_pendiente_y_se_reintenta(tmp_path, fog_falso):
 
 def test_fog_sin_servidor_no_pierde_el_tocado(tmp_path):
     ruta = _tocado_en_disco(tmp_path / "t")
-    envio = EnvioFog(tmp_path / "t", "http://127.0.0.1:9", ("m", "c"), timeout_s=0.5)
+    envio = EnvioFog(tmp_path / "t", "http://127.0.0.1:9", "token-de-servicio", timeout_s=0.5)
     assert envio.enviar(ruta) is False
     assert json.loads(ruta.read_text())["envio"] == "pendiente"
 
@@ -282,7 +284,7 @@ def test_error_definitivo_del_clip_no_se_reintenta(tmp_path, fog_falso):
     _, url = fog_falso
     _FogFalso.rechazar = 422
     ruta = _tocado_en_disco(tmp_path / "t")
-    envio = EnvioFog(tmp_path / "t", url, ("m", "c"))
+    envio = EnvioFog(tmp_path / "t", url, "token-de-servicio")
     assert envio.enviar(ruta) is True
     assert json.loads(ruta.read_text())["envio"] == "error"
     assert envio.pendientes() == []
@@ -292,7 +294,7 @@ def test_varios_tocados_seguidos_se_envian_en_orden_sin_carreras(tmp_path, fog_f
     _, url = fog_falso
     d = tmp_path / "t"
     rutas = [_tocado_en_disco(d, f"tocado_20261118T10000{i}_000_000{i}") for i in range(4)]
-    envio = EnvioFog(d, url, ("m", "c"))
+    envio = EnvioFog(d, url, "token-de-servicio")
     envio.iniciar()
     fin = time.monotonic() + 5
     while len(_FogFalso.recibidos) < 4 and time.monotonic() < fin:
@@ -302,7 +304,7 @@ def test_varios_tocados_seguidos_se_envian_en_orden_sin_carreras(tmp_path, fog_f
     assert all(json.loads(r.read_text())["envio"] == "enviado" for r in rutas)
 
 
-def test_sin_credenciales_no_se_envia_nada(tmp_path, fog_falso):
+def test_sin_token_no_se_envia_nada(tmp_path, fog_falso):
     _, url = fog_falso
     ruta = _tocado_en_disco(tmp_path / "t")
     envio = EnvioFog(tmp_path / "t", url, None)
@@ -318,3 +320,25 @@ def test_multipart_incluye_campos_y_archivo(tmp_path):
     cuerpo, tipo = cuerpo_multipart({"fuente": "favero"}, f)
     assert tipo.startswith("multipart/form-data; boundary=") and b"VIDEO" in cuerpo
     assert b'filename="a.mp4"' in cuerpo and b'name="fuente"' in cuerpo
+
+
+def test_un_token_equivocado_deja_el_tocado_pendiente(tmp_path, fog_falso):
+    _, url = fog_falso
+    ruta = _tocado_en_disco(tmp_path / "t")
+    envio = EnvioFog(tmp_path / "t", url, "otro-token")
+    assert envio.enviar(ruta) is False  # 401 de Fog: se reintenta, no se descarta
+    assert json.loads(ruta.read_text())["envio"] == "pendiente" and _FogFalso.recibidos == []
+
+
+def test_token_desde_entorno_o_secretos(tmp_path, monkeypatch):
+    monkeypatch.delenv("EDGE_TOKEN", raising=False)
+    assert token_desde_entorno(tmp_path) is None
+    (tmp_path / "edge_token.txt").write_text("abc123\n", encoding="utf-8")
+    assert token_desde_entorno(tmp_path) == "abc123"
+    monkeypatch.setenv("EDGE_TOKEN", "del-entorno")
+    assert token_desde_entorno(tmp_path) == "del-entorno"
+    # ya no se usan usuario y clave del maestro
+    (tmp_path / "edge_fog_user.txt").write_text("maestro", encoding="utf-8")
+    monkeypatch.delenv("EDGE_TOKEN")
+    (tmp_path / "edge_token.txt").unlink()
+    assert token_desde_entorno(tmp_path) is None

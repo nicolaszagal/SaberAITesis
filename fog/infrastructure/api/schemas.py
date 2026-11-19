@@ -534,3 +534,11 @@ class TocadoItemResponse(BaseModel):
     revisado: bool = Field(..., description="True si tiene revisión; si no, 'No revisado'.")
     admite_var: bool = Field(..., description="True solo para el tocado más reciente sin revisión.")
     decision_pista: DecisionPistaResponse | None = None
+
+
+class SesionCerradaResponse(BaseModel):
+    """Resultado de POST /sesion/cerrar."""
+
+    respaldo: str = Field(..., description="Salida del respaldo verificado.")
+    clips_borrados: int = Field(..., description="Archivos de clip de Fog borrados.")
+    archivos_edge_borrados: int = Field(..., description="Clips y JSON de Edge borrados.")

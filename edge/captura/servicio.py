@@ -19,7 +19,7 @@ from pathlib import Path
 from edge.api_local import ApiLocal
 from edge.captura.buffer import memoria_estimada_mb
 from edge.captura.config import ConfigCaptura
-from edge.captura.envio import EnvioFog, credenciales_desde_entorno
+from edge.captura.envio import EnvioFog, token_desde_entorno
 from edge.captura.nucleo import NucleoEdge
 from edge.favero.lector import BAUDIOS_USB, LectorFavero
 
@@ -50,7 +50,7 @@ def principal(argv: list[str] | None = None) -> int:
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     cfg = ConfigCaptura.desde_entorno()
-    envio = None if args.sin_envio else EnvioFog(cfg.directorio, args.fog_url, credenciales_desde_entorno())
+    envio = None if args.sin_envio else EnvioFog(cfg.directorio, args.fog_url, token_desde_entorno())
     nucleo = NucleoEdge(
         cfg, ARCHIVO_CONFIG, camara_id=args.camara_id, modo_prueba=os.environ.get("MODO_PRUEBA_SENAL") == "1",
         fuente_video=args.camara_video, envio=envio,

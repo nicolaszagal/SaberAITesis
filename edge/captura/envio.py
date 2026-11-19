@@ -6,9 +6,9 @@ sube de a uno, en orden, a `POST /matches/{match_id}/tocados` y marca `"enviado"
 espera creciente; los errores 4xx del clip (inválido, demasiado grande) son definitivos y quedan
 como `"error"`. No se envía nada a la revisión VAR: Fog solo preprocesa (D-04).
 
-Credenciales: el usuario maestro de Fog, desde las variables `EDGE_FOG_USER` y
-`EDGE_FOG_PASSWORD` o, si faltan, desde `.secrets/edge_fog_user.txt` y
-`.secrets/edge_fog_password.txt` (nunca desde el repo). Solo usa la biblioteca estándar.
+Autenticación: token de servicio (`EDGE_TOKEN` en el entorno o `.secrets/edge_token.txt`, generado al azar con
+`scripts/crear_edge_token.sh`), en la cabecera `X-Edge-Token`. Fog lo acepta solo desde 127.0.0.1 y solo en
+las rutas de tocados. Solo usa la biblioteca estándar.
 """
 
 from __future__ import annotations
@@ -26,20 +26,19 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-def credenciales_desde_entorno(secretos: Path = Path(".secrets")) -> tuple[str, str] | None:
-    """Usuario y clave de Fog para Edge.
+def token_desde_entorno(secretos: Path = Path(".secrets")) -> str | None:
+    """Token de servicio de Edge hacia Fog.
 
     Returns:
-        `(usuario, clave)` o `None` si no están configurados.
+        El token, o `None` si no está configurado.
     """
-    usuario = os.environ.get("EDGE_FOG_USER")
-    clave = os.environ.get("EDGE_FOG_PASSWORD")
-    try:
-        usuario = usuario or (secretos / "edge_fog_user.txt").read_text(encoding="utf-8").strip()
-        clave = clave or (secretos / "edge_fog_password.txt").read_text(encoding="utf-8").strip()
-    except OSError:
-        return None
-    return (usuario, clave) if usuario and clave else None
+    token = os.environ.get("EDGE_TOKEN")
+    if not token:
+        try:
+            token = (secretos / "edge_token.txt").read_text(encoding="utf-8").strip()
+        except OSError:
+            return None
+    return token or None
 
 
 def cuerpo_multipart(campos: dict[str, str], archivo: Path, nombre_campo: str = "file") -> tuple[bytes, str]:
@@ -72,7 +71,7 @@ class EnvioFog:
         self,
         directorio: Path,
         fog_url: str,
-        credenciales: tuple[str, str] | None,
+        token: str | None,
         *,
         espera_inicial_s: float = 1.0,
         espera_max_s: float = 15.0,
@@ -83,18 +82,17 @@ class EnvioFog:
         Args:
             directorio: carpeta `datos/edge/tocados`.
             fog_url: base de Fog, p. ej. `http://127.0.0.1:8000`.
-            credenciales: usuario maestro y clave, o `None` (no se envía nada y se avisa).
+            token: token de servicio de Edge, o `None` (no se envía nada y se avisa).
             espera_inicial_s: primera espera tras un fallo de Fog.
             espera_max_s: tope de la espera creciente.
             timeout_s: plazo de cada petición HTTP.
         """
         self._dir = directorio
         self._fog = fog_url.rstrip("/")
-        self._credenciales = credenciales
+        self._token = token
         self._espera_inicial_s = espera_inicial_s
         self._espera_max_s = espera_max_s
         self._timeout_s = timeout_s
-        self._token: str | None = None
         self._aviso = threading.Event()
         self._parar = threading.Event()
         self._hilo: threading.Thread | None = None
@@ -103,8 +101,8 @@ class EnvioFog:
 
     def iniciar(self) -> None:
         """Arranca el hilo (y reanuda los pendientes que hayan quedado de una corrida anterior)."""
-        if self._credenciales is None:
-            logger.error("[Envio] Sin credenciales de Fog (EDGE_FOG_USER/EDGE_FOG_PASSWORD o .secrets): no se envía")
+        if self._token is None:
+            logger.error("[Envio] Sin EDGE_TOKEN (ni .secrets/edge_token.txt): no se envía nada a Fog")
         self._parar.clear()
         self._hilo = threading.Thread(target=self._bucle, name="envio-fog", daemon=True)
         self._hilo.start()
@@ -139,7 +137,7 @@ class EnvioFog:
         while not self._parar.is_set():
             self._aviso.wait(timeout=5.0)
             self._aviso.clear()
-            while not self._parar.is_set() and self._credenciales is not None:
+            while not self._parar.is_set() and self._token is not None:
                 pendientes = self.pendientes()
                 if not pendientes:
                     break
@@ -198,32 +196,17 @@ class EnvioFog:
         except _ErrorDefinitivo:
             return None  # 404: todavía no se configuró un combate
 
-    def _iniciar_sesion(self) -> None:
-        usuario, clave = self._credenciales  # type: ignore[misc]
-        cuerpo = json.dumps({"usuario": usuario, "password": clave}).encode()
-        r = self._pedir("POST", "/auth/login", cuerpo, {"Content-Type": "application/json"}, autenticar=False)
-        self._token = r["access_token"]
-
-    def _pedir(self, metodo: str, ruta: str, cuerpo: bytes | None = None, cabeceras=None, autenticar=True) -> dict:
-        for intento in (1, 2):
-            if autenticar and self._token is None:
-                self._iniciar_sesion()
-            h = dict(cabeceras or {})
-            if autenticar:
-                h["Authorization"] = f"Bearer {self._token}"
-            req = urllib.request.Request(self._fog + ruta, data=cuerpo, headers=h, method=metodo)
-            try:
-                with urllib.request.urlopen(req, timeout=self._timeout_s) as r:
-                    return json.loads(r.read() or b"{}")
-            except urllib.error.HTTPError as error:
-                if error.code == 401 and autenticar and intento == 1:
-                    self._token = None  # venció el token: iniciar sesión otra vez
-                    continue
-                detalle = error.read().decode("utf-8", "replace")[:300]
-                if error.code in (400, 404, 413, 422):
-                    raise _ErrorDefinitivo(f"{error.code}: {detalle}") from None
-                raise _ErrorTransitorio(f"{error.code}: {detalle}") from None
-        raise _ErrorTransitorio("no se pudo autenticar")
+    def _pedir(self, metodo: str, ruta: str, cuerpo: bytes | None = None, cabeceras=None) -> dict:
+        h = {**(cabeceras or {}), "X-Edge-Token": self._token or ""}
+        req = urllib.request.Request(self._fog + ruta, data=cuerpo, headers=h, method=metodo)
+        try:
+            with urllib.request.urlopen(req, timeout=self._timeout_s) as r:
+                return json.loads(r.read() or b"{}")
+        except urllib.error.HTTPError as error:
+            detalle = error.read().decode("utf-8", "replace")[:300]
+            if error.code in (400, 404, 413, 422):
+                raise _ErrorDefinitivo(f"{error.code}: {detalle}") from None
+            raise _ErrorTransitorio(f"{error.code}: {detalle}") from None
 
 
 class _ErrorDefinitivo(Exception):

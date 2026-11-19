@@ -579,7 +579,7 @@ Edge recorta el clip del tocado y lo sube solo; Fog lo **preprocesa sin abrir la
 
 | Método y ruta | Qué hace |
 |---|---|
-| `GET /matches/activo` | `{"match_id"}` del último combate configurado (lo usa Edge). 404 si no hay. |
+| `GET /matches/activo` | `{"match_id"}` del **combate activo** del nodo (uno por nodo): `POST /matches/config` lo marca como activo, el siguiente lo reemplaza y `POST /sesion/cerrar` lo limpia; sobrevive a un reinicio de Fog. Edge sube los tocados a ese. 404 si no hay. Acepta el token de servicio de Edge o el JWT. |
 | `POST /matches/{match_id}/tocados` | multipart: `file` (MP4), `t_luz_a_ms`, `t_luz_b_ms` (al menos uno, relativos al primer frame), `fuente` (`favero` o `simulado`, por defecto `favero`), `origen` (opcional, p. ej. `boton`; solo log). Guarda el clip, registra `clip` (`origen='captura'`, `camara='frontal'`) y `tocado`, y responde de inmediato `{tocado_id, match_id, estado: "procesando"}`. 404 combate inexistente; 422 sin luz, fuente inválida o instante fuera del clip; 400 clip ilegible; 413 demasiado grande; 503 sin modelo activo. |
 | `GET /matches/{match_id}/tocados?limite=20` | Los últimos tocados, el más reciente primero: `tocado_id`, `creado_en`, `fuente`, `luz_A/B`, `t_luz_a_ms/b_ms`, `estado` (`procesando`, `listo`, `error`), `tiene_clip`, `revision_id`, `revisado`, `admite_var`, `decision_pista`. **No incluye la sugerencia.** |
 | `POST /tocados/{tocado_id}/revision` | "Solicitar VAR": crea la `revision_var` aceptada y le asigna la clasificación ya calculada (o espera hasta 60 s a que termine). Responde igual que `POST /matches/{id}/clip` (`ClipUploadResponse`). Idempotente. 409 `ventana_var_cerrada` si llegó un tocado posterior; 404 si no existe. |
@@ -608,15 +608,26 @@ Fog reenvía (JWT) estas rutas. Si Edge no responde, 503 con `codigo: "edge_no_d
 | `GET /edge/preview` | `GET /preview.jpg` | Un cuadro JPEG (no es video en vivo); 404 si aún no hay frames |
 | `POST /edge/senal-prueba` | `POST /senal-prueba` | `{luz_a, luz_b}`. **Solo con `MODO_PRUEBA_SENAL=1`**; sin él, 404 en Fog y en Edge. El tocado queda con `fuente='simulado'` y origen `boton` |
 
-Edge envía los tocados con el usuario maestro (`EDGE_FOG_USER`/`EDGE_FOG_PASSWORD` o `.secrets/edge_fog_user.txt` y
-`.secrets/edge_fog_password.txt`); si Fog no responde, el tocado queda `"envio": "pendiente"` en su JSON y Edge reintenta.
+**Autenticación de Edge:** token de servicio (`EDGE_TOKEN`; `.secrets/edge_token.txt` generado al azar con
+`scripts/crear_edge_token.sh`) en la cabecera `X-Edge-Token`. Fog lo acepta **solo desde 127.0.0.1** (IP del socket en
+loopback y sin `X-Forwarded-For`, así una petición remota reenviada por el proxy no puede usarlo) y **solo en dos
+rutas**: `GET /matches/activo` y `POST /matches/{id}/tocados`. En cualquier otra ruta, o con un token inválido, 401. Si
+Fog no responde, el tocado queda `"envio": "pendiente"` en su JSON y Edge reintenta.
 
-### Purga de clips (política de datos personales)
+### Cierre de sesión y purga de clips (política de datos personales)
 
-Ningún clip se conserva después de la sesión. `scripts/purgar_clips.py --confirmar` borra los archivos de clip de Fog
-(`STORAGE_DIR`) y los de Edge (`datos/edge/tocados/`) **después** del respaldo. La base conserva `clip.sha256` y los
-metadatos, así que la cadena de auditoría sigue verificable (`fn_verificar_auditoria()` devuelve 0 filas).
-`respaldar_sesion.sh` excluye `storage/clips` del `.tgz`.
+Ningún clip se conserva después de la sesión. **`POST /sesion/cerrar`** (JWT) cierra la sesión del combate activo:
+
+1. ejecuta el respaldo verificado del evento (`scripts/respaldar_sesion.sh`: dump, `.tgz` **sin clips**, manifiesto y
+   restauración de prueba);
+2. **solo si el respaldo y su verificación pasan**, borra los archivos de clip de esa sesión (los de Fog y los de Edge en
+   `EDGE_TOCADOS_DIR`, por defecto `datos/edge/tocados`) y deja al nodo sin combate activo.
+
+Respuesta 200: `{respaldo, clips_borrados, archivos_edge_borrados}`. 409 `sin_combate_activo` si no hay sesión. **500
+`respaldo_fallido`** si el respaldo falló: no se borró nada ni se cambió el combate activo, el `detail` trae la salida del
+respaldo y se puede reintentar. Como el almacén direcciona los archivos por hash, un archivo que también usa un clip de
+otra sesión no se borra. La base conserva `clip.sha256` y los metadatos, así que la cadena de auditoría sigue verificable
+(`fn_verificar_auditoria()` devuelve 0 filas). `scripts/purgar_clips.py --confirmar` queda como herramienta manual.
 
 ## 5. Fog → Cloud: `fog:features` (Redis Stream)
 
