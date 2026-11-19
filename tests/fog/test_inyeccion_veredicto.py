@@ -8,7 +8,7 @@ import fakeredis
 from fog.application.forward_verdict import ForwardVerdictToClient
 from fog.domain.models import WeaponSide
 from fog.infrastructure.messaging.redis_verdict_subscriber import RedisVerdictSubscriber
-from fog.infrastructure.webrtc.session_registry import SessionRegistry
+from fog.infrastructure.sesiones.session_registry import SessionRegistry
 from tests.fog.fakes import FakeModelos
 
 MODELO = "lstm_6class/run/best_model.pt"

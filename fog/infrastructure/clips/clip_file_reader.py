@@ -1,14 +1,11 @@
 """process_uploaded_clip — lee un clip de video subido por HTTP
-(multipart, POST /matches/{match_id}/clip) frame a frame, igual que
-track_consumer.py hace con los frames que llegan por WebRTC, pero desde
-un archivo en disco en vez de una pista en vivo.
+(multipart, POST /matches/{match_id}/clip) frame a frame desde
+un archivo en disco.
 
 Vive en infrastructure/ (no en application/) porque depende directamente
 de cv2 y del filesystem temporal — application/ (ProcessIncomingMatch) no
 debe saber cómo se obtuvo la TrackedSequence, solo consumirla.
 
-No usa el patrón producer/consumer de track_consumer.py: ese patrón existe
-para solapar la espera de red (track.recv()) con el procesamiento de CPU.
 Acá el archivo ya está completo en disco antes de empezar — no hay espera
 de red que solapar. El cuello de botella es el mismo en ambos casos
 (tiempo de inferencia de YOLO por frame), así que un loop secuencial

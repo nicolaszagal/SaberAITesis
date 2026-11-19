@@ -122,7 +122,7 @@ from fog.infrastructure.persistence.in_memory_match_repository import (  # noqa:
 from fog.infrastructure.persistence.postgres.modelo_version_repository import (  # noqa: E402
     PostgresModeloVersionRepository,
 )
-from fog.infrastructure.webrtc.session_registry import SessionRegistry  # noqa: E402
+from fog.infrastructure.sesiones.session_registry import SessionRegistry  # noqa: E402
 from tests.fog.fakes import (  # noqa: E402
     FakeFeatureExtractor,
     FakeFeaturePublisher,
@@ -324,7 +324,6 @@ def crear_app(database_url, alembic_cfg, tmp_path):
         container.config.min_frames.from_value(3)
         container.config.clip_upload_verdict_timeout_s.from_value(verdict_timeout_s)
         container.config.clip_upload_timeout_s.from_value(clip_timeout_s)
-        container.config.luz_timeout_s.from_value(2.0)
         container.config.clip_max_mb.from_value(clip_max_mb)
 
         container.db_engine.override(

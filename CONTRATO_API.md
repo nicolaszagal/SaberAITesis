@@ -56,22 +56,16 @@ mitigación es la vida corta del token y rotar `AUTH_JWT_SECRET` (invalida todos
   `Authorization` y `Content-Type`, sin credenciales.
 - **Cabeceras** en toda respuesta: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
   `Referrer-Policy: no-referrer`, `Cache-Control: no-store`.
-- Con `ENTORNO=remoto`: `/docs`, `/redoc` y `/openapi.json` responden **404** y
-  `/ws/veredicto/{revision_id}` no existe (WebRTC no se usa en la Validación 1).
+- Con `ENTORNO=remoto`: `/docs`, `/redoc` y `/openapi.json` responden **404**.
 - `/health` solo devuelve `ok` o `error` por componente (`fog`, `redis`, `postgres`).
-- **WebSocket — solo local, temporal.** En remoto (`ENTORNO=remoto`) la ruta
-  `/ws/veredicto/{revision_id}` no existe. En local el navegador no puede enviar
-  `Authorization`, así que se acepta el token en la query
-  (`/ws/veredicto/{revision_id}?token=<jwt>`); sin token válido se cierra con 1008 antes de
-  aceptar. Reemplazarlo por autenticación por primer mensaje queda pendiente y sin release asignado (ver
-  `Tesis/prompts/FUTURO/PENDIENTE_V2_websocket_camara.md`); no usar `?token=` en ningún entorno
-  accesible desde internet.
+- **Sin WebSocket.** Fog no expone ninguna ruta WebSocket; el token solo se acepta en la cabecera
+  `Authorization: Bearer`.
 
 ## 1. Flujo
 
 ```
-Front (Edge)  --WebRTC (oferta SDP + config combate)-->  Fog (API Gateway)
-Front (Edge)  <--WebSocket (veredicto)--------------------  Fog
+Front         --POST /matches/{match_id}/clip (clip + luz)-->  Fog (API Gateway)
+Front         <--respuesta síncrona (sugerencia + revision_id)--  Fog
 Fog           --Redis Stream "fog:features"-------------->  Cloud
 Cloud         --Redis Stream "cloud:verdicts:{revision_id}"-->  Fog
 ```
@@ -81,15 +75,13 @@ Cloud         --Redis Stream "cloud:verdicts:{revision_id}"-->  Fog
 su clasificación y su veredicto) y devuelve su **`revision_id`**. No hay límite de clips por
 combate (ya no existe el 409 por segundo clip). El `revision_id` es la clave de todo lo que
 sigue al clip: el campo de `fog:features`, el stream de veredicto de Cloud
-(`cloud:verdicts:{revision_id}`), `GET /ws/veredicto/{revision_id}` y
+(`cloud:verdicts:{revision_id}`) y
 `POST /revisiones/{revision_id}/veredicto`. Dos clips del mismo combate tienen
 clasificaciones y veredictos independientes. No hay streaming en vivo.
 
 El `match_id` de la API es el **id del combate** (`sabre.combate.id`, uuid) creado en la
 sección 1.1. Un `match_id` de un combate que no fue creado responde **404** en
-`POST /matches/{match_id}/clip` (sin combate por defecto). Para `/webrtc/offer`, el combate
-"existe" al crear su sesión con el `weapon_side_A/B` del body, salvo que el `match_id` ya sea
-un combate configurado: entonces se usa su brazo armado guardado.
+`POST /matches/{match_id}/clip` (sin combate por defecto).
 
 **Vocabulario de clases.** La API usa siempre los nombres del modelo: `AttackA`, `AttackB`,
 `ContrattackA`, `ContrattackB`, `RiposteA`, `RiposteB` (D-06), tanto en las respuestas
@@ -375,86 +367,19 @@ Definiciones (solo las de `docs_claude/protocolo_validacion.md`):
 componente). Redis (PING) y PostgreSQL (`SELECT 1`) tienen 2 s de tiempo límite. **200** si
 todo está `ok`; **503** con el mismo cuerpo si alguno falla.
 
-## 2. Edge → Fog: señalización WebRTC
+## 2. Señalización WebRTC (retirada)
 
-`POST /webrtc/offer`
+`POST /webrtc/offer` y `POST /webrtc/{match_id}/luz` ya no existen (LIMPIEZA01): la
+Validación 1 solo sube clips ya grabados (sección 4) y la luz Favero llega como instantes en el
+cuerpo de ese mismo POST. El flujo WebRTC completo, con sus pruebas y su guía, se conserva en
+la rama `future/edge-favero`. `FAVERO_LUZ_TIMEOUT_S` se retiró con él.
 
-Body (JSON):
-```json
-{
-  "sdp": "<SDP offer>",
-  "type": "offer",
-  "match_id": "uuid-o-string-unico-por-clip",
-  "weapon_side_A": "right",
-  "weapon_side_B": "right"
-}
-```
-
-- `weapon_side_A/B`: `"right"` o `"left"`. Brazo armado de cada tirador. **Obligatorios,
-  sin valor por defecto**: 41/104 clips de test tienen al menos un tirador zurdo
-  (contexto_sabre.md sección 8), así que no se analiza un clip sin brazo declarado. Si falta
-  alguno, `422`. Tipado como enum cerrado (`Literal["right", "left"]`) en todos los esquemas
-  (DEF-13): cualquier otro valor también responde `422` antes de llegar al dominio. Si
-  `match_id` ya fue configurado con `POST /matches/config`, se reutiliza esa sesión y su
-  brazo armado guardado.
-- `match_id`: identificador que el front debe reutilizar al reportar la luz Favero
-  (sección 3). Si no se envía, Fog genera uno y lo devuelve en la respuesta. Este flujo
-  WebRTC no persiste en la base.
-
-Respuesta (JSON):
-```json
-{ "sdp": "<SDP answer>", "type": "answer", "match_id": "...", "revision_id": "..." }
-```
-
-`revision_id` identifica la sesión: es el que se usa para conectar el WebSocket de veredicto
-(sección 7). Este flujo no abre `revision_var`, así que ese `revision_id` es un uuid generado
-por Fog para esta oferta, sin fila en la base ni veredicto registrable.
-
-El front debe abrir un `RTCPeerConnection`, agregar **una sola pista de video** (el clip
-subido, vía `captureStream()` de un `<video>` o equivalente en RN), generar la oferta,
-hacer `POST` a este endpoint, y aplicar la respuesta como `setRemoteDescription`.
-
-Cuando el clip termina de reproducirse y la pista de video llega a su fin (evento
-`ended` del track), Fog interpreta eso como "fin del clip" y dispara el procesamiento.
-No hace falta cerrar el `RTCPeerConnection` explícitamente, pero es buena práctica
-hacerlo tras recibir el veredicto.
-
-## 3. Edge → Fog: señal de luz Favero
-
-`POST /webrtc/{match_id}/luz`
-
-El modelo desplegado (`lstm_6class`) usa la luz Favero como filtro sobre los
-logits antes del softmax (equivalente a `apply_favero_logit_mask` de
-dataset/lstm_6class/evaluate.py) y, si `luz_size > 0` en el `run_config.json`
-del checkpoint activo, también como entrada real del modelo (concatenada
-después del pooling, antes de la capa final) — ver
-`cloud/infrastructure/classifier/lstm6class_adapter.py`. El checkpoint
-desplegado actualmente usa `luz_size=0` (ver sección 8), así que solo se usa
-como filtro. El front debe reportar la luz en cuanto el clip termina de reproducirse,
-**antes** de que Fog dispare la clasificación; si no llega dentro de
-`FAVERO_LUZ_TIMEOUT_S` (2s por defecto, configurable por entorno), Fog continúa sin
-luz (`has_luz_A = has_luz_B = false`).
-
-Body (JSON):
-```json
-{ "has_luz_A": true, "has_luz_B": false }
-```
-
-Respuesta (JSON):
-```json
-{ "match_id": "...", "has_luz_A": true, "has_luz_B": false }
-```
-
-Aplica a la sesión WebRTC más reciente del combate (`POST /webrtc/offer`). `404` si el
-combate no tiene ninguna sesión en curso.
-
-## 4. Edge → Fog: carga de clip sin WebRTC (CU-02, CU-03, CU-05, CU-06)
+## 4. Front → Fog: carga de clip (CU-02, CU-03, CU-05, CU-06)
 
 `POST /matches/{match_id}/clip` (multipart/form-data)
 
-Alternativa a `POST /webrtc/offer` + sección 3: sube un clip ya grabado
-en un solo request, junto con la señal de luz Favero simulada (D-12). A diferencia del
-flujo WebRTC, la respuesta es **síncrona**: corre pose+tracking+features,
+Sube un clip ya grabado en un solo request, junto con la señal de luz Favero simulada
+(D-12). La respuesta es **síncrona**: corre pose+tracking+features,
 publica en Redis y espera el veredicto de Cloud (con timeout,
 `CLIP_UPLOAD_VERDICT_TIMEOUT_S`, 30 s por defecto) antes de responder. Cada llamada abre
 una revisión nueva del combate y devuelve su `revision_id`.
@@ -669,65 +594,34 @@ sin cambios. `ArbitrationPolicyPort` (implementación activa:
 para las reglas de prioridad FIE (t.101-t.106), ver sección 8.
 
 `RedisVerdictSubscriber` (Fog) lee `disponible`: con `"false"` entrega un "no disponible"
-con `motivo_no_disp` (se reenvía por el WebSocket de la sección 7 y se registra en
+con `motivo_no_disp` (se entrega en la respuesta del clip y se registra en
 `clasificacion`); con `"true"` conserva además `probs`, `latencia_inferencia_ms` y `modelo`
 para la auditoría y `atencion` para el razonamiento (campos opcionales: si faltan, se guardan
 sin ellos; sin `atencion`, Fog no calcula la ventana de atención y el resto del razonamiento
 sigue funcionando).
 
 Fog mantiene una tarea de fondo por revisión activa (`revision_id`) que hace `XREAD`
-bloqueante sobre este stream y reenvía el resultado por WebSocket en cuanto llega.
+bloqueante sobre este stream y deja el resultado en la sesión de la revisión en cuanto llega.
 
-## 7. Fog → Front: WebSocket de veredicto
+## 7. Veredicto en el front (sin WebSocket)
 
-> **Autenticación: solo local, temporal.** Con `ENTORNO=remoto` esta ruta no existe. En local
-> exige el JWT en `?token=` (ver sección 0); reemplazarlo por autenticación por primer
-> mensaje queda pendiente y sin release asignado (`Tesis/prompts/FUTURO/PENDIENTE_V2_websocket_camara.md`).
+`GET /ws/veredicto/{revision_id}` ya no existe (LIMPIEZA01). El veredicto de cada clip llega en
+la respuesta síncrona de `POST /matches/{match_id}/clip` (sección 4) y se consulta después con
+`GET /revisiones/{revision_id}`. El WebSocket se conserva en la rama `future/edge-favero`.
 
-`GET /ws/veredicto/{revision_id}`: el WebSocket se identifica por revisión, con el
-`revision_id` que devuelven `POST /matches/{match_id}/clip` o `POST /webrtc/offer`. Si la
-revisión no tiene una sesión activa en Fog (nunca existió, o ya se liberó pasado
-`SESSION_TTL_S` desde que se entregó su resultado), el handshake se rechaza con **404** (si el
-servidor no soporta respuestas de rechazo, se cierra con código 1008 antes de aceptar). Dos
-revisiones del mismo combate tienen WebSockets independientes.
+Si la clasificación no está disponible (DEF-08: pose incompleta, sin lock A/B o clip demasiado
+corto), Fog no publica nada en el stream `fog:features` — nunca le llega a Cloud — y responde
+de inmediato con `disponible=false` y su `motivo`.
 
-Mensaje que Fog envía cuando el veredicto está listo:
-```json
-{
-  "type": "veredicto",
-  "match_id": "...",
-  "revision_id": "...",
-  "fencer": "ROJ",
-  "action": "AttackA",
-  "confidence": 0.74
-}
-```
-
-Si la clasificación no está disponible (DEF-08: pose incompleta, sin
-lock A/B o clip demasiado corto), Fog no publica nada en el stream
-`fog:features` — nunca le llega a Cloud — y responde de inmediato por
-este mismo WebSocket:
-```json
-{
-  "type": "no_disponible",
-  "match_id": "...",
-  "revision_id": "...",
-  "motivo": "pose_incompleta"
-}
-```
-
-`motivo` es uno de `clasificacion.motivo_no_disp`
-(`sabre_ai_schema.sql`): `pose_incompleta`, `confianza_baja`,
-`clase_fuera_mvp`, `timeout`, `sin_senal_favero`, `mensaje_invalido`. Por este WebSocket
-Fog produce `pose_incompleta` (los dos únicos errores que devuelve
-`FeatureExtractorPort.extract` — sin lock A/B, o secuencia bajo
-`min_frames` — mapean a ese motivo) y, en la carga de clip (sección 4), `timeout` cuando
-Cloud no responde a tiempo; `confianza_baja` y
-`clase_fuera_mvp` son responsabilidad de Cloud y no están implementados
-todavía (el umbral de confianza no está documentado). `mensaje_invalido`
-(DEF-09) lo produce Cloud cuando una entrada de `fog:features` no respeta
-el contrato — llega a Fog vía `cloud:verdicts:{revision_id}` (sección 6) y se reenvía
-por este WebSocket como `no_disponible`.
+`motivo` es uno de `clasificacion.motivo_no_disp` (`sabre_ai_schema.sql`): `pose_incompleta`,
+`confianza_baja`, `clase_fuera_mvp`, `timeout`, `sin_senal_favero`, `mensaje_invalido`. Fog
+produce `pose_incompleta` (los dos únicos errores que devuelve `FeatureExtractorPort.extract`
+— sin lock A/B, o secuencia bajo `min_frames` — mapean a ese motivo) y `timeout` cuando Cloud
+no responde a tiempo (sección 4); `confianza_baja` y `clase_fuera_mvp` son responsabilidad de
+Cloud y no están implementados todavía (el umbral de confianza no está documentado).
+`mensaje_invalido` (DEF-09) lo produce Cloud cuando una entrada de `fog:features` no respeta el
+contrato — llega a Fog vía `cloud:verdicts:{revision_id}` (sección 6) y se entrega como
+"no disponible".
 
 Carlos debe traducir `action` (taxonomía interna en inglés, 6 clases) a las etiquetas en
 español que ya usa el front (`actionMapper.ts`, `translateAction`). Esa traducción
@@ -841,8 +735,8 @@ log técnico.
   completas (t.101-t.106, prioridad de ataque/cobertura/etc.) quedan para una versión
   posterior — el puerto está diseñado para admitir esa implementación más rica sin
   tocar el resto del sistema.
-- **Luz Favero**: sin integración física con el aparato real. El front debe simular/
-  capturar la señal y reportarla vía `POST /webrtc/{match_id}/luz` (sección 3).
+- **Luz Favero**: sin integración física con el aparato real. El front envía los instantes de
+  luz en el cuerpo de `POST /matches/{match_id}/clip` (sección 4).
 - **Mapeo A/B ↔ ROJ/VER**: fijo (`A=ROJ`, `B=VER`) para v1, confirmado por Nicolas. No
   configurable por combate todavía.
 - **Persistencia (D03)**: requiere `DATABASE_URL`, `STORAGE_DIR`, filas de `usuario` y
@@ -874,9 +768,7 @@ evidencia del modelo va dentro de `resumen.json` (`modelo`), no en una carpeta a
 
 ## 9. Uso desde el frontend y pendientes
 
-Estado de `SaberAISoftware` (Validación 1). Solo usa REST; **no** abre WebRTC ni el WebSocket
-de veredicto ni reporta la luz por `POST /webrtc/{match_id}/luz` (esas secciones quedan como
-contrato del flujo WebRTC, fuera de la Validación 1):
+Estado de `SaberAISoftware` (Validación 1). Solo usa REST; no hay WebRTC ni WebSocket:
 
 | Pantalla / acción | Endpoint |
 |---|---|
@@ -892,4 +784,4 @@ contrato del flujo WebRTC, fuera de la Validación 1):
 La traducción de `action`/`fencer` a las etiquetas de la interfaz está en la sección 7.
 
 Fuera de alcance (solicitud de cambio del 20/11/2026; trabajo futuro en la rama `future/edge-favero`): captura
-automática por cámara y señal Favero real. Pendiente: consumo del WebSocket de veredicto si se retoma el flujo WebRTC.
+automática por cámara y señal Favero real.

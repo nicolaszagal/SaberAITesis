@@ -1,10 +1,7 @@
 # Imagen de Fog (API de la Validación 1: carga de clip, pose, features y
 # persistencia). Autocontenida: no monta dataset/ en el uso normal.
 #
-# Red: en la Validación 1 no se usa WebRTC (docs_claude/contexto_sabre.md
-# sección 8), así que Fog corre en red puente con el puerto 8001 publicado.
-# La red de host solo haría falta para un posible perfil v2 con WebRTC
-# (aiortc elige al azar sus puertos UDP de ICE, aiortc/aiortc#487).
+# Red: Fog corre en red puente con el puerto 8001 publicado.
 FROM python:3.12-slim
 
 WORKDIR /app/backend

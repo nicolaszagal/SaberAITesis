@@ -1,4 +1,4 @@
-"""Router HTTP/WebSocket de Fog. Documentado para Swagger (summary,
+"""Router HTTP de Fog. Documentado para Swagger (summary,
 description, response_model, tags) por pedido explícito de Nicolas. La
 resolución de dependencias usa dependency_injector (Provide[...] + @inject,
 ver fog/composition.py) — wiring registrado en fog/main.py.
@@ -14,7 +14,6 @@ from typing import Any
 from datetime import datetime, timezone
 from concurrent.futures import Executor
 
-from aiortc import RTCPeerConnection, RTCSessionDescription
 from dependency_injector.wiring import Provide, inject
 from fastapi import (
     APIRouter,
@@ -25,8 +24,6 @@ from fastapi import (
     Query,
     Response,
     UploadFile,
-    WebSocket,
-    WebSocketDisconnect,
 )
 from fastapi.responses import JSONResponse
 
@@ -79,13 +76,9 @@ from fog.infrastructure.api.schemas import (
     CombateResponse,
     EventoResponse,
     HealthResponse,
-    LuzAck,
-    LuzRequest,
     MatchConfigRequest,
     MatchConfigResponse,
     ModeloActivoResponse,
-    OfferRequest,
-    OfferResponse,
     PoseResponse,
     RazonamientoResponse,
     RegistroAlteradoResponse,
@@ -109,20 +102,17 @@ from fog.infrastructure.clips.clip_file_reader import (
     TocadoFueraDelClipError,
     process_uploaded_clip,
 )
-from fog.infrastructure.webrtc.session_registry import SessionRegistry
-from fog.infrastructure.webrtc.track_consumer import consume_track
+from fog.infrastructure.sesiones.session_registry import SessionRegistry
 from fog.ports.file_storage import FileStoragePort
 from fog.ports.pose_estimator import PoseEstimatorPort
 from fog.ports.unidad_de_trabajo import UnidadDeTrabajoPort
 from shared import tiempos
 
 # Toda ruta exige `Authorization: Bearer` (DEPLOY05), salvo /health y
-# /auth/login. `router_publico` solo contiene /health. El WebSocket va en su
-# propio router para poder omitirlo en el despliegue remoto (ver app.py).
+# /auth/login. `router_publico` solo contiene /health.
 log = logging.getLogger("fog.api")
 router = APIRouter(dependencies=[Depends(exigir_autenticacion)])
 router_publico = APIRouter()
-router_ws = APIRouter(dependencies=[Depends(exigir_autenticacion)])
 
 
 async def _combate_o_none(match_id: str, uow: UnidadDeTrabajoPort) -> Combate | None:
@@ -202,9 +192,9 @@ async def listar_usuarios(
         "El brazo armado es obligatorio, sin valor por defecto (RF-07): sin "
         "él responde 422 y no crea nada. `evento_id` y `arbitro_id` deben "
         "existir (404 si no). El `match_id` devuelto es el id del combate y "
-        "es el que exigen /matches/{match_id}/clip y /webrtc/{match_id}/luz. "
-        "Un combate admite N revisiones (una por clip): el veredicto y el "
-        "WebSocket se identifican por el `revision_id` que devuelve cada clip."
+        "es el que exige /matches/{match_id}/clip. "
+        "Un combate admite N revisiones (una por clip): el veredicto se "
+        "identifica por el `revision_id` que devuelve cada clip."
     ),
     responses={404: {"description": "El evento o el árbitro no existen."}},
 )
@@ -272,103 +262,6 @@ async def obtener_combate(
         alias_B=c.alias_b,
         weapon_side_B=lado_de_brazo(c.brazo_b).value,
     )
-
-
-@router.post(
-    "/webrtc/offer",
-    response_model=OfferResponse,
-    tags=["webrtc"],
-    summary="Inicia un combate vía WebRTC",
-    description=(
-        "Recibe la oferta SDP de Edge, crea la sesión del combate (con "
-        "weapon_side_A/B obligatorios, sin valor por defecto), arma la "
-        "RTCPeerConnection y devuelve la respuesta SDP junto con el "
-        "`revision_id` de la sesión (un `uuid` que este flujo genera y no "
-        "persiste en la base). Tras esto, Fog consume la pista de video, "
-        "extrae features (192-dim) y las publica en Redis para Cloud. El "
-        "veredicto llega luego por GET /ws/veredicto/{revision_id}."
-    ),
-)
-@inject
-async def webrtc_offer(
-    body: OfferRequest,
-    sessions: SessionRegistry = Depends(Provide[Container.sessions]),
-    pose_estimator: PoseEstimatorPort = Depends(Provide[Container.pose_estimator]),
-    process_match: ProcessIncomingMatch = Depends(Provide[Container.process_match]),
-    forward_verdict: ForwardVerdictToClient = Depends(Provide[Container.forward_verdict]),
-    executor: Executor = Depends(Provide[Container.executor]),
-    uow: UnidadDeTrabajoPort = Depends(Provide[Container.unidad_de_trabajo]),
-    luz_timeout_s: float = Depends(Provide[Container.config.luz_timeout_s]),
-) -> OfferResponse:
-    match_id = body.match_id or str(uuid.uuid4())
-    # Si match_id ya fue configurado vía POST /matches/config, se usa el
-    # brazo armado guardado en el combate en vez de los campos de este body;
-    # si no, este body fija el brazo armado de la sesión.
-    combate = await _combate_o_none(match_id, uow)
-    if combate is not None:
-        weapon_side_a, weapon_side_b = lado_de_brazo(combate.brazo_a), lado_de_brazo(combate.brazo_b)
-    else:
-        weapon_side_a, weapon_side_b = WeaponSide(body.weapon_side_A), WeaponSide(body.weapon_side_B)
-    # Este flujo no abre `revision_var`: el revision_id solo identifica la
-    # sesión (stream de veredicto y WebSocket).
-    revision_id = str(uuid.uuid4())
-    session = sessions.create(match_id, revision_id, weapon_side_a, weapon_side_b)
-
-    pc = RTCPeerConnection()
-    session.pc = pc
-
-    @pc.on("track")
-    def on_track(track):
-        if track.kind == "video":
-            asyncio.ensure_future(
-                consume_track(track, session, pose_estimator, process_match, executor, luz_timeout_s)
-            )
-
-    offer = RTCSessionDescription(sdp=body.sdp, type=body.type)
-    await pc.setRemoteDescription(offer)
-
-    answer = await pc.createAnswer()
-    await pc.setLocalDescription(answer)
-
-    asyncio.ensure_future(forward_verdict.execute(revision_id))
-
-    return OfferResponse(
-        sdp=pc.localDescription.sdp,
-        type=pc.localDescription.type,
-        match_id=match_id,
-        revision_id=revision_id,
-    )
-
-
-@router.post(
-    "/webrtc/{match_id}/luz",
-    response_model=LuzAck,
-    tags=["webrtc"],
-    summary="Reporta la señal de luz Favero de un combate",
-    description=(
-        "Edge envía este endpoint cuando detecta el cierre de circuito RJ11 "
-        "de alguna de las luces Favero. Si no llega antes de que termine el "
-        "clip, Fog procesa con luz 'apagada' en ambos lados tras un timeout "
-        "(ver shared.config.FAVERO_LUZ_TIMEOUT_S). Aplica a la sesión "
-        "WebRTC más reciente del combate (POST /webrtc/offer); 404 si el "
-        "combate no tiene ninguna."
-    ),
-    responses={404: {"description": "El combate no tiene una sesión WebRTC en curso."}},
-)
-@inject
-async def webrtc_luz(
-    match_id: str,
-    body: LuzRequest,
-    sessions: SessionRegistry = Depends(Provide[Container.sessions]),
-) -> LuzAck:
-    session = sessions.latest_for_match(match_id)
-    if session is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"el combate {match_id!r} no tiene una sesión WebRTC en curso (POST /webrtc/offer)",
-        )
-    session.set_luz(LuzSignal(has_luz_a=body.has_luz_A, has_luz_b=body.has_luz_B))
-    return LuzAck(match_id=match_id, has_luz_A=body.has_luz_A, has_luz_B=body.has_luz_B)
 
 
 def _desplazar_instantes(instantes: InstantesLuz, desfase_ms: int) -> InstantesLuz:
@@ -448,7 +341,7 @@ async def cerrar_sesion(
     tags=["matches"],
     summary="Sube un clip con tocado simulado y abre la revisión VAR (CU-02, CU-03, CU-05)",
     description=(
-        "Alternativa a POST /webrtc/offer para subir un clip ya grabado. "
+        "Sube un clip ya grabado. "
         "Exige un combate creado con POST /matches/config (404 si no), "
         "`t_luz_a_ms` y/o `t_luz_b_ms` (al menos uno, CU-03 flujo 2a; 422 si "
         "no hay ninguno). Cada instante debe estar entre 0 y la duración del "
@@ -464,7 +357,7 @@ async def cerrar_sesion(
         "contra el modelo activo, con los keypoints crudos en .npz y la "
         "latencia desde la recepción del clip. Un combate admite N clips: "
         "cada uno abre su propia revisión y devuelve su `revision_id`, con "
-        "el que se registra el veredicto y se abre el WebSocket. 400 si el archivo no abre "
+        "el que se registra el veredicto. 400 si el archivo no abre "
         "como video o tiene menos de MIN_FRAMES frames; 413 si supera "
         "CLIP_MAX_MB (DEF-13); 503 si no hay versión de modelo activa. Con "
         "pose incompleta (DEF-08) responde de inmediato con "
@@ -1116,67 +1009,3 @@ async def health(
         )
     }
     return JSONResponse(cuerpo, status_code=200 if estado.ok else 503)
-
-
-@router_ws.websocket("/ws/veredicto/{revision_id}")
-@inject
-async def ws_veredicto(
-    websocket: WebSocket,
-    revision_id: str,
-    sessions: SessionRegistry = Depends(Provide[Container.sessions]),
-):
-    """No aparece en Swagger (las rutas WebSocket no son parte de OpenAPI),
-    documentado en CONTRATO_API.md y en VerdictMessage/NoDisponibleMessage
-    (schemas.py). Envía un único mensaje JSON —veredicto o no_disponible—
-    en cuanto el resultado está disponible (DEF-08). Se identifica por
-    `revision_id`; si la revisión no tiene una sesión activa en Fog,
-    rechaza el handshake con 404."""
-    session = sessions.get(revision_id)
-    if session is None:
-        if "websocket.http.response" in websocket.scope.get("extensions", {}):
-            await websocket.send_denial_response(
-                JSONResponse(
-                    status_code=404,
-                    content={"detail": f"la revisión {revision_id!r} no tiene una sesión activa"},
-                )
-            )
-        else:
-            # El servidor no soporta respuestas HTTP de rechazo: se cierra con
-            # 1008 (violación de política) antes de aceptar.
-            await websocket.close(code=1008)
-        return
-
-    await websocket.accept()
-    session.ws = websocket
-
-    try:
-        if session.verdict is not None:
-            # Conexión tardía: el veredicto ya llegó (ForwardVerdictToClient
-            # no pudo enviarlo porque session.ws aún no existía). Lo mandamos
-            # nosotros, una sola vez.
-            await websocket.send_json(session.verdict.to_ws_message())
-        elif session.unavailable is not None:
-            # Conexión tardía, resultado no disponible (mismo caso que
-            # arriba pero desde ProcessIncomingMatch en vez de
-            # ForwardVerdictToClient).
-            await websocket.send_json(session.unavailable.to_ws_message())
-        else:
-            # Conexión temprana: session.ws ya quedó asignado arriba, así que
-            # cuando el resultado llegue será ForwardVerdictToClient o
-            # ProcessIncomingMatch (tareas en segundo plano) quien lo envíe.
-            # Aquí solo mantenemos la conexión abierta hasta entonces —
-            # enviar también desde aquí duplicaría el mensaje y rompía el
-            # socket (RuntimeError: "Cannot call send once a close message
-            # has been sent").
-            pending = {
-                asyncio.ensure_future(session.verdict_event.wait()),
-                asyncio.ensure_future(session.unavailable_event.wait()),
-            }
-            try:
-                await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
-            finally:
-                for task in pending:
-                    if not task.done():
-                        task.cancel()
-    except WebSocketDisconnect:
-        pass

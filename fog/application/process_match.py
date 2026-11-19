@@ -2,7 +2,7 @@
 calculada (pose+tracking corrido frame a frame por track_consumer.py
 mientras llegaba el video, ver PoseTrackingSession), extrae features y
 publica hacia Cloud. Orquesta los puertos sin saber nada de ultralytics,
-redis ni aiortc (eso vive en infrastructure/).
+redis (eso vive en infrastructure/).
 
 Antes este caso de uso recibía la lista cruda de frames y llamaba a
 PoseEstimatorPort.detect_and_track sobre el clip completo (100% serial:
@@ -17,8 +17,7 @@ UnavailableResult directo a la sesión (SessionRegistry) en vez de
 publicar en Redis — Cloud nunca se entera de la revisión y no hay
 veredicto que esperar. Cada revisión (un clip) tiene su propia sesión,
 identificada por `revision_id`. Sigue el mismo patrón que ForwardVerdictToClient (también en
-application/, también depende de SessionRegistry para poder empujar el
-mensaje por WebSocket apenas está disponible).
+application/, también depende de SessionRegistry).
 """
 
 from __future__ import annotations
@@ -36,7 +35,7 @@ from fog.domain.models import (
     UnavailableResult,
     WeaponSide,
 )
-from fog.infrastructure.webrtc.session_registry import SessionRegistry
+from fog.infrastructure.sesiones.session_registry import SessionRegistry
 from fog.ports.feature_extractor import FeatureExtractorPort
 from fog.ports.feature_publisher import FeatureStreamPublisherPort
 from fog.ports.match_repository import MatchRepositoryPort
@@ -96,8 +95,6 @@ class ProcessIncomingMatch:
             session = self._sessions.get(revision_id)
             if session is not None:
                 await session.set_unavailable(result)
-                if session.ws is not None:
-                    await session.ws.send_json(result.to_ws_message())
             return result
 
         log.info("[%s] features extraídas: %s", revision_id, features.stats.get("seq_shape"))

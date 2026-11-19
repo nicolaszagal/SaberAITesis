@@ -44,11 +44,10 @@ def test_usuarios_documenta_el_filtro_de_rol():
     assert opciones == ["arbitro", "operador", "administrador"]
 
 
-def test_las_respuestas_del_clip_y_de_la_oferta_incluyen_revision_id():
+def test_las_respuestas_del_clip_y_del_veredicto_incluyen_revision_id():
     schemas = _openapi()["components"]["schemas"]
 
     assert "revision_id" in schemas["ClipUploadResponse"]["properties"]
-    assert "revision_id" in schemas["OfferResponse"]["properties"]
     assert "revision_id" in schemas["VeredictoResponse"]["properties"]
 
 

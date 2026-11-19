@@ -1,14 +1,11 @@
 # Subconjunto de requirements.txt usado por Dockerfile.fog. No hay
 # generación automática: si actualizás una versión en requirements.txt,
 # replicá el cambio acá. Cloud no necesita nada de este archivo — ver
-# requirements-cloud.txt (Cloud no usa fastapi/aiortc/opencv/ultralytics).
 
 fastapi==0.138.0
 uvicorn==0.49.0
 pydantic==2.13.4
 
-aiortc==1.14.0
-av==16.1.0
 
 redis==8.0.0
 

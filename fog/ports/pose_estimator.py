@@ -4,7 +4,7 @@ Cambiado de "lista de frames -> TrackedSequence" a un patrón de sesión
 streaming (start_session/add_frame/finish) por dos razones a la vez
 (decisión de Nicolas, 2026-06-22, de no diferir el fix de concurrencia):
 
-1. Permite procesar cada frame en cuanto llega por WebRTC, en vez de
+1. Permite procesar cada frame en cuanto se lee, en vez de
    esperar a que el clip completo termine para recién ahí arrancar
    pose+features (antes 100% serial: tiempo real del clip + tiempo de
    CPU de pose+features, uno después del otro).

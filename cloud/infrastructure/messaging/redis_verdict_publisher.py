@@ -43,7 +43,6 @@ class RedisVerdictPublisher(VerdictPublisherPort):
 
         stream_key = f"{config.VERDICT_STREAM_PREFIX}{verdict.revision_id}"
         await self._client.xadd(stream_key, fields)
-        # DEF-16: sin EXPIRE, una revisión sin consumidor (Fog caído, o
-        # nadie llamó a GET /ws/veredicto/{revision_id}) deja el stream en
+        # DEF-16: sin EXPIRE, una revisión sin consumidor (Fog caído) deja el stream en
         # Redis para siempre.
         await self._client.expire(stream_key, config.VERDICT_STREAM_TTL_S)

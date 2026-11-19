@@ -98,7 +98,7 @@ from fog.infrastructure.persistence.postgres.veredicto_repository import (
 )
 from fog.infrastructure.pose.yolo_pose_adapter import YoloV8PoseAdapter
 from fog.infrastructure.storage.local_file_storage import LocalFileStorage
-from fog.infrastructure.webrtc.session_registry import SessionRegistry
+from fog.infrastructure.sesiones.session_registry import SessionRegistry
 from shared import config as shared_config
 
 
@@ -149,7 +149,7 @@ class Container(containers.DeclarativeContainer):
         profiles_path=config.feature_preprocessing_profiles_path,
     )
 
-    # Match (agregado runtime de una sesión WebRTC/clip: weapon_side_a/b, luz,
+    # Match (agregado runtime de una sesión de clip: weapon_side_a/b, luz,
     # verdict) no tiene tabla propia y no lleva evento_id/tirador/arbitro_id
     # de `sabre.combate` — D02 lo deja como está a propósito. D03 decide, al
     # implementar CU-01, cómo se relaciona con CombateRepositoryPort (abajo).

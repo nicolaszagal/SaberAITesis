@@ -21,61 +21,10 @@ ClaseFinalLiteral = Literal[
 ]
 
 
-class OfferRequest(BaseModel):
-    sdp: str = Field(..., description="SDP de la oferta WebRTC generada por Edge.")
-    type: str = Field(..., description="Tipo de mensaje SDP, normalmente 'offer'.")
-    match_id: str | None = Field(
-        None, description="ID del combate. Si se omite, Fog genera uno nuevo (uuid4)."
-    )
-    weapon_side_A: WeaponSideLiteral = Field(
-        ..., description="Brazo armado del tirador A: 'right' o 'left'. Obligatorio, sin valor por defecto."
-    )
-    weapon_side_B: WeaponSideLiteral = Field(
-        ..., description="Brazo armado del tirador B: 'right' o 'left'. Obligatorio, sin valor por defecto."
-    )
-
-    model_config = {
-        "json_schema_extra": {
-            "example": {
-                "sdp": "v=0\r\no=- ...",
-                "type": "offer",
-                "match_id": None,
-                "weapon_side_A": "right",
-                "weapon_side_B": "left",
-            }
-        }
-    }
-
-
-class OfferResponse(BaseModel):
-    sdp: str = Field(..., description="SDP de la respuesta generada por Fog.")
-    type: str = Field(..., description="Tipo de mensaje SDP, normalmente 'answer'.")
-    match_id: str = Field(..., description="ID del combate, generado por Fog si no se envió uno.")
-    revision_id: str = Field(
-        ...,
-        description=(
-            "Identifica la sesión: es el que se usa en GET /ws/veredicto/{revision_id}. "
-            "Este flujo no abre `revision_var`, así que no es una fila de la base."
-        ),
-    )
-
-
-class LuzRequest(BaseModel):
-    has_luz_A: bool = Field(..., description="True si la luz Favero del tirador A se encendió.")
-    has_luz_B: bool = Field(..., description="True si la luz Favero del tirador B se encendió.")
-
-
-class LuzAck(BaseModel):
-    match_id: str
-    has_luz_A: bool
-    has_luz_B: bool
-
-
 class MatchConfigRequest(BaseModel):
     """CU-01 (F-039, RF-07): configura el combate. Crea los dos tiradores y
     el combate en la base y devuelve el `match_id` (= id del combate) que
-    Edge reutiliza en /webrtc/offer, /matches/{match_id}/clip y
-    /webrtc/{match_id}/luz. El veredicto y el WebSocket usan el
+    el front reutiliza en /matches/{match_id}/clip. El veredicto usa el
     `revision_id` de cada clip."""
 
     evento_id: uuid.UUID = Field(..., description="Evento existente (`sabre.evento`) al que pertenece el combate.")
@@ -177,8 +126,7 @@ class VeredictoResponse(BaseModel):
 
 
 class ClipUploadResponse(BaseModel):
-    """Respuesta de POST /matches/{match_id}/clip. A diferencia del flujo
-    WebRTC (veredicto async por WebSocket), este endpoint corre el
+    """Respuesta de POST /matches/{match_id}/clip. Este endpoint corre el
     pipeline completo (pose+features+Redis+Cloud) y espera el veredicto
     de forma síncrona antes de responder, hasta
     shared.config.CLIP_UPLOAD_VERDICT_TIMEOUT_S.
@@ -195,7 +143,7 @@ class ClipUploadResponse(BaseModel):
         ...,
         description=(
             "Revisión abierta por este clip. Es el identificador de "
-            "POST /revisiones/{revision_id}/veredicto y de GET /ws/veredicto/{revision_id}."
+            "POST /revisiones/{revision_id}/veredicto."
         ),
     )
     has_luz_A: bool = Field(
@@ -234,44 +182,6 @@ class ClipUploadResponse(BaseModel):
     fencer: str | None = Field(None, description="'ROJ' o 'VER'. None si disponible=False.")
     action: str | None = Field(None, description="Clase de acción. None si disponible=False.")
     confidence: float | None = Field(None, description="Confianza 0-1. None si disponible=False.")
-
-
-class VerdictMessage(BaseModel):
-    """Forma del mensaje que Fog envía por el WebSocket
-    GET /ws/veredicto/{revision_id}. No es un endpoint REST — se documenta
-    aquí solo como referencia de contrato para Swagger/lectores del código."""
-
-    type: str = Field("veredicto", description="Siempre 'veredicto'.")
-    match_id: str
-    revision_id: str
-    fencer: str = Field(..., description="'ROJ' o 'VER', ver shared.config.FENCER_COLOR.")
-    action: str = Field(
-        ...,
-        description=(
-            "Clase de acción: AttackA, AttackB, ContrattackA, ContrattackB, "
-            "RiposteA o RiposteB."
-        ),
-    )
-    confidence: float = Field(..., description="Confianza softmax de la clase ganadora, 0-1.")
-
-
-class NoDisponibleMessage(BaseModel):
-    """Forma del mensaje que Fog envía por el WebSocket
-    GET /ws/veredicto/{revision_id} cuando la clasificación no está
-    disponible (DEF-08). No es un endpoint REST — se documenta aquí solo
-    como referencia de contrato para Swagger/lectores del código."""
-
-    type: str = Field("no_disponible", description="Siempre 'no_disponible'.")
-    match_id: str
-    revision_id: str
-    motivo: str = Field(
-        ...,
-        description=(
-            "Uno de clasificacion.motivo_no_disp (sabre_ai_schema.sql): "
-            "'pose_incompleta', 'confianza_baja', 'clase_fuera_mvp', "
-            "'timeout', 'sin_senal_favero'."
-        ),
-    )
 
 
 class RevisionResumenResponse(BaseModel):

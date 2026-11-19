@@ -206,23 +206,6 @@ def test_upload_clip_marks_session_closed_when_cloud_times_out(crear_app):
     assert session.unavailable.motivo.value == "timeout"
 
 
-def test_websocket_tardio_recibe_el_veredicto_de_la_revision(crear_app):
-    app = crear_app(subscriber=FakeVerdictSubscriber(
-        VerdictView(match_id="x", revision_id="x", fencer="ROJ", action="AttackA", confidence=0.9, modelo="lstm_6class/run/best_model.pt")
-    ))
-    match_id = app.configurar()
-    resp = app.subir_clip(match_id)
-    assert resp.status_code == 200
-    revision_id = resp.json()["revision_id"]
-
-    with app.client.websocket_connect(f"/ws/veredicto/{revision_id}") as ws:
-        mensaje = ws.receive_json()
-
-    assert mensaje["type"] == "veredicto"
-    assert mensaje["action"] == "AttackA"
-    assert mensaje["revision_id"] == revision_id
-
-
 class _SubscriberPorRevision(VerdictStreamSubscriberPort):
     """Cloud doblado: responde según el `revision_id` que recibe."""
 
@@ -233,7 +216,7 @@ class _SubscriberPorRevision(VerdictStreamSubscriberPort):
         return VerdictView(match_id="m", revision_id=revision_id, **self._pendientes.pop(0))
 
 
-def test_dos_clips_del_mismo_combate_tienen_websocket_y_veredicto_independientes(crear_app):
+def test_dos_clips_del_mismo_combate_tienen_veredicto_independiente(crear_app):
     app = crear_app(subscriber=_SubscriberPorRevision([
         dict(fencer="ROJ", action="AttackA", confidence=0.9),
         dict(fencer="VER", action="RiposteB", confidence=0.6),
@@ -247,12 +230,6 @@ def test_dos_clips_del_mismo_combate_tienen_websocket_y_veredicto_independientes
     rev_1, rev_2 = primero.json()["revision_id"], segundo.json()["revision_id"]
     assert rev_1 != rev_2
     assert (primero.json()["action"], segundo.json()["action"]) == ("AttackA", "RiposteB")
-    with app.client.websocket_connect(f"/ws/veredicto/{rev_2}") as ws:
-        mensaje_2 = ws.receive_json()
-    with app.client.websocket_connect(f"/ws/veredicto/{rev_1}") as ws:
-        mensaje_1 = ws.receive_json()
-    assert (mensaje_1["revision_id"], mensaje_1["action"]) == (rev_1, "AttackA")
-    assert (mensaje_2["revision_id"], mensaje_2["action"]) == (rev_2, "RiposteB")
 
 
 def test_publica_en_redis_con_el_revision_id_de_cada_clip(crear_app):

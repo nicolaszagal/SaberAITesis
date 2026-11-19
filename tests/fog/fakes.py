@@ -1,5 +1,5 @@
 """Fakes de los puertos de Fog, para tests unitarios de application/ sin
-tocar ultralytics, redis ni aiortc."""
+tocar ultralytics, redis."""
 
 from __future__ import annotations
 

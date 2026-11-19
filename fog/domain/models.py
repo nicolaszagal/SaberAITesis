@@ -115,9 +115,8 @@ class ExtractedFeatures:
 @dataclass(frozen=True)
 class LuzSignal:
     """Señal de luz Favero a nivel de clip. Ver Fase 1 del plan: hoy llega
-    por anotación manual en el dataset; en producción llegará vía RJ11
-    (Edge, fuera de alcance de este backend) a través del endpoint
-    POST /webrtc/{match_id}/luz."""
+    por anotación manual en el dataset; en el clip subido llega como instantes
+    de luz en el cuerpo de POST /matches/{match_id}/clip."""
 
     has_luz_a: bool
     has_luz_b: bool
@@ -178,7 +177,7 @@ class UnavailableResult:
     """Resultado "no disponible" (RF-13, CU-06 flujo alterno 1a): Fog no
     pudo extraer features válidas y no llega a publicar en Redis. A
     diferencia de VerdictView, nunca sale de Fog vía Redis — se entrega
-    directo a la sesión (WebSocket o respuesta síncrona de
+    directo a la sesión (respuesta síncrona de
     POST /matches/{match_id}/clip). Se identifica por `revision_id`: un
     combate admite N revisiones."""
 
@@ -186,19 +185,10 @@ class UnavailableResult:
     revision_id: str
     motivo: MotivoNoDisponible
 
-    def to_ws_message(self) -> dict:
-        return {
-            "type": "no_disponible",
-            "match_id": self.match_id,
-            "revision_id": self.revision_id,
-            "motivo": self.motivo.value,
-        }
-
-
 @dataclass
 class VerdictView:
     """Veredicto tal como lo recibe Fog desde Cloud, listo para reenviar al
-    front por WebSocket. No reusa el `Verdict` de cloud/domain (bounded
+    front en la respuesta. No reusa el `Verdict` de cloud/domain (bounded
     contexts separados) — solo modela los campos que Fog necesita reenviar."""
 
     match_id: str
@@ -214,22 +204,12 @@ class VerdictView:
     # Pesos de atención del BiLSTM por frame (F-035); None si Cloud no los envió.
     atencion: list[float] | None = None
 
-    def to_ws_message(self) -> dict:
-        return {
-            "type": "veredicto",
-            "match_id": self.match_id,
-            "revision_id": self.revision_id,
-            "fencer": self.fencer,
-            "action": self.action,
-            "confidence": self.confidence,
-        }
-
 
 @dataclass
 class Match:
     """Entidad agregada persistida por MatchRepositoryPort. No incluye
-    buffers de frames, websockets ni eventos de sincronización — eso es
-    estado de runtime que vive en infrastructure/webrtc (ver
+    buffers de frames ni eventos de sincronización — eso es
+    estado de runtime que vive en infrastructure/sesiones (ver
     SessionRegistry), no en el dominio."""
 
     match_id: str

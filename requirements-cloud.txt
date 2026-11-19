@@ -1,6 +1,6 @@
 # Subconjunto de requirements.txt usado por Dockerfile.cloud. Cloud es un
 # worker puro (consume Redis Streams, corre el LSTM, publica veredicto) —
-# no necesita fastapi, aiortc, av, opencv-python, ultralytics ni lap (todo
+# no necesita fastapi, opencv-python, ultralytics ni lap (todo
 # eso es exclusivo de Fog, ver requirements-fog.txt). torch se instala por
 # separado en el Dockerfile (wheel CPU vía índice oficial de PyTorch).
 

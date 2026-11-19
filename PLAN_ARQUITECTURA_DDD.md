@@ -1,5 +1,9 @@
 # Plan de refactor a DDD/SOLID — Fog + Cloud
 
+> **Nota (LIMPIEZA01):** este plan es histórico. El flujo WebRTC (`/webrtc/offer`, `/webrtc/{match_id}/luz`,
+> `/ws/veredicto`, `AiortcFrameSource`) ya no está en `main`; vive en la rama `future/edge-favero`.
+
+
 Requisitos y plan de trabajo previo al desarrollo, levantados por entrevista con Nicolas
 (2026-06-20). No incluye código — es la base para el refactor que sigue.
 

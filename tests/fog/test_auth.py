@@ -203,37 +203,7 @@ def test_ninguna_ruta_responde_sin_token_salvo_health_y_login(crear_app):
                 resp = app.client.request(metodo, url)
                 assert resp.status_code == 401, f"{metodo} {ruta.path} → {resp.status_code}"
                 revisadas += 1
-        elif isinstance(ruta, APIWebSocketRoute):
-            from starlette.websockets import WebSocketDisconnect
-
-            url = ruta.path.replace("{", "").replace("}", "")
-            with pytest.raises(WebSocketDisconnect) as exc:
-                with app.client.websocket_connect(url):
-                    pass
-            assert exc.value.code == 1008, ruta.path
-            revisadas += 1
     assert revisadas >= 15  # el recorrido no quedó vacío
-
-
-def test_websocket_acepta_token_en_query_y_rechaza_sin_token(crear_app):
-    app = crear_app(autenticado=False)
-    from starlette.websockets import WebSocketDisconnect
-
-    token = encabezado_auth(app.container)["Authorization"].split()[1]
-
-    # Con token válido pasa la autenticación y llega a la lógica de la ruta:
-    # sin sesión activa rechaza el handshake con 404 (no con 1008 de auth).
-    with pytest.raises(Exception) as sin_sesion:
-        with app.client.websocket_connect(f"/ws/veredicto/x?token={token}"):
-            pass
-    with pytest.raises(WebSocketDisconnect) as sin_token:
-        with app.client.websocket_connect("/ws/veredicto/x?token=malo"):
-            pass
-    assert getattr(sin_sesion.value, "status_code", None) == 404
-    assert sin_token.value.code == 1008
-
-
-# --- Token de proxy --------------------------------------------------------
 
 
 def test_con_token_de_proxy_sin_cabecera_da_403(crear_app):
@@ -384,8 +354,9 @@ def test_docs_disponibles_en_local_y_404_en_remoto(crear_app):
         assert remoto.client.get(ruta).status_code == 404, ruta
 
 
-def test_websocket_no_existe_en_remoto(crear_app):
-    app = crear_app(entorno="remoto")
+@pytest.mark.parametrize("entorno", ["local", "remoto"])
+def test_no_hay_rutas_websocket(crear_app, entorno):
+    app = crear_app(entorno=entorno)
 
     assert not any(isinstance(r, APIWebSocketRoute) for r in _rutas(app.fastapi))
 

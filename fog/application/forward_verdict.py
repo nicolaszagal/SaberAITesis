@@ -1,7 +1,7 @@
 """ForwardVerdictToClient — caso de uso: espera el veredicto de Cloud
-(VerdictStreamSubscriberPort) y lo guarda/reenvía al front por WebSocket si
-ya está conectado. Mirror de `_wait_for_verdict` del fog/main.py anterior,
-ahora desacoplado de redis.asyncio directo.
+(VerdictStreamSubscriberPort) y lo guarda en la sesión de la revisión.
+Mirror de `_wait_for_verdict` del fog/main.py anterior, ahora desacoplado
+de redis.asyncio directo.
 
 SEC02: solo se acepta un resultado esperado. Se descarta (con aviso en el log
 técnico, sin tocar la base) el de una revisión sin sesión pendiente y el
@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 
 from fog.domain.models import UnavailableResult, VerdictView
-from fog.infrastructure.webrtc.session_registry import SessionRegistry
+from fog.infrastructure.sesiones.session_registry import SessionRegistry
 from fog.ports.modelo_version_repository import ModeloVersionRepositoryPort
 from fog.ports.verdict_subscriber import VerdictStreamSubscriberPort
 
@@ -100,5 +100,3 @@ class ForwardVerdictToClient:
             await session.set_unavailable(resultado)
         else:
             await session.set_verdict(resultado)
-        if session.ws is not None:
-            await session.ws.send_json(resultado.to_ws_message())

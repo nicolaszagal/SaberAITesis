@@ -2,18 +2,16 @@
 clips de test tienen al menos un tirador zurdo, así que no se analiza un
 clip sin brazo declarado para ambos tiradores ni con valor por defecto.
 
-- weapon_side_A/B obligatorios, sin default, en POST /matches/config y en
-  POST /webrtc/offer (422 si falta alguno).
-- SessionRegistry.get_or_create_default eliminado: clip, luz y WebSocket
-  responden 404 si el combate no fue creado.
+- weapon_side_A/B obligatorios, sin default, en POST /matches/config (422 si falta alguno).
+- SessionRegistry.get_or_create_default eliminado: el clip responde 404 si el
+  combate no fue creado.
 """
 
 import uuid
 
 import pytest
-from starlette.testclient import WebSocketDenialResponse
 
-from fog.infrastructure.webrtc.session_registry import SessionRegistry
+from fog.infrastructure.sesiones.session_registry import SessionRegistry
 
 
 @pytest.mark.parametrize("lado", ["A", "B"])
@@ -27,25 +25,6 @@ def test_configurar_sin_brazo_responde_422_y_no_crea_combate(crear_app, lado):
 
     assert resp.status_code == 422
     assert app.sql.escalar("SELECT count(*) FROM sabre.combate") == antes
-
-
-@pytest.mark.parametrize("lado", ["A", "B"])
-def test_offer_sin_brazo_responde_422(crear_app, lado):
-    app = crear_app()
-    body = {"sdp": "v=0", "type": "offer", "weapon_side_A": "right", "weapon_side_B": "left"}
-    del body[f"weapon_side_{lado}"]
-
-    resp = app.client.post("/webrtc/offer", json=body)
-
-    assert resp.status_code == 422
-    assert f"weapon_side_{lado}" in resp.text
-
-
-def test_offer_con_brazo_invalido_responde_422(crear_app):
-    app = crear_app()
-    body = {"sdp": "v=0", "type": "offer", "weapon_side_A": "zurdo", "weapon_side_B": "left"}
-
-    assert app.client.post("/webrtc/offer", json=body).status_code == 422
 
 
 def test_session_registry_ya_no_crea_sesiones_por_defecto():
@@ -67,40 +46,6 @@ def test_clip_con_match_id_que_no_es_uuid_responde_404(crear_app):
     app = crear_app()
 
     assert app.subir_clip("m-inventado").status_code == 404
-
-
-def test_luz_sin_sesion_webrtc_responde_404(crear_app):
-    app = crear_app()
-
-    resp = app.client.post(
-        f"/webrtc/{uuid.uuid4()}/luz", json={"has_luz_A": True, "has_luz_B": False}
-    )
-
-    assert resp.status_code == 404
-
-
-def test_websocket_de_revision_sin_sesion_responde_404(crear_app):
-    app = crear_app()
-
-    with pytest.raises(WebSocketDenialResponse) as exc:
-        with app.client.websocket_connect(f"/ws/veredicto/{uuid.uuid4()}"):
-            pass
-
-    assert exc.value.status_code == 404
-
-
-def test_luz_y_websocket_funcionan_con_la_sesion_de_un_clip(crear_app):
-    app = crear_app()
-    match_id = app.configurar()
-    revision_id = app.subir_clip(match_id).json()["revision_id"]
-
-    resp = app.client.post(f"/webrtc/{match_id}/luz", json={"has_luz_A": True, "has_luz_B": False})
-    with app.client.websocket_connect(f"/ws/veredicto/{revision_id}") as ws:
-        mensaje = ws.receive_json()
-
-    assert resp.status_code == 200
-    assert resp.json()["has_luz_A"] is True
-    assert mensaje["revision_id"] == revision_id
 
 
 def test_la_sesion_de_cada_clip_toma_el_brazo_armado_del_combate_guardado(crear_app):

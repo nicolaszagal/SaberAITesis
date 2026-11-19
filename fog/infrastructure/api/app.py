@@ -27,7 +27,7 @@ def crear_app(
     """Arma la app de Fog.
 
     Args:
-        entorno: `remoto` apaga /docs, /redoc, /openapi.json y /ws/veredicto.
+        entorno: `remoto` apaga /docs, /redoc, /openapi.json.
             Por defecto `config.ENTORNO`.
         proxy_token: valor esperado en `X-Proxy-Token`; None no lo exige.
             Por defecto `config.PROXY_SHARED_TOKEN`.
@@ -58,9 +58,6 @@ def crear_app(
     app.include_router(auth_routes.router_login)
     app.include_router(auth_routes.router_sesion)
     app.include_router(routes.router)
-    if not remoto:
-        # WebRTC no se usa en la Validación 1; en remoto no se expone.
-        app.include_router(routes.router_ws)
 
     # El último agregado es el más externo: cabeceras > token de proxy > CORS.
     app.add_middleware(

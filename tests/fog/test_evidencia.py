@@ -181,13 +181,13 @@ def test_concordancia_es_null_si_no_disponible():
 
 def test_log_tecnico_info_por_defecto_y_librerias_en_warning(monkeypatch):
     monkeypatch.setattr("shared.config.LOG_LEVEL", "INFO")
-    for nombre in ("aioice", "aiortc", "uvicorn.access", "ultralytics"):
+    for nombre in ("uvicorn.access", "ultralytics"):
         logging.getLogger(nombre).setLevel(logging.NOTSET)
 
     configurar_logging_tecnico()
 
     assert logging.getLogger().level == logging.INFO
-    for nombre in ("aioice", "aiortc", "uvicorn.access", "ultralytics"):
+    for nombre in ("uvicorn.access", "ultralytics"):
         assert logging.getLogger(nombre).level == logging.WARNING
 
 

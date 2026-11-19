@@ -100,8 +100,7 @@ sobre `numpy==2.3.4` en `requirements.txt` para un caso concreto ya resuelto.
 | `VERDICT_STREAM_TTL_S`  | `3600`                                          | `EXPIRE` del stream `cloud:verdicts:{revision_id}` (Cloud) |
 | `CLAIM_MIN_IDLE_S`      | `60.0`                                          | tiempo pendiente mínimo antes de que Cloud reclame con `XAUTOCLAIM` al arrancar (Cloud) |
 | `TEST_DATABASE_URL`     | — (solo pruebas)                                | base de pruebas para `pytest`; ver sección 5 |
-| `LOG_LEVEL`             | `INFO`                                          | nivel del log técnico (Fog y Cloud); `aioice`, `aiortc`, `uvicorn.access` y `ultralytics` quedan siempre en WARNING |
-| `FAVERO_LUZ_TIMEOUT_S`  | `2.0`                                           | espera máxima de la luz Favero antes de clasificar sin ella |
+| `LOG_LEVEL`             | `INFO`                                          | nivel del log técnico (Fog y Cloud); `uvicorn.access` y `ultralytics` quedan siempre en WARNING |
 | `CLOUD_CONSUMER_NAME`   | `cloud-worker-1`                                | nombre de consumidor en el grupo `cloud_workers` (relevante si se levanta más de una instancia de Cloud) |
 
 ## 4. Levantar los servicios
@@ -113,7 +112,7 @@ Cloud y Fog son procesos independientes; ambos requieren Redis arriba.
 cd backend
 python -m cloud.main
 
-# Terminal 2 — Fog (API Gateway WebRTC)
+# Terminal 2 — Fog (API Gateway)
 cd backend
 python -m uvicorn fog.main:app --host 0.0.0.0 --port 8001
 ```
@@ -124,9 +123,7 @@ es porque Redis no está corriendo — confirmar el prerequisito de la sección 
 
 Swagger UI de Fog: `http://localhost:8001/docs` (generado automáticamente por
 FastAPI a partir de `fog/infrastructure/api/routes.py` y
-`fog/infrastructure/api/schemas.py`). El WebSocket (`/ws/veredicto/{revision_id}`)
-no aparece ahí porque OpenAPI no documenta WebSockets — el contrato de sus
-mensajes está en `CONTRATO_API.md` sección 7.
+`fog/infrastructure/api/schemas.py`)..
 
 Cloud no expone HTTP; es un loop de consumo de Redis (`python -m cloud.main`)
 sin servidor.
@@ -220,16 +217,7 @@ La prueba de κ contra `sklearn` (`tests/fog/test_resumen_validacion.py`) se omi
 
 `ruff.toml` fija `line-length = 120`; `ruff check fog cloud shared --select E,F,W` no reporta avisos.
 
-`tests/smoke_manual.py` es una herramienta manual para el flujo WebRTC contra Fog+Cloud+Redis
-ya levantados; no es parte de la suite (su nombre evita los patrones `test_*.py` para que
-`pytest` no lo recolecte, DEF-17). Requiere `pip install websockets`:
-
-```bash
-python tests/smoke_manual.py ../dataset/test/RiposteB/RiposteB_0018.mp4 \
-    --fog-url http://localhost:8001 --luz-b
-```
-
-El flujo vigente de la Validación 1 (carga de clip, sin WebRTC) se prueba de punta a punta
+El flujo de la Validación 1 (carga de clip) se prueba de punta a punta
 con `scripts/prueba_humo.py` (sección 4.2).
 
 ## 6. Docker
@@ -244,10 +232,8 @@ Build context: `fog/Dockerfile` y `cloud/Dockerfile` viven en sus módulos, pero
 contexto es `backend/` porque ambos copian `shared/` y los artefactos de
 `dataset/lstm_6class/`.
 
-Fog corre en red puente con el puerto 8001 publicado: la Validación 1 no usa WebRTC
-(`docs_claude/contexto_sabre.md` sección 8). El flujo WebRTC necesitaría red de host
-(aiortc elige al azar sus puertos UDP de ICE, aiortc/aiortc#487) y en Docker Desktop
-para Mac esa red es beta; queda como trabajo futuro.
+Fog corre en red puente con el puerto 8001 publicado. El flujo WebRTC (que necesitaría red
+de host) salió de `main` en LIMPIEZA01 y se conserva en la rama `future/edge-favero`.
 
 El entrypoint de Fog (`fog/docker-entrypoint.sh`) aplica `alembic upgrade head` y
 registra el modelo desplegado solo si no hay una versión activa

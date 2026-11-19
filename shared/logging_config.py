@@ -12,7 +12,7 @@ from shared import config
 FORMATO = "%(asctime)s %(levelname)s:%(name)s:%(message)s"
 
 # Librerías cuyo detalle interno no es un evento del sistema.
-LIBRERIAS_EN_WARNING = ("aioice", "aiortc", "uvicorn.access", "ultralytics")
+LIBRERIAS_EN_WARNING = ("uvicorn.access", "ultralytics")
 
 
 def configurar_logging_tecnico(nivel: str | None = None) -> None:

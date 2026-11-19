@@ -10,7 +10,7 @@ from __future__ import annotations
 import hmac
 
 from dependency_injector.wiring import Provide, inject
-from fastapi import Depends, HTTPException, WebSocketException
+from fastapi import Depends, HTTPException
 from starlette.requests import HTTPConnection
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -25,7 +25,7 @@ def ip_cliente(conexion: HTTPConnection) -> str:
     """IP del cliente para el registro y el bloqueo por intentos.
 
     Args:
-        conexion: petición HTTP o WebSocket.
+        conexion: petición HTTP.
 
     Returns:
         La entrada de `X-Forwarded-For` que corresponde al cliente según
@@ -46,9 +46,6 @@ def _token_de(conexion: HTTPConnection) -> str | None:
     esquema, _, valor = conexion.headers.get("authorization", "").partition(" ")
     if esquema.lower() == "bearer" and valor.strip():
         return valor.strip()
-    if conexion.scope["type"] == "websocket":
-        # El navegador no puede enviar cabeceras en un WebSocket.
-        return conexion.query_params.get("token")
     return None
 
 
@@ -60,21 +57,18 @@ async def exigir_autenticacion(
     """Dependencia de router: exige un token válido.
 
     Args:
-        conexion: petición HTTP o WebSocket.
+        conexion: petición HTTP.
         validar: caso de uso de validación de tokens.
 
     Returns:
         El usuario autenticado.
 
     Raises:
-        HTTPException: 401 si el token falta o es inválido (HTTP).
-        WebSocketException: código 1008 en el mismo caso (WebSocket).
+        HTTPException: 401 si el token falta o es inválido.
     """
     try:
         return validar.execute(_token_de(conexion), ip_cliente(conexion))
     except TokenInvalido:
-        if conexion.scope["type"] == "websocket":
-            raise WebSocketException(code=1008) from None
         raise HTTPException(
             status_code=401,
             detail="No autenticado",
@@ -127,15 +121,12 @@ class TokenDeProxy:
         self._token = token.encode() if token else None
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if self._token is None or scope["type"] not in ("http", "websocket"):
+        if self._token is None or scope["type"] != "http":
             await self.app(scope, receive, send)
             return
         recibido = dict(scope["headers"]).get(b"x-proxy-token", b"")
         if hmac.compare_digest(recibido, self._token):
             await self.app(scope, receive, send)
-            return
-        if scope["type"] == "websocket":
-            await send({"type": "websocket.close", "code": 1008})
             return
         respuesta = JSONResponse({"detail": "Acceso denegado"}, status_code=403)
         await respuesta(scope, receive, send)

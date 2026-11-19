@@ -1,7 +1,7 @@
 """Entidades del dominio de auditoría (docs_claude/sabre_ai_schema.sql).
 
 Bounded context propio dentro de Fog: a diferencia de `domain/models.py`
-(estado runtime de una sesión WebRTC: `Match`, `TrackedSequence`, etc.),
+(estado runtime de una sesión de clip: `Match`, `TrackedSequence`, etc.),
 estas entidades son la proyección 1:1 de las tablas que persiste
 `infrastructure/persistence/postgres/` (ver PLAN_ARQUITECTURA_DDD.md
 sección 1) — sin lógica de negocio propia, solo la forma de cada fila.

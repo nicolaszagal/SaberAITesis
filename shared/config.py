@@ -152,15 +152,9 @@ RESPALDO_TIMEOUT_S = float(os.environ.get("RESPALDO_TIMEOUT_S", "600"))
 
 CLIP_MAX_MB = float(os.environ.get("CLIP_MAX_MB", "200"))
 
-# Tiempo que Fog espera la señal de luz Favero (POST /webrtc/{match_id}/luz)
-# después de que termina el clip, antes de procesar con LuzSignal.none().
-# Ver PLAN_ARQUITECTURA_DDD.md sección 2.3.
-FAVERO_LUZ_TIMEOUT_S = float(os.environ.get("FAVERO_LUZ_TIMEOUT_S", "2.0"))
-
 # Tiempo que POST /matches/{match_id}/clip espera el veredicto de Cloud
 # (Redis "cloud:verdicts:{revision_id}") antes de responder con timed_out=True.
-# Pipeline completo (pose+tracking+features+Redis+LSTM), no solo la espera
-# corta de la luz Favero — default más generoso que FAVERO_LUZ_TIMEOUT_S.
+# Pipeline completo (pose+tracking+features+Redis+LSTM).
 CLIP_UPLOAD_VERDICT_TIMEOUT_S = float(os.environ.get("CLIP_UPLOAD_VERDICT_TIMEOUT_S", "30.0"))
 
 # Presupuesto total de POST /matches/{match_id}/clip, desde que Fog recibe el
@@ -171,9 +165,7 @@ CLIP_UPLOAD_VERDICT_TIMEOUT_S = float(os.environ.get("CLIP_UPLOAD_VERDICT_TIMEOU
 CLIP_UPLOAD_TIMEOUT_S = float(os.environ.get("CLIP_UPLOAD_TIMEOUT_S", "60.0"))
 
 # Tiempo que SessionRegistry mantiene una sesión (MatchSession) después de
-# entregar el veredicto o el "no disponible", antes de liberarla (DEF-16):
-# ventana para aceptar conexiones tardías de GET /ws/veredicto/{revision_id}
-# que todavía no llegaron cuando el resultado quedó listo.
+# entregar el veredicto o el "no disponible", antes de liberarla (DEF-16).
 SESSION_TTL_S = float(os.environ.get("SESSION_TTL_S", "120.0"))
 
 # Cada cuánto corre el barrido periódico que libera las sesiones vencidas
@@ -188,8 +180,7 @@ SESSION_SWEEP_INTERVAL_S = float(os.environ.get("SESSION_SWEEP_INTERVAL_S", "30.
 VERDICT_STREAM_TTL_S = int(os.environ.get("VERDICT_STREAM_TTL_S", "3600"))
 
 # --- Autenticación y endurecimiento de Fog (DEPLOY05) -----------------------
-# Entorno de despliegue: "remoto" desactiva /docs, /redoc y /openapi.json y
-# deshabilita /ws/veredicto (WebRTC no se usa en la Validación 1).
+# Entorno de despliegue: "remoto" desactiva /docs, /redoc y /openapi.json.
 ENTORNO = os.environ.get("ENTORNO", "local")
 
 # Usuario maestro único. El hash es Argon2id (scripts/crear_hash_password.py);

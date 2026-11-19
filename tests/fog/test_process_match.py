@@ -3,7 +3,7 @@ import numpy as np
 from fog.application.process_match import ProcessIncomingMatch
 from fog.domain.models import ExtractedFeatures, LuzSignal, MotivoNoDisponible, TrackedSequence, WeaponSide
 from fog.infrastructure.persistence.in_memory_match_repository import InMemoryMatchRepository
-from fog.infrastructure.webrtc.session_registry import SessionRegistry
+from fog.infrastructure.sesiones.session_registry import SessionRegistry
 from tests.fog.fakes import FakeFeatureExtractor, FakeFeaturePublisher, InlineExecutor
 
 # Nota: ProcessIncomingMatch ya no depende de PoseEstimatorPort — pose+
@@ -97,10 +97,9 @@ async def test_execute_does_not_publish_when_extraction_fails():
     assert result.motivo is MotivoNoDisponible.POSE_INCOMPLETA
 
 
-async def test_execute_sets_unavailable_on_session_and_sends_ws_when_connected():
+async def test_execute_sets_unavailable_on_session():
     """DEF-08: si el extractor falla (sin lock A/B o secuencia corta), la
-    sesión debe quedar marcada como no disponible y, si el front ya está
-    conectado por WebSocket, recibir el mensaje de inmediato — sin
+    sesión debe quedar marcada como no disponible de inmediato, sin
     esperar los 30 s del timeout de Cloud."""
     tracked = TrackedSequence(frames=[], frame_w=0, frame_h=0, locked=False)
     extractor = FakeFeatureExtractor(
@@ -110,7 +109,6 @@ async def test_execute_sets_unavailable_on_session_and_sends_ws_when_connected()
     repository = InMemoryMatchRepository()
     sessions = SessionRegistry()
     session = sessions.create("m4", "r4", WeaponSide.RIGHT, WeaponSide.RIGHT)
-    session.ws = FakeWebSocket()
 
     use_case = ProcessIncomingMatch(
         feature_extractor=extractor, publisher=publisher,
@@ -122,9 +120,6 @@ async def test_execute_sets_unavailable_on_session_and_sends_ws_when_connected()
     assert result.motivo is MotivoNoDisponible.POSE_INCOMPLETA
     assert session.unavailable == result
     assert session.unavailable_event.is_set()
-    assert session.ws.sent == [
-        {"type": "no_disponible", "match_id": "m4", "revision_id": "r4", "motivo": "pose_incompleta"}
-    ]
     # DEF-16: tras entregar el "no disponible", la sesión queda marcada
     # como cerrada para que SessionRegistry.sweep_expired la libere pasado
     # SESSION_TTL_S.

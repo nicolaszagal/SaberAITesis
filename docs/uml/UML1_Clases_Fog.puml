@@ -8,9 +8,6 @@ package "infrastructure.api" {
     +configure_match(body): MatchConfigResponse
     +upload_clip(match_id, file, t_luz_a_ms, t_luz_b_ms): ClipUploadResponse
     +registrar_veredicto(revision_id, body): VeredictoResponse
-    +webrtc_offer(body): OfferResponse
-    +webrtc_luz(match_id, body): LuzAck
-    +ws_veredicto(ws, revision_id)
     +health(): dict
   }
 }
@@ -106,19 +103,17 @@ package "infrastructure" {
   class SessionRegistry {
     +create(match_id, revision_id, side_a, side_b)
     +get(revision_id)
-    +latest_for_match(match_id)
     +remove(revision_id)
     +sweep_expired(ttl_s)
     +sweep_forever(ttl_s, interval_s)
   }
   class MatchSession {
-    pc, ws, luz, t_tocado_ms
+    luz, t_tocado_ms
     verdict, unavailable
     +set_luz() +set_verdict()
     +set_unavailable()
   }
   class process_uploaded_clip <<función>>
-  class consume_track <<función>>
 }
 
 package "domain" {
@@ -164,10 +159,8 @@ routes --> RegistrarClasificacion
 routes --> RegistrarVeredicto
 routes --> SessionRegistry
 routes --> process_uploaded_clip
-routes --> consume_track : solo WebRTC
 process_uploaded_clip --> PoseEstimatorPort
 process_uploaded_clip --> FileStoragePort
-consume_track --> PoseEstimatorPort
 
 ConfigurarCombate --> UnidadDeTrabajoPort
 AbrirRevisionVar --> UnidadDeTrabajoPort
@@ -201,5 +194,4 @@ Match --> LuzSignal
 AbrirRevisionVar ..> InstantesLuz
 ConfigurarCombate ..> DatosTirador
 note bottom of InMemoryMatchRepository : Guarda el Match por match_id en memoria (se pierde\nal reiniciar). Lo que se audita está en PostgreSQL\n(ver UML1b).
-note bottom of consume_track : Flujo WebRTC: no abre revision_var\nni persiste (la Validación 1 usa la carga de clip).
 @enduml
