@@ -60,6 +60,9 @@ class HiloCaptura:
         self.error: str | None = None
         self.frames_leidos = 0
         self.fps_medidos = 0.0
+        self.huecos = 0  # veces que pasó más de 1,5 periodos entre dos frames
+        self.ancho = 0
+        self.alto = 0
 
     def iniciar(self, espera_apertura_s: float = 5.0) -> None:
         """Abre la fuente y arranca el hilo.
@@ -108,6 +111,7 @@ class HiloCaptura:
         es_archivo = isinstance(self._fuente, str)
         inicio = self._reloj_ns()
         proximo = inicio
+        ultimo_ns = inicio
         try:
             while not self._parar.is_set():
                 ok, imagen = cap.read()
@@ -125,6 +129,11 @@ class HiloCaptura:
                     self._buffer.agregar(imagen, t_ns)
                 if self._al_frame is not None:
                     self._al_frame(imagen, t_ns)
+                if self.frames_leidos and (t_ns - ultimo_ns) > 1.5e9 / self._fps:
+                    self.huecos += 1
+                ultimo_ns = t_ns
+                if not self.ancho:
+                    self.alto, self.ancho = imagen.shape[:2]
                 self.frames_leidos += 1
                 transcurrido = (t_ns - inicio) / 1e9
                 if transcurrido > 0:

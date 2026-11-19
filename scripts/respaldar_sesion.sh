@@ -11,7 +11,7 @@
 #
 # Escribe RESPALDO_DIR/R<NNN>-<fecha UTC>/ (NNN: número correlativo de respaldo, 3 dígitos) con:
 #   sabre_<evento>_<fecha>.dump   pg_dump en formato custom de la base completa
-#   sabre_<evento>_<fecha>.tgz    datos/storage y datos/evidencia (DATOS_DIR, por defecto ./datos)
+#   sabre_<evento>_<fecha>.tgz    datos/storage (sin clips: EDGE02) y datos/evidencia (DATOS_DIR, por defecto ./datos)
 #   MANIFEST.sha256               hash de cada archivo
 # y después lo VERIFICA: hashes, lectura del .tgz, restauración del dump en una base temporal,
 # mismos conteos (revisiones, clasificaciones, veredictos, auditoría) y fn_verificar_auditoria()
@@ -148,7 +148,8 @@ docker exec -i "$PG_CONT" pg_dump -Fc -U "$PGUSR" -d "$PGBASE" > "$CARPETA/$NOMB
     || fallido "pg_dump falló"
 despues=$(psql_base "$PGBASE" "$SQL_CONTEOS")
 [ "$antes" = "$despues" ] || fallido "la base cambió durante el respaldo ($antes -> $despues); repita con Fog en reposo"
-tar -czf "$CARPETA/$NOMBRE.tgz" -C "$DATOS_DIR" storage evidencia || fallido "tar falló"
+# EDGE02: los clips (datos personales) no se respaldan; la base conserva su sha256.
+tar -czf "$CARPETA/$NOMBRE.tgz" --exclude="storage/clips" -C "$DATOS_DIR" storage evidencia || fallido "tar falló"
 (cd "$CARPETA" && hash_cmd "$NOMBRE.dump" "$NOMBRE.tgz" > MANIFEST.sha256) || fallido "no pude escribir MANIFEST.sha256"
 
 echo "Verificando el respaldo (restauración en base temporal)"

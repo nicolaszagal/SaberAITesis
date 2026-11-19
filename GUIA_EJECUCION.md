@@ -437,3 +437,26 @@ frames.
 ```bash
 pytest tests/fog/test_feature_parity_training_vs_fog.py -m slow -q
 ```
+
+## 7. Edge: captura de tocados y señal de prueba (EDGE01, EDGE02)
+
+El servicio de Edge corre en el mismo equipo que Fog (nativo, no en Docker: necesita la cámara y el puerto serie).
+
+```bash
+cd backend && source .venv/bin/activate
+# Credenciales de Edge hacia Fog (el usuario maestro; nunca en el repo):
+export EDGE_FOG_USER=...; export EDGE_FOG_PASSWORD=...     # o .secrets/edge_fog_user.txt y edge_fog_password.txt
+# Sin cable RJ12: botón de señal de prueba (los tocados quedan como fuente 'simulado')
+MODO_PRUEBA_SENAL=1 python -m edge.captura.servicio --sin-lector
+# Con el aparato:
+python -m edge.captura.servicio --puerto '/dev/cu.usbmodem*'
+```
+
+Para que el botón aparezca en el frontend, Fog también necesita `MODO_PRUEBA_SENAL=1` en su entorno (si no, `POST /edge/senal-prueba` responde 404).
+Fog debe tener `EDGE_URL` (por defecto `http://127.0.0.1:8765`) apuntando a la API local de Edge.
+
+- **Cámara:** se elige en Configuración → Cámara (o `datos/edge/config.json`). Permiso de macOS: Ajustes del Sistema → Privacidad y seguridad → Cámara, para la aplicación desde la que corres Python (Terminal, iTerm, VS Code). Sin permiso OpenCV abre pero no entrega frames.
+- **Medir el buffer con tu cámara:** `python -m edge.medir_buffer --camara 0 --segundos 20` (RAM, CPU y fps de frames crudos frente a JPEG).
+- **Calibrar la latencia:** `python -m edge.calibrar_latencia ...` (ver `edge/captura/LEEME.md`).
+- **Cerrar la sesión:** primero el respaldo (`exportar_evidencia.py`, que excluye los clips) y después `python scripts/purgar_clips.py --confirmar`.
+- **Variables:** `VENTANA_PRE_MS` (2000) y `VENTANA_POST_MS` (500) en Fog y Edge; `EDGE_K_TOCADOS`, `EDGE_FPS`, `EDGE_DIR_TOCADOS`.

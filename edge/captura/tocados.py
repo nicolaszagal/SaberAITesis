@@ -53,6 +53,8 @@ class _Grupo:
 
     t_primero_ns: int
     luces: dict[str, int] = field(default_factory=dict)  # lado ("A"/"B") -> instante del flanco
+    fuente: str | None = None  # 'simulado' gana si alguna luz del tocado no vino del aparato
+    origen: str | None = None
 
 
 @dataclass(frozen=True)
@@ -85,6 +87,7 @@ class CapturaTocados:
         desfase_ms: float | None = None,
         reloj_ns: Callable[[], int] = time.monotonic_ns,
         al_tocado: Callable[[TocadoCapturado], None] | None = None,
+        enviar: bool = False,
     ) -> None:
         """Crea el coordinador (no corre hasta `iniciar`, o se maneja a mano con `procesar`).
 
@@ -96,7 +99,9 @@ class CapturaTocados:
             desfase_ms: desfase cámara-serie; `None` = sin calibrar (0 y se avisa en el JSON).
             reloj_ns: reloj monótono, el mismo de los frames y los flancos.
             al_tocado: se llama al terminar de escribir cada tocado.
+            enviar: si el tocado queda `"envio": "pendiente"` para subirlo a Fog (EDGE02).
         """
+        self._enviar = enviar
         self._buffer = buffer
         self._config = config
         self._camara_id = camara_id
@@ -135,6 +140,9 @@ class CapturaTocados:
                 grupo = None
             if grupo is None:
                 grupo = self._grupo = _Grupo(flanco.t_ns)
+            if flanco.fuente == "simulado" or grupo.fuente is None:
+                grupo.fuente = flanco.fuente or grupo.fuente
+            grupo.origen = grupo.origen or flanco.origen
             if flanco.lado in grupo.luces:
                 logger.warning("[Captura] Luz %s repetida dentro del mismo tocado; se ignora", flanco.lado)
                 return
@@ -230,12 +238,14 @@ class CapturaTocados:
             "t_luz_b_ms": instantes["B"],
             "luz_a": instantes["A"] is not None,
             "luz_b": instantes["B"] is not None,
-            "fuente": self._fuente,
+            "fuente": grupo.fuente or self._fuente,
+            "origen": grupo.origen,
             "fps": cfg.fps,
             "n_frames": len(clip.imagenes),
             "latencia_camara_ms": self._desfase_ns / 1e6,
             "latencia_calibrada": self._calibrado,
             "camara": self._camara_id,
+            "envio": "pendiente" if self._enviar else "local",
             "creado_utc": ahora.isoformat(),
         }
         ruta_video = cfg.directorio / f"{id_tocado}.mp4"

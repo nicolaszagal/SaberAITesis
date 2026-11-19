@@ -503,3 +503,39 @@ def test_clip_guardado_tras_timeout_cuenta_los_frames_reales(monkeypatch, tmp_pa
     )
     assert guardado.duracion_ms == 1960  # 49 frames / 25 fps, no 108
     assert vistos == [1960]
+
+
+def test_carga_manual_larga_se_recorta_a_la_ventana_y_los_instantes_quedan_relativos_al_clip(crear_app):
+    """EDGE02 (DEF-32): un clip de 8 s con el tocado a 5 s se recorta a 2,0 s antes y 0,5 s después."""
+    import cv2
+    import os
+    import tempfile
+
+    import numpy as np
+    import pytest
+
+    fd, ruta = tempfile.mkstemp(suffix=".mp4")
+    os.close(fd)
+    w = cv2.VideoWriter(ruta, cv2.VideoWriter_fourcc(*"mp4v"), 30, (64, 64))
+    for _ in range(240):
+        w.write(np.zeros((64, 64, 3), dtype=np.uint8))
+    w.release()
+    contenido = open(ruta, "rb").read()
+    os.remove(ruta)
+
+    app = crear_app()
+    match_id = app.configurar()
+    r = app.client.post(
+        f"/matches/{match_id}/clip", files={"file": ("largo.mp4", contenido, "video/mp4")},
+        data={"t_luz_a_ms": "5000"},
+    )
+    assert r.status_code == 200, r.text
+    rev = r.json()["revision_id"]
+    fila = app.sql.filas(
+        "SELECT t.t_luz_a_ms, t.t_tocado_ms, c.duracion_ms, tc.frame_tocado FROM sabre.revision_var r "
+        "JOIN sabre.tocado t ON t.id = r.tocado_id JOIN sabre.tocado_clip tc ON tc.tocado_id = t.id "
+        "JOIN sabre.clip c ON c.id = tc.clip_id WHERE r.id = :r", r=rev)[0]
+    assert fila["duracion_ms"] == pytest.approx(2500, abs=70)
+    assert fila["t_luz_a_ms"] == pytest.approx(2000, abs=34)  # relativo al clip recortado
+    assert fila["t_tocado_ms"] == fila["t_luz_a_ms"]
+    assert fila["frame_tocado"] == pytest.approx(60, abs=1)

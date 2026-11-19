@@ -263,6 +263,25 @@ RETURNS TABLE(seq BIGINT, esperado TEXT, guardado TEXT) AS $$
 $$ LANGUAGE sql STABLE SET search_path = sabre, pg_temp;
 
 -- ---------------------------------------------------------------------
+-- Decisión en pista (EDGE02): lo que canta el árbitro en cada tocado, registrado
+-- sin mostrar la sugerencia (D-04). Solo de adición: corregir un error de tipeo es
+-- agregar una fila nueva, que reemplaza a la anterior por su hora. Es la etiqueta
+-- no influida por el modelo para el reentrenamiento.
+-- ---------------------------------------------------------------------
+CREATE TABLE decision_pista (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tocado_id      UUID NOT NULL REFERENCES tocado(id),
+    clase          clase_tact,                  -- NULL solo si anulado
+    anulado        BOOLEAN NOT NULL DEFAULT FALSE,
+    registrado_en  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    registrado_por UUID REFERENCES usuario(id),
+    CHECK (anulado = (clase IS NULL))
+);
+CREATE INDEX ix_decision_pista_tocado ON decision_pista(tocado_id, registrado_en DESC);
+CREATE TRIGGER tg_decision_pista_inmutable BEFORE UPDATE OR DELETE ON decision_pista
+    FOR EACH ROW EXECUTE FUNCTION fn_bloquear_cambios();
+
+-- ---------------------------------------------------------------------
 -- Reentrenamiento (CU-14, T-018)
 -- ---------------------------------------------------------------------
 CREATE TABLE lote_reentrenamiento (

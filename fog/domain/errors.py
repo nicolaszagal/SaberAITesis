@@ -54,3 +54,8 @@ class DemasiadosIntentos(ErrorDeDominio):
 
 class TokenInvalido(ErrorDeDominio):
     """Token ausente, vencido, con firma alterada o mal formado."""
+
+
+class VentanaVarCerrada(ErrorDeDominio):
+    """Llegó un tocado posterior del mismo combate: el anterior queda "No revisado" y ya no
+    admite "Solicitar VAR" (EDGE02; el VAR se pide antes de reanudar el combate)."""

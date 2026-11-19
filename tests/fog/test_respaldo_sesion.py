@@ -277,3 +277,22 @@ def test_recordatorio_sin_postgres_dice_que_no_verifico(tmp_path):
     assert r.returncode == 0
     assert "#  RESPALDO NO VERIFICADO" in r.stderr
     assert "NO se verificó" in r.stderr
+
+
+def test_el_respaldo_excluye_los_clips_y_conserva_keypoints(sesion, entorno, tmp_path):
+    """EDGE02: ningún clip se conserva; la base guarda su sha256, así que la auditoría sigue verificable."""
+    clips = tmp_path / "storage" / "clips" / "ab"
+    keypoints = tmp_path / "storage" / "keypoints" / "cd"
+    clips.mkdir(parents=True, exist_ok=True)
+    keypoints.mkdir(parents=True, exist_ok=True)
+    (clips / "abc.mp4").write_bytes(b"video personal")
+    (keypoints / "cde.npz").write_bytes(b"keypoints")
+
+    r = _correr(SCRIPT, entorno, "--evento", str(sesion.evento_id))
+
+    assert r.returncode == 0, r.stdout + r.stderr
+    tgz = next(_carpeta_respaldo(entorno).glob("*.tgz"))
+    contenido = subprocess.run(["tar", "-tzf", str(tgz)], capture_output=True, text=True, check=True).stdout
+    assert "storage/keypoints/cd/cde.npz" in contenido
+    assert "abc.mp4" not in contenido and "storage/clips" not in contenido
+    assert "fn_verificar_auditoria(): 0 filas alteradas" in r.stdout
