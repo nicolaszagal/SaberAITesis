@@ -1038,7 +1038,7 @@ async def verificar_auditoria(
     summary="Resumen de la sesión de validación de un evento (solo lectura)",
     description=(
         "Mismo contenido que `resumen.json` de scripts/exportar_evidencia.py "
-        "(L02): métricas separadas en V1 y V2, conciliación con el JSONL de "
+        "(L02): métricas de la validación (una sola, κ sistema-árbitro), conciliación con el JSONL de "
         "L01, integridad de la auditoría y evidencia del modelo. Se calcula "
         "desde PostgreSQL. Sin autenticación (RF-26 está pendiente). 404 si "
         "el evento no existe."

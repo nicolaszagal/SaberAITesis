@@ -9,7 +9,7 @@ __pycache__/
 # macOS
 .DS_Store
 
-# Config local por módulo (fog/.env, cloud/.env, edge/.env) — nunca
+# Config local por módulo (fog/.env, cloud/.env) — nunca
 # comitear, cada quien crea el suyo siguiendo GUIA_EJECUCION.md sección 3.
 .env
 
