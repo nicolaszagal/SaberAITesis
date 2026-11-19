@@ -18,6 +18,12 @@ detectar_compose() {
 
 # compose <argumentos>: ejecuta Compose con la forma disponible.
 compose() {
+    # La contraseña de PostgreSQL sale de `.secrets/postgres_password.txt` (fuente única): el entorno del shell
+    # manda sobre el `.env` en Compose, así que no hace falta copiarla a ningún `.env`.
+    if [ -s "${SECRETS_DIR:-.secrets}/postgres_password.txt" ]; then
+        POSTGRES_PASSWORD=$(tr -d '\n\r' < "${SECRETS_DIR:-.secrets}/postgres_password.txt")
+        export POSTGRES_PASSWORD
+    fi
     detectar_compose || {
         echo "No hay Docker Compose (ni 'docker compose' ni 'docker-compose'). Ver 'sh scripts/instalar_fog.sh verificar'." >&2
         return 127

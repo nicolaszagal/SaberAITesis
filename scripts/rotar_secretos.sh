@@ -11,7 +11,8 @@
 #   2. Genera, solo si falta: AUTH_PASSWORD_HASH (pide la contraseña por getpass),
 #      AUTH_JWT_SECRET, PROXY_SHARED_TOKEN, POSTGRES_PASSWORD y la PKI de Redis
 #      completa (CA, servidor, fog, cloud y una contraseña de Redis por usuario: fog y cloud).
-#   3. Actualiza POSTGRES_PASSWORD en .env y regenera .secrets/fog_remoto.env.
+#   3. Regenera .secrets/fog_remoto.env y quita cualquier POSTGRES_PASSWORD del .env (la contraseña tiene una
+#      sola fuente: .secrets/postgres_password.txt; no se copia a ningún .env).
 #   4. Imprime solo nombre, longitud y huella (sha256 truncado a 8 caracteres).
 #
 # Variables opcionales: SECRETS_DIR (.secrets), ENV_FILE (.env), PYTHON (.venv/bin/python),
@@ -109,10 +110,9 @@ fi
 
 # 3. .env (POSTGRES_PASSWORD) y fog_remoto.env
 PG=$(cat "$SECRETS_DIR/postgres_password.txt")
+# Fuente única: la clave vive solo en .secrets/postgres_password.txt. Se quita la copia vieja del .env.
 if [ -f "$ENV_FILE" ] && grep -q '^POSTGRES_PASSWORD=' "$ENV_FILE"; then
-    sed -i.bak "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$PG/" "$ENV_FILE" && rm -f "$ENV_FILE.bak"
-else
-    printf 'POSTGRES_PASSWORD=%s\n' "$PG" >> "$ENV_FILE"
+    sed -i.bak '/^POSTGRES_PASSWORD=/d' "$ENV_FILE" && rm -f "$ENV_FILE.bak"
 fi
 
 if [ ! -s "$SECRETS_DIR/fog_remoto.env" ]; then
@@ -131,7 +131,6 @@ if [ ! -s "$SECRETS_DIR/fog_remoto.env" ]; then
         echo "REDIS_TLS_CA=$SECRETS_DIR/redis/ca.crt"
         echo "REDIS_TLS_CERT=$SECRETS_DIR/redis/fog.crt"
         echo "REDIS_TLS_KEY=$SECRETS_DIR/redis/fog.key"
-        echo "POSTGRES_PASSWORD=$PG"
         echo "FOG_HOST_PORT=$(valor_previo FOG_HOST_PORT)"
         echo "PROXY_SALTOS_CONFIANZA=$(valor_previo PROXY_SALTOS_CONFIANZA)"
         echo "POSTGRES_DB_NAME=$(valor_previo POSTGRES_DB_NAME)"

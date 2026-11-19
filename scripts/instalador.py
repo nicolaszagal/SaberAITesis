@@ -241,7 +241,12 @@ def _cmd_generar_env(args) -> int:
     if not sys.stdin.isatty():
         print("Se necesita una terminal interactiva para pedir la contraseña maestra.", file=sys.stderr)
         return 1
-    if args.volumen_existente:
+    archivo_clave = Path(os.environ.get("SECRETS_DIR", ".secrets")) / "postgres_password.txt"
+    if archivo_clave.exists():
+        # Fuente única: la contraseña de PostgreSQL vive en .secrets/postgres_password.txt, no en el .env.
+        clave_pg = archivo_clave.read_text(encoding="utf-8").strip()
+        print(f"Se usa la contraseña de PostgreSQL de {archivo_clave} (no se copia al .env).")
+    elif args.volumen_existente:
         print("Ya existe el volumen de PostgreSQL (sabre_pgdata): la contraseña debe ser la de esa base.")
         clave_pg = getpass.getpass("Contraseña de PostgreSQL de la base existente: ")
         if not clave_pg.isalnum():
@@ -264,12 +269,17 @@ def _cmd_generar_env(args) -> int:
         print("Las contraseñas no coinciden.", file=sys.stderr)
         return 1
     texto = generar_env(Path(args.plantilla).read_text(encoding="utf-8"), {
-        "POSTGRES_PASSWORD": clave_pg,
         "AUTH_USER": usuario,
         "AUTH_PASSWORD_HASH": f"'{calcular_hash(password)}'",
         "AUTH_JWT_SECRET": secrets.token_urlsafe(48),
         "RESPALDO_DIR": respaldo,
     })
+    if not archivo_clave.exists():
+        archivo_clave.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        fd = os.open(archivo_clave, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(clave_pg)
+        print(f"{archivo_clave} creado (permisos 600): única fuente de la contraseña de PostgreSQL.")
     fd = os.open(destino, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(texto)

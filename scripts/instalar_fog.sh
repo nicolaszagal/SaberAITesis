@@ -4,13 +4,15 @@
 #
 # Uso, desde backend/:
 #   sh scripts/instalar_fog.sh verificar [--remoto]      comprueba requisitos sin cambiar nada
+#   sh scripts/instalar_fog.sh modo [--remoto]           muestra el modo y los archivos de configuración que se cargarían
+#   (todas las órdenes son LOCALES por defecto: .secrets/fog_remoto.env y ENTORNO=remoto solo con --remoto)
 #   sh scripts/instalar_fog.sh instalar [--paquete DIR]  entorno, modelo, .env, base (DIR: paquete de `exportar`)
 #   sh scripts/instalar_fog.sh exportar --destino DIR --evento UUID    (equipo de origen)
 #   sh scripts/instalar_fog.sh importar --desde DIR      (equipo de destino, tras `instalar`)
 #   sh scripts/instalar_fog.sh probar                    prueba de equivalencia (10 clips de referencia)
 #   sh scripts/instalar_fog.sh estado
 #
-# Variables opcionales: ENV_FILE (por defecto .env y, si existe, .secrets/fog_remoto.env encima), VENV_DIR (.venv), DATOS_DIR (./datos), DATASET_DIR (../dataset),
+# Variables opcionales: ENV_FILE (por defecto .env; con --remoto, también .secrets/fog_remoto.env encima), VENV_DIR (.venv), DATOS_DIR (./datos), DATASET_DIR (../dataset),
 # MODEL_RUN_ID, FOG_DEVICE (cpu), POSTGRES_DB_NAME (sabre), PYTHON_BIN (python3), ESPACIO_MIN_GB (7).
 # Ver docs/manuales/GUIA_INSTALACION.md, sección "Instalar o migrar Fog a otro equipo".
 set -eu
@@ -59,6 +61,7 @@ archivo_lock() {
 
 cargar_env() {
     cargar_archivos_env
+    aplicar_modo
 }
 
 puerto_ocupado() {
@@ -78,8 +81,7 @@ venv_python() {
 
 # ---------------------------------------------------------------- verificar
 cmd_verificar() {
-    remoto=0
-    [ "${1:-}" = "--remoto" ] && remoto=1
+    remoto=$MODO_REMOTO
     cargar_env
     FALTAS=0
     so=$(uname -s)
@@ -567,12 +569,30 @@ cmd_estado() {
     echo "Última probar:  $("$PY_SIS" scripts/instalador.py estado-probar --datos "$datos")"
 }
 
+# MODO LOCAL POR DEFECTO: el modo remoto (cargar .secrets/fog_remoto.env y ENTORNO=remoto) solo con `--remoto`.
+MODO_REMOTO=0
+n_args=$#
+while [ "$n_args" -gt 0 ]; do
+    argumento=$1
+    shift
+    n_args=$((n_args - 1))
+    if [ "$argumento" = "--remoto" ]; then MODO_REMOTO=1; else set -- "$@" "$argumento"; fi
+done
+export MODO_REMOTO
+
+cmd_modo() {
+    echo "modo: $([ "$MODO_REMOTO" = 1 ] && echo remoto || echo local)"
+    echo "archivos: $(archivos_env | tr '\n' ' ')"
+    echo "clave de PostgreSQL: $([ -s "$(archivo_clave_postgres)" ] && echo "de $(archivo_clave_postgres)" || echo "de los .env (no hay $(archivo_clave_postgres))")"
+}
+
 case "${1:-}" in
+    modo) shift; cmd_modo "$@" ;;
     verificar) shift; cmd_verificar "$@" ;;
     instalar) shift; cmd_instalar "$@" ;;
     exportar) shift; cmd_exportar "$@" ;;
     importar) shift; cmd_importar "$@" ;;
     probar) shift; cmd_probar "$@" ;;
     estado) shift; cmd_estado "$@" ;;
-    *) echo "Uso: sh scripts/instalar_fog.sh {verificar [--remoto]|instalar [--paquete DIR]|exportar --destino DIR --evento UUID|importar --desde DIR|probar|estado}" >&2; exit 2 ;;
+    *) echo "Uso: sh scripts/instalar_fog.sh {modo|verificar|instalar [--paquete DIR]|exportar --destino DIR --evento UUID|importar --desde DIR|probar|estado} [--remoto]  (local por defecto)" >&2; exit 2 ;;
 esac
