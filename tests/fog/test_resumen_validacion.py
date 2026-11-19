@@ -140,8 +140,8 @@ def test_bandas_de_landis_y_koch(kappa, banda):
     assert banda_landis_koch(kappa) == banda
 
 
-def test_kappa_coincide_con_scikit_learn_si_esta_disponible():
-    sklearn_metrics = pytest.importorskip("sklearn.metrics")
+def test_kappa_coincide_con_scikit_learn():
+    import sklearn.metrics as sklearn_metrics  # dependencia de pruebas fijada en requirements.txt
     sistema = ["AttackA", "AttackB", "RiposteA", "AttackA", "ContrattackB", "RiposteA"]
     arbitro = ["AttackA", "AttackA", "RiposteA", "RiposteA", "ContrattackB", "AttackB"]
 

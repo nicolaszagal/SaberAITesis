@@ -69,6 +69,9 @@ Notas: la PKI se reemplazó completa, incluida la CA (válida 365 días desde el
 
 **Verificación (06/11/2026):** Fog arranca en local con los secretos nuevos sobre un PostgreSQL vacío (migraciones aplicadas); `/eventos` responde 401 con un JWT firmado con el secreto anterior, 200 con uno firmado con el nuevo, y 403 con el token de proxy anterior. `pytest tests/` da 445 pasan y 2 saltadas (línea base de `main` con la misma base: 438 pasan y 3 saltadas); ruff sin hallazgos en ambos.
 
+### 6.0 Verificación de la contraseña de PostgreSQL en el volumen real (FIX05, 19/11/2026)
+Se probó contra el volumen real (`sabre-postgres-1`, puerto 5436) sin imprimir las contraseñas: la de `.secrets/postgres_password.txt` es **aceptada** y la antigua `sabre_local` es **rechazada**; la del `.env` era idéntica a la de `.secrets`. La rotación de SEC01 sí estaba aplicada en el volumen (no hizo falta `ALTER ROLE`). Desde FIX05 la contraseña tiene una sola fuente, `.secrets/postgres_password.txt`: se quitó del `.env` y los scripts la leen de ahí (`scripts/verificar_clave_postgres.sh` repite esta comprobación). Nota: durante FIX05 la herramienta de IA imprimió por error el valor que había en el `.env` (idéntico al de `.secrets`); queda en el historial de esa conversación y conviene rotarla.
+
 ### 6.1 Segunda rotación (DEPLOY09, 13/11/2026, `rotar_secretos.sh --forzar`)
 Se rotó de nuevo todo menos el hash de la contraseña maestra, antes de cargar nada en el proyecto nuevo de Railway. Lo vigente pasó a `.secrets/_retirado_2026-10-27/forzado_<marca de tiempo>/`. La contraseña del rol `sabre` de PostgreSQL se actualizó con `ALTER ROLE` para que coincida con el archivo, y se comprobó la conexión por TCP.
 

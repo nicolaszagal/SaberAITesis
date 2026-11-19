@@ -62,6 +62,10 @@ pytest-asyncio==1.4.0
 pytest-timeout==2.4.0  # límite por prueba (timeout en pytest.ini): una prueba colgada falla en vez de bloquear la suite
 httpx==0.28.1
 fakeredis==2.38.0  # tests/cloud/test_redis_feature_consumer.py (XREADGROUP/XAUTOCLAIM, DEF-09)
+scikit-learn==1.9.1  # tests/fog/test_resumen_validacion.py: contraste de κ con la implementación de referencia
+scipy==1.18.1  # de scikit-learn (fijada para reproducir)
+joblib==1.6.0  # de scikit-learn
+threadpoolctl==3.8.0  # de scikit-learn
 testcontainers[postgres]==4.15.0  # tests/fog/test_migracion_esquema.py (o TEST_DATABASE_URL en CI)
 
 # Puente WebSocket del nodo Edge (edge/ws_bridge.py, tests/edge/).
