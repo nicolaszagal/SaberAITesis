@@ -81,7 +81,7 @@ async def test_migracion_aplica_sobre_base_limpia(alembic_cfg, engine):
         version = (
             await conn.execute(text("SELECT version_num FROM public.alembic_version"))
         ).scalar_one()
-        assert version == "0007"
+        assert version == "0008"
 
 
 async def test_downgrade_y_reaplicacion(alembic_cfg, engine):
@@ -240,3 +240,52 @@ async def test_0006_instante_por_luz_rellena_filas_existentes_y_aplica_los_check
                 await conn.execute(text(insertar.format(a=a, b=b, ta=ta, tb=tb)))
     async with engine.begin() as conn:  # y la combinación válida pasa
         await conn.execute(text(insertar.format(a="TRUE", b="TRUE", ta="100", tb="150")))
+
+
+async def _tabla_existe(engine, nombre: str) -> bool:
+    async with engine.connect() as conn:
+        return (await conn.execute(text("SELECT to_regclass(:n) IS NOT NULL"), {"n": nombre})).scalar_one()
+
+
+async def test_0008_elimina_decision_pista_si_esta_vacia(alembic_cfg, engine):
+    import asyncio
+
+    await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
+    await asyncio.to_thread(command.downgrade, alembic_cfg, "0007")  # la base del módulo ya está en head
+    assert await _tabla_existe(engine, "sabre.decision_pista")
+    await asyncio.to_thread(command.upgrade, alembic_cfg, "0008")
+    assert not await _tabla_existe(engine, "sabre.decision_pista")
+    await asyncio.to_thread(command.downgrade, alembic_cfg, "0007")  # se puede volver atrás (queda vacía)
+    assert await _tabla_existe(engine, "sabre.decision_pista")
+    await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
+
+
+async def test_0008_no_elimina_decision_pista_si_tiene_filas(alembic_cfg, engine):
+    import asyncio
+
+    await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
+    await asyncio.to_thread(command.downgrade, alembic_cfg, "0007")
+    async with engine.begin() as conn:
+        await conn.execute(text("INSERT INTO sabre.usuario (nombre, rol) VALUES ('u0008', 'arbitro')"))
+        await conn.execute(text(
+            "INSERT INTO sabre.tirador (alias, brazo_habitual, es_menor) VALUES ('a0008', 'diestro', FALSE), ('b0008', 'zurdo', FALSE)"))
+        await conn.execute(text(
+            "INSERT INTO sabre.combate (pista, tirador_a_id, tirador_b_id, brazo_a, brazo_b, arbitro_id, configurado_por) "
+            "SELECT 'P0008', a.id, b.id, 'diestro', 'zurdo', u.id, u.id FROM sabre.tirador a, sabre.tirador b, sabre.usuario u "
+            "WHERE a.alias = 'a0008' AND b.alias = 'b0008' AND u.nombre = 'u0008'"))
+        await conn.execute(text(
+            "INSERT INTO sabre.tocado (combate_id, fuente, luz_a, luz_b, t_tocado_ms, t_luz_a_ms) "
+            "SELECT id, 'simulado', TRUE, FALSE, 100, 100 FROM sabre.combate WHERE pista = 'P0008'"))
+        await conn.execute(text(
+            "INSERT INTO sabre.decision_pista (tocado_id, clase) SELECT t.id, 'AtaqueA' FROM sabre.tocado t "
+            "JOIN sabre.combate c ON c.id = t.combate_id WHERE c.pista = 'P0008'"))
+    try:
+        with pytest.raises(Exception, match="decision_pista tiene 1 fila"):
+            await asyncio.to_thread(command.upgrade, alembic_cfg, "0008")
+        assert await _tabla_existe(engine, "sabre.decision_pista")  # no se perdió nada
+        async with engine.connect() as conn:
+            assert (await conn.execute(text("SELECT count(*) FROM sabre.decision_pista"))).scalar_one() == 1
+    finally:  # la tabla es de solo adición: se suelta a mano para dejar la base del módulo en head
+        async with engine.begin() as conn:
+            await conn.execute(text("DROP TABLE sabre.decision_pista"))
+        await asyncio.to_thread(command.upgrade, alembic_cfg, "head")

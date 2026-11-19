@@ -6,12 +6,9 @@ Versión de la interfaz: Validación 1 (carga de clip y tocado simulado). Destin
 
 SABRE.AI clasifica la acción táctica de un tocado de sable en 6 clases y entrega una sugerencia con su porcentaje de confianza. El sistema solo sugiere. El árbitro decide, y el sistema no asigna puntos ni cierra una revisión sin la decisión del árbitro (RNF-01).
 
-| Validación | Entrada | Señal de tocado | Estado en esta versión |
-|---|---|---|---|
-| Validación 1 (V1) | Clip de video cargado en la interfaz | Simulada: usted marca el instante de cada luz | Disponible |
-| Validación 2 (V2) | Captura en tiempo real con cámaras | Señal real del aparato Favero | No disponible |
+La validación del sistema es una sola: el árbitro revisa clips cargados en la interfaz y se mide el acuerdo sistema-árbitro (κ). Usted carga el clip y marca el instante de cada luz.
 
-Esta versión no captura video en tiempo real, no lee el aparato Favero y no dibuja trazos sobre el video. Estas funciones están en el Anexo B.
+Esta versión no captura video en tiempo real ni lee el aparato Favero (fuera de alcance por solicitud de cambio del 20/11/2026; ver el Anexo B).
 
 ## 2. Roles
 
@@ -192,7 +189,7 @@ Si la carga falla, la pantalla muestra "No se pudo cargar el historial" o "No se
 
 Si falla, aparece "No se pudo exportar la evidencia" y el botón "Reintentar".
 
-El archivo contiene el resumen de la sesión de validación, con el bloque `V1` (tocado simulado) y el bloque `V2` (señal Favero) por separado y sin total. Solo cuentan las revisiones con veredicto.
+El archivo contiene el resumen de la sesión de validación, con las métricas de la validación. Solo cuentan las revisiones con veredicto.
 
 | Campo | Cómo interpretarlo |
 |---|---|
@@ -238,7 +235,7 @@ Los atajos sin Ctrl no actúan mientras escribe en un campo de texto.
 | `confianza_baja` | "La confianza de la sugerencia quedó por debajo del umbral configurado." | La confianza no alcanzó el umbral. En esta versión el sistema no produce este motivo, porque el umbral no está definido. | Siga el procedimiento VAR habitual. |
 | `clase_fuera_mvp` | "La acción detectada queda fuera de las 6 clases del sistema." | La acción no corresponde a una de las 6 clases. En esta versión el sistema no produce este motivo. | Siga el procedimiento VAR habitual. |
 | `timeout` | "El análisis superó el límite de 60 s." | El sistema no respondió a tiempo. | Siga el procedimiento VAR habitual. Puede volver a cargar el clip. Si se repite, avise a quien instala el sistema. |
-| `sin_senal_favero` | "No llegó la señal de la luz Favero." | Corresponde a la Validación 2. En la Validación 1 las luces se marcan a mano y el sistema no genera este motivo. | Siga el procedimiento VAR habitual. |
+| `sin_senal_favero` | "No llegó la señal de la luz Favero." | Las luces se marcan a mano y el sistema no genera este motivo. | Siga el procedimiento VAR habitual. |
 | `mensaje_invalido` | "El análisis recibió datos inválidos." | Un componente interno rechazó los datos del clip. | Vuelva a cargar el clip. Si persiste, avise a quien instala el sistema. |
 | Otro valor | "El sistema no pudo clasificar la acción." | Motivo no reconocido. | Siga el procedimiento VAR habitual y avise a quien instala el sistema. |
 
@@ -301,10 +298,9 @@ Estas definiciones describen la anotación del conjunto de datos con el que se e
 
 ## Anexo B. Funciones fuera de esta versión
 
-- CU-04 Capturar acción en tiempo real con dos cámaras y buffer circular (F-001, F-014, F-015, F-017): Validación 2.
-- Lectura del aparato Favero por RJ11 y sincronización con el fotograma (F-002, F-004, F-016): Validación 2.
+- CU-04 Capturar acción en tiempo real con buffer circular (F-001, F-014, F-015, F-017) y lectura del aparato Favero por RJ12 (F-002, F-004, F-016): fuera de alcance (solicitud de cambio del 20/11/2026; trabajo futuro).
 - CU-05, flujo alterno: rechazo de la solicitud de revisión por el árbitro; la interfaz no tiene botón de rechazo.
-- Recorte automático de los 5 s previos al tocado (RF-01): los instantes marcados se guardan pero no recortan el clip.
+- Ventana del clip (RF-01, D-19): Fog recorta el clip a 2,0 s antes y 0,5 s después del primer instante marcado.
 - Revisión del clip de ambas cámaras con ±3 s alrededor del toque y cuadros sincronizados (F-006, F-007): la interfaz reproduce un solo clip.
 - CU-08 Superposición biomecánica de esqueleto, arma y trayectoria (F-031).
 - CU-09 Justificación de la clasificación, eventos clave y criterio FIE (F-035, F-008) y mensaje "Evidencia insuficiente".

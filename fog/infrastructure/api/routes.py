@@ -35,7 +35,7 @@ from fog.application.abrir_revision import (
     VideoGuardado,
     frame_del_tocado,
 )
-from fog.application.cerrar_sesion import CerrarSesion, RespaldoFallido, SinCombateActivo
+from fog.application.cerrar_sesion import CerrarSesion, CombateInexistente, RespaldoFallido
 from fog.application.configurar_combate import ConfigurarCombate, DatosTirador
 from fog.application.consultar_combate import ObtenerCombate
 from fog.application.consultar_pose import ConsultarPose
@@ -51,18 +51,15 @@ from fog.application.forward_verdict import ForwardVerdictToClient
 from fog.application.listar_catalogos import ListarEventos, ListarUsuarios
 from fog.application.process_match import ProcessIncomingMatch
 from fog.application.registrar_clasificacion import ContextoClip, RegistrarClasificacion
-from fog.application.servicio_tocados import ServicioTocados
 from fog.application.registrar_veredicto import RegistrarVeredicto
 from fog.application.resumir_validacion import ResumirValidacion
 from fog.composition import Container
-from fog.ports.combate_activo import CombateActivoPort
 from fog.domain.audit_models import Combate
 from fog.domain.errors import (
     ClasificacionPendiente,
     KeypointsAlterados,
     RecursoNoEncontrado,
     SinModeloActivo,
-    VentanaVarCerrada,
     VeredictoInvalido,
     VeredictoYaRegistrado,
 )
@@ -80,8 +77,6 @@ from fog.infrastructure.api.schemas import (
     AuditoriaVerificarResponse,
     ClipUploadResponse,
     CombateResponse,
-    DecisionPistaRequest,
-    DecisionPistaResponse,
     EventoResponse,
     HealthResponse,
     LuzAck,
@@ -98,16 +93,15 @@ from fog.infrastructure.api.schemas import (
     RevisionResumenResponse,
     RolLiteral,
     SesionCerradaResponse,
+    SesionCerrarRequest,
     SugerenciaResponse,
-    TocadoCreadoResponse,
-    TocadoItemResponse,
     UsuarioResponse,
     VeredictoRequest,
     VeredictoResponse,
 )
 from fog.infrastructure.api import errores
 from fog.infrastructure.api.errores import ErrorConCodigo
-from fog.infrastructure.api.seguridad import exigir_autenticacion, exigir_edge_o_jwt
+from fog.infrastructure.api.seguridad import exigir_autenticacion
 from fog.infrastructure.clips.clip_file_reader import (
     ClipTooLargeError,
     ExtraccionAgotadaError,
@@ -126,8 +120,6 @@ from fog.ports.unidad_de_trabajo import UnidadDeTrabajoPort
 # propio router para poder omitirlo en el despliegue remoto (ver app.py).
 log = logging.getLogger("fog.api")
 router = APIRouter(dependencies=[Depends(exigir_autenticacion)])
-# Rutas de tocados: aceptan además el token de servicio de Edge, solo desde 127.0.0.1 (EDGE02).
-router_edge = APIRouter(dependencies=[Depends(exigir_edge_o_jwt)])
 router_publico = APIRouter()
 router_ws = APIRouter(dependencies=[Depends(exigir_autenticacion)])
 
@@ -219,7 +211,6 @@ async def listar_usuarios(
 async def configure_match(
     body: MatchConfigRequest,
     configurar_combate: ConfigurarCombate = Depends(Provide[Container.configurar_combate]),
-    activo: CombateActivoPort = Depends(Provide[Container.combate_activo]),
 ) -> MatchConfigResponse:
     try:
         combate = await configurar_combate.execute(
@@ -237,33 +228,11 @@ async def configure_match(
         )
     except RecursoNoEncontrado as exc:
         raise HTTPException(status_code=404, detail=f"no existe: {exc}") from exc
-    activo.establecer(combate.id)  # un combate activo por nodo: Edge sube los tocados a este
     return MatchConfigResponse(
         match_id=str(combate.id),
         weapon_side_A=body.weapon_side_A,
         weapon_side_B=body.weapon_side_B,
     )
-
-
-@router_edge.get(
-    "/matches/activo",
-    tags=["tocados"],
-    summary="Combate activo del nodo: al que Edge sube los tocados (EDGE02)",
-    description=(
-        "`{\"match_id\": ...}` del combate que `POST /matches/config` marcó como activo (uno por "
-        "nodo; el siguiente `config` lo reemplaza y `POST /sesion/cerrar` lo limpia). Acepta el token "
-        "de servicio de Edge (`X-Edge-Token`, solo desde 127.0.0.1) o el JWT. 404 si no hay."
-    ),
-    responses={404: {"description": "No hay un combate activo."}},
-)
-@inject
-async def combate_activo(
-    activo: CombateActivoPort = Depends(Provide[Container.combate_activo]),
-) -> dict[str, str]:
-    combate_id = activo.obtener()
-    if combate_id is None:
-        raise HTTPException(404, "no hay un combate activo (POST /matches/config)")
-    return {"match_id": str(combate_id)}
 
 
 @router.get(
@@ -438,216 +407,38 @@ def _respuesta_clip(
     )
 
 
-def _item_tocado(fila, estado: str, ultimo: bool) -> TocadoItemResponse:
-    d = fila.decision_pista
-    return TocadoItemResponse(
-        tocado_id=str(fila.id), creado_en=_con_zona_horaria(fila.creado_en), fuente=fila.fuente,
-        luz_A=fila.luz_a, luz_B=fila.luz_b, t_luz_a_ms=fila.t_luz_a_ms, t_luz_b_ms=fila.t_luz_b_ms,
-        estado=estado, tiene_clip=fila.tiene_clip,
-        revision_id=str(fila.revision_id) if fila.revision_id else None,
-        revisado=fila.revision_id is not None,
-        admite_var=ultimo and fila.revision_id is None and not fila.cerrado,
-        decision_pista=None if d is None else DecisionPistaResponse(
-            clase=d.clase, anulado=d.anulado, registrado_en=_con_zona_horaria(d.registrado_en)),
-    )
-
-
-@router_edge.post(
-    "/matches/{match_id}/tocados",
-    response_model=TocadoCreadoResponse,
-    tags=["tocados"],
-    summary="Registra un tocado capturado por Edge y lo preprocesa sin abrir revisión (EDGE02)",
-    description=(
-        "Recibe el clip que recortó Edge (2,0 s antes y 0,5 s después del tocado) y los instantes "
-        "de luz relativos a su primer frame (`t_luz_a_ms`, `t_luz_b_ms`; al menos uno). Guarda el "
-        "clip y registra el `tocado` (`fuente` 'favero' o 'simulado': el botón de prueba emite "
-        "'simulado') y responde de inmediato con `tocado_id`. La pose, las features, Cloud y el "
-        "razonamiento corren en segundo plano con prioridad (VAR pedido, tocado más reciente, "
-        "anteriores) y la clasificación queda guardada **sin revisión** (D-04): la revisión se "
-        "abre con POST /tocados/{tocado_id}/revision. Un clip más largo que la ventana se recorta."
-    ),
-    responses={
-        404: {"description": "El combate no fue creado."},
-        422: {"description": "Instantes o fuente inválidos."},
-    },
-)
-@inject
-async def registrar_tocado(
-    match_id: str,
-    file: UploadFile = File(..., description="Clip MP4 del tocado."),
-    t_luz_a_ms: int | None = Form(None, ge=0, description="Instante de la luz de A en el clip (ms)."),
-    t_luz_b_ms: int | None = Form(None, ge=0, description="Instante de la luz de B en el clip (ms)."),
-    fuente: str = Form("favero", description="'favero' o 'simulado'."),
-    origen: str | None = Form(None, description="Origen de la señal (p. ej. 'boton'); solo para el log."),
-    uow: UnidadDeTrabajoPort = Depends(Provide[Container.unidad_de_trabajo]),
-    servicio: ServicioTocados = Depends(Provide[Container.servicio_tocados]),
-) -> TocadoCreadoResponse:
-    combate = await _combate_o_none(match_id, uow)
-    if combate is None:
-        raise _combate_no_creado(match_id)
-    if t_luz_a_ms is None and t_luz_b_ms is None:
-        raise HTTPException(422, "se requiere al menos una luz (t_luz_a_ms o t_luz_b_ms)")
-    try:
-        tocado_id = await servicio.recibir(
-            combate, await file.read(), file.filename,
-            InstantesLuz(t_luz_a_ms=t_luz_a_ms, t_luz_b_ms=t_luz_b_ms), fuente,
-        )
-    except ValueError as exc:
-        raise HTTPException(422, str(exc)) from exc
-    except SinModeloActivo as exc:
-        raise HTTPException(503, "no hay una versión de modelo activa (scripts/registrar_modelo.py)") from exc
-    except ClipTooLargeError as exc:
-        raise HTTPException(413, str(exc)) from exc
-    except InvalidClipError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    except TocadoFueraDelClipError as exc:
-        raise HTTPException(422, str(exc)) from exc
-    log.info("tocado %s registrado (fuente=%s, origen=%s)", tocado_id, fuente, origen or "-")
-    return TocadoCreadoResponse(tocado_id=str(tocado_id), match_id=match_id, estado="procesando")
-
-
-@router.get(
-    "/matches/{match_id}/tocados",
-    response_model=list[TocadoItemResponse],
-    tags=["tocados"],
-    summary="Últimos tocados del combate, con estado, revisión y decisión en pista (EDGE02)",
-    description=(
-        "El más reciente primero. No devuelve la sugerencia: solo aparece dentro de la revisión "
-        "(D-04). `revisado=false` es 'No revisado' (se deriva de no tener `revision_var`). "
-        "`admite_var` es verdadero solo para el tocado más reciente sin revisión: al llegar el "
-        "siguiente, el anterior queda cerrado."
-    ),
-)
-@inject
-async def listar_tocados(
-    match_id: str,
-    limite: int = Query(20, ge=1, le=100),
-    servicio: ServicioTocados = Depends(Provide[Container.servicio_tocados]),
-    uow: UnidadDeTrabajoPort = Depends(Provide[Container.unidad_de_trabajo]),
-) -> list[TocadoItemResponse]:
-    combate = await _combate_o_none(match_id, uow)
-    if combate is None:
-        raise _combate_no_creado(match_id)
-    filas = await servicio.listar(combate.id, limite)
-    return [_item_tocado(f, estado, i == 0) for i, (f, estado) in enumerate(filas)]
-
-
-@router.post(
-    "/tocados/{tocado_id}/revision",
-    response_model=ClipUploadResponse,
-    tags=["tocados"],
-    summary="Solicitar VAR: abre la revisión del tocado con la sugerencia ya calculada (EDGE02)",
-    description=(
-        "Crea la `revision_var` aceptada (D-04: no se registra qué tirador la pidió), le asigna "
-        "la clasificación preprocesada, o espera a que termine (hasta 60 s, RNF-04), y responde "
-        "como POST /matches/{id}/clip. Con el `revision_id` sigue el flujo actual (pose, "
-        "razonamiento, veredicto, WebSocket). 409 si llegó un tocado posterior (ya no admite VAR)."
-    ),
-    responses={404: {"description": "El tocado no existe."}, 409: {"description": "Ventana VAR cerrada."}},
-)
-@inject
-async def solicitar_var(
-    tocado_id: uuid.UUID,
-    servicio: ServicioTocados = Depends(Provide[Container.servicio_tocados]),
-) -> ClipUploadResponse:
-    try:
-        abierto = await servicio.solicitar_var(tocado_id)
-    except RecursoNoEncontrado as exc:
-        raise HTTPException(404, str(exc)) from exc
-    except VentanaVarCerrada as exc:
-        raise ErrorConCodigo(409, str(exc), "ventana_var_cerrada") from exc
-    luz = LuzSignal(has_luz_a=abierto.luz_a, has_luz_b=abierto.luz_b)
-    respuesta = _respuesta_clip(
-        abierto.resultado.match_id, str(abierto.revision_id), luz, abierto.resultado
-    )
-    return respuesta
-
-
-@router.post(
-    "/tocados/{tocado_id}/decision-pista",
-    response_model=DecisionPistaResponse,
-    tags=["tocados"],
-    summary="Registra la decisión en pista del árbitro (clase o anulado), sin ver la sugerencia (EDGE02)",
-    description=(
-        "Se puede registrar apenas existe el tocado, aunque su clip siga procesándose o haya "
-        "fallado, y aunque ya no admita VAR. Tabla de solo adición: corregir un error es agregar "
-        "otra fila, que reemplaza a la anterior por su hora. Es la etiqueta no influida por el "
-        "modelo para el reentrenamiento. 422 si no se da una clase ni 'anulado' (o ambas)."
-    ),
-)
-@inject
-async def registrar_decision_pista(
-    tocado_id: uuid.UUID,
-    cuerpo: DecisionPistaRequest,
-    servicio: ServicioTocados = Depends(Provide[Container.servicio_tocados]),
-) -> DecisionPistaResponse:
-    try:
-        d = await servicio.registrar_decision(
-            tocado_id, cuerpo.clase, cuerpo.anulado,
-            uuid.UUID(cuerpo.registrado_por) if cuerpo.registrado_por else None,
-        )
-    except RecursoNoEncontrado as exc:
-        raise HTTPException(404, str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(422, str(exc)) from exc
-    return DecisionPistaResponse(clase=d.clase, anulado=d.anulado, registrado_en=_con_zona_horaria(d.registrado_en))
-
-
 @router.post(
     "/sesion/cerrar",
     response_model=SesionCerradaResponse,
-    tags=["tocados"],
-    summary="Cierra la sesión: respaldo verificado (sin clips) y, solo si pasa, purga los clips (EDGE02)",
+    tags=["sesión"],
+    summary="Cierra la sesión: respaldo verificado (sin clips) y, solo si pasa, purga los clips",
     description=(
-        "Ejecuta el respaldo verificado del evento del combate activo (`scripts/respaldar_sesion.sh`: dump, "
-        "`.tgz` sin clips, manifiesto y restauración de prueba). **Solo si el respaldo y su verificación "
-        "pasan**, borra los archivos de clip de la sesión en Fog y en Edge y deja al nodo sin combate "
-        "activo. La base conserva `clip.sha256` y los metadatos (la auditoría guarda el hash, no el clip). "
-        "409 `sin_combate_activo` si no hay sesión; 500 `respaldo_fallido` si el respaldo falló: no se "
-        "borró nada, el `detail` trae la salida del respaldo y se puede reintentar."
+        "Cuerpo `{match_id}`: el combate cuya sesión (evento) se cierra. Ejecuta el respaldo verificado "
+        "del evento (`scripts/respaldar_sesion.sh`: dump, `.tgz` sin clips, manifiesto y restauración de "
+        "prueba). **Solo si el respaldo y su verificación pasan**, borra los archivos de clip de esa sesión. "
+        "La base conserva `clip.sha256` y los metadatos (la auditoría guarda el hash, no el clip). "
+        "404 `combate_inexistente` si el combate no existe; 500 `respaldo_fallido` si el respaldo falló: "
+        "no se borró nada, el `detail` trae la salida del respaldo y se puede reintentar."
     ),
     responses={
-        409: {"description": "No hay combate activo."},
+        404: {"description": "El combate no existe."},
         500: {"description": "El respaldo falló: no se borró nada."},
     },
 )
 @inject
 async def cerrar_sesion(
+    cuerpo: SesionCerrarRequest,
     caso: CerrarSesion = Depends(Provide[Container.cerrar_sesion]),
 ) -> SesionCerradaResponse:
     try:
-        r = await caso.execute()
-    except SinCombateActivo as exc:
-        raise ErrorConCodigo(409, str(exc), "sin_combate_activo") from exc
+        r = await caso.execute(cuerpo.match_id)
+    except CombateInexistente as exc:
+        raise ErrorConCodigo(404, str(exc), "combate_inexistente") from exc
     except RespaldoFallido as exc:
         raise ErrorConCodigo(
             500, f"El respaldo falló y no se borró nada: {exc}", "respaldo_fallido"
         ) from exc
-    return SesionCerradaResponse(
-        respaldo=r.respaldo, clips_borrados=r.clips_borrados, archivos_edge_borrados=r.archivos_edge_borrados
-    )
-
-
-@router.get(
-    "/tocados/{tocado_id}/clip",
-    tags=["tocados"],
-    summary="Descarga el clip del tocado para reproducirlo como repetición (EDGE02)",
-    description="MP4 del tocado. 404 si el tocado no existe o su clip ya se purgó al cerrar la sesión.",
-    response_class=Response,
-)
-@inject
-async def descargar_clip_tocado(
-    tocado_id: uuid.UUID,
-    tocados=Depends(Provide[Container.tocados_repository_consulta]),
-    file_storage: FileStoragePort = Depends(Provide[Container.file_storage]),
-):
-    from fastapi.responses import FileResponse
-
-    clip = await tocados.clip_de(tocado_id)
-    ruta = file_storage.ruta_local(clip.uri) if clip else None
-    if ruta is None:
-        raise HTTPException(404, "el clip no está disponible")
-    return FileResponse(ruta, media_type="video/mp4")
+    return SesionCerradaResponse(respaldo=r.respaldo, clips_borrados=r.clips_borrados)
 
 
 @router.post(

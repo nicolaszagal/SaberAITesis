@@ -146,16 +146,6 @@ MIN_FRAMES = 3
 VENTANA_PRE_MS = int(os.environ.get("VENTANA_PRE_MS", "2000"))
 VENTANA_POST_MS = int(os.environ.get("VENTANA_POST_MS", "500"))
 
-# Edge local (EDGE02): Fog le reenvía por 127.0.0.1 la configuración de cámara, el estado y la
-# señal de prueba (`/edge/*`). `MODO_PRUEBA_SENAL=1` habilita el botón de señal de prueba; sin
-# él, `POST /edge/senal-prueba` responde 404 en Fog y en Edge.
-EDGE_URL = os.environ.get("EDGE_URL", "http://127.0.0.1:8765")
-MODO_PRUEBA_SENAL = os.environ.get("MODO_PRUEBA_SENAL") == "1"
-# Token de servicio de Edge (`.secrets/edge_token.txt`, generado al azar con scripts/crear_edge_token.sh).
-# Fog lo acepta solo desde 127.0.0.1 y solo en las rutas de tocados (header `X-Edge-Token`).
-EDGE_TOKEN = os.environ.get("EDGE_TOKEN") or None
-# Carpeta de los clips de Edge, que se borra al cerrar la sesión (mismo equipo que Fog).
-EDGE_TOCADOS_DIR = os.environ.get("EDGE_TOCADOS_DIR", "datos/edge/tocados")
 # Respaldo verificado que corre el cierre de sesión (EDGE02): script y tiempo máximo.
 RESPALDO_SCRIPT = os.environ.get("RESPALDO_SCRIPT", "scripts/respaldar_sesion.sh")
 RESPALDO_TIMEOUT_S = float(os.environ.get("RESPALDO_TIMEOUT_S", "600"))

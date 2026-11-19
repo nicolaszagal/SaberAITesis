@@ -38,7 +38,6 @@ from fog.domain.models import TrackedSequence
 from shared import config
 from fog.ports.file_storage import FileStoragePort
 from fog.ports.pose_estimator import PoseEstimatorPort
-from fog.ports.procesador_clip import ClipRecibido, ProcesadorClipPort
 
 log = logging.getLogger("fog.infrastructure.clips")
 
@@ -397,99 +396,3 @@ async def _guardar_sin_pose(
         uri=uri, sha256=sha256, fps=round(float(fps), 2), ancho_px=ancho, alto_px=alto,
         duracion_ms=duracion_ms,
     )
-
-
-class ProcesadorClips(ProcesadorClipPort):
-    """Adaptador de `ProcesadorClipPort` sobre OpenCV y el almacén de archivos."""
-
-    def __init__(
-        self,
-        pose_estimator: PoseEstimatorPort,
-        executor: Executor,
-        storage: FileStoragePort,
-        clip_max_mb: float,
-        min_frames: int,
-    ):
-        self._pose = pose_estimator
-        self._executor = executor
-        self._storage = storage
-        self._clip_max_mb = clip_max_mb
-        self._min_frames = min_frames
-
-    async def guardar(self, contenido, nombre, instantes_ms):
-        if len(contenido) > self._clip_max_mb * 1024 * 1024:
-            raise ClipTooLargeError(
-                f"el clip ({nombre!r}) pesa {len(contenido) / (1024 * 1024):.1f} MB, "
-                f"el máximo es {self._clip_max_mb:.0f} MB"
-            )
-        suffix = os.path.splitext(nombre or "")[1] or ".mp4"
-        fd, original = tempfile.mkstemp(suffix=suffix)
-        trabajo, desfase = original, 0
-        try:
-            with os.fdopen(fd, "wb") as tmp:
-                tmp.write(contenido)
-            recorte = await asyncio.to_thread(
-                recortar_ventana, original, instantes_ms,
-                config.VENTANA_PRE_MS, config.VENTANA_POST_MS, nombre, self._min_frames,
-            )
-            if recorte is not None:
-                trabajo, desfase = recorte
-            ajustados = {k: v - desfase for k, v in instantes_ms.items()}
-
-            def validar(duracion_ms: int) -> None:
-                for campo, valor in ajustados.items():
-                    if not 0 <= valor <= duracion_ms:
-                        raise TocadoFueraDelClipError(
-                            f"{campo}={valor} está fuera del clip: debe estar entre 0 y {duracion_ms} ms"
-                        )
-
-            guardado = await _guardar_sin_pose(trabajo, nombre, self._storage, ajustados, validar)
-            frames = round(guardado.duracion_ms / 1000 * guardado.fps)
-            if frames < self._min_frames:
-                raise InvalidClipError(
-                    f"el clip ({nombre!r}) tiene {frames} frames, se requieren al menos {self._min_frames}"
-                )
-            return ClipRecibido(
-                guardado.uri, guardado.sha256, guardado.fps, guardado.ancho_px, guardado.alto_px,
-                guardado.duracion_ms, desfase,
-            )
-        finally:
-            for ruta in {original, trabajo}:
-                if os.path.exists(ruta):
-                    os.remove(ruta)
-
-    async def extraer_pose(self, uri: str, plazo_s: float) -> TrackedSequence:
-        ruta = self._storage.ruta_local(uri)
-        if ruta is None:
-            raise InvalidClipError("el clip ya no está disponible en el almacén")
-        cancelar = threading.Event()
-        sesion = self._pose.start_session()
-
-        def leer() -> None:
-            cap = cv2.VideoCapture(str(ruta))
-            if not cap.isOpened():
-                raise InvalidClipError("no se pudo abrir el clip guardado")
-            n = 0
-            try:
-                while not cancelar.is_set():
-                    ok, frame = cap.read()
-                    if not ok:
-                        break
-                    sesion.add_frame(frame)
-                    n += 1
-            finally:
-                cap.release()
-            if cancelar.is_set():
-                raise _ExtraccionCancelada()
-            if n < self._min_frames:
-                raise InvalidClipError(f"el clip guardado tiene {n} frames, se requieren {self._min_frames}")
-
-        loop = asyncio.get_running_loop()
-        limite = loop.time() + plazo_s
-        try:
-            await asyncio.wait_for(loop.run_in_executor(self._executor, leer), plazo_s)
-            restante = max(0.0, limite - loop.time())
-            return await asyncio.wait_for(loop.run_in_executor(self._executor, sesion.finish), restante)
-        except asyncio.TimeoutError:
-            cancelar.set()
-            raise ExtraccionAgotadaError(None) from None  # type: ignore[arg-type]

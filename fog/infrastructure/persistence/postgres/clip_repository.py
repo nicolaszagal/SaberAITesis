@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, text
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -77,3 +77,18 @@ class PostgresClipRepository(ClipRepositoryPort):
                 )
             ).one_or_none()
         return _fila_a_clip(fila) if fila else None
+
+    async def uris_de_sesion(self, evento_id: uuid.UUID) -> list[str]:
+        async with self._session_factory() as session:
+            filas = (
+                await session.execute(
+                    text(
+                        "SELECT DISTINCT uri FROM sabre.clip WHERE combate_id IN "
+                        "(SELECT id FROM sabre.combate WHERE evento_id = :e) "
+                        "AND uri NOT IN (SELECT uri FROM sabre.clip WHERE combate_id NOT IN "
+                        "(SELECT id FROM sabre.combate WHERE evento_id = :e))"
+                    ),
+                    {"e": evento_id},
+                )
+            ).all()
+        return [f.uri for f in filas]
