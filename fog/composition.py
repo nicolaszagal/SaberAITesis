@@ -10,6 +10,7 @@ main.py solo crea el Container, lo configura desde shared.config y lo
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import numpy as np
 import redis.asyncio as redis
@@ -34,6 +35,7 @@ from fog.application.consultar_razonamiento import ConsultarRazonamiento
 from fog.application.listar_catalogos import ListarEventos, ListarUsuarios
 from fog.application.process_match import ProcessIncomingMatch
 from fog.application.resumir_validacion import ResumirValidacion
+from fog.application.cerrar_sesion import CerrarSesion
 from fog.application.purgar_clips import PurgarClips
 from fog.application.registrar_clasificacion import RegistrarClasificacion
 from fog.application.servicio_tocados import ServicioTocados
@@ -82,6 +84,8 @@ from fog.infrastructure.persistence.postgres.revision_repository import (
     PostgresRevisionRepository,
 )
 from fog.infrastructure.clips.clip_file_reader import ProcesadorClips
+from fog.infrastructure.respaldo.script_respaldo import ScriptRespaldo
+from fog.infrastructure.persistence.combate_activo_archivo import CombateActivoArchivo
 from fog.infrastructure.persistence.postgres.tocados_repository import PostgresTocadosRepository
 from fog.infrastructure.persistence.postgres.tocado_repository import (
     PostgresTocadoRepository,
@@ -365,4 +369,15 @@ class Container(containers.DeclarativeContainer):
     )
     purgar_clips = providers.Singleton(
         PurgarClips, tocados=tocados_repository_consulta, storage=file_storage
+    )
+    combate_activo = providers.Singleton(CombateActivoArchivo, directorio=config.storage_dir)
+    respaldo_sesion = providers.Singleton(
+        ScriptRespaldo,
+        script=providers.Callable(lambda: shared_config.RESPALDO_SCRIPT),
+        directorio=Path(__file__).resolve().parents[1],
+        timeout_s=providers.Callable(lambda: shared_config.RESPALDO_TIMEOUT_S),
+    )
+    cerrar_sesion = providers.Singleton(
+        CerrarSesion, uow=unidad_de_trabajo, activo=combate_activo, respaldo=respaldo_sesion,
+        purgar=purgar_clips, edge_dir=providers.Callable(lambda: shared_config.EDGE_TOCADOS_DIR),
     )

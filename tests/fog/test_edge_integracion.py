@@ -15,7 +15,6 @@ from edge.captura.config import ConfigCaptura
 from edge.captura.envio import EnvioFog
 from edge.captura.nucleo import NucleoEdge
 from shared import config
-from tests.fog.conftest import AUTH_PASSWORD, AUTH_USUARIO
 
 FPS = 30
 
@@ -49,7 +48,7 @@ def edge_real(tmp_path, servidor_fog, monkeypatch):
     video = tmp_path / "camara.mp4"
     _video(video)
     cfg = ConfigCaptura(directorio=tmp_path / "tocados", archivo_latencia=tmp_path / "lat.json")
-    envio = EnvioFog(cfg.directorio, url, (AUTH_USUARIO, AUTH_PASSWORD))
+    envio = EnvioFog(cfg.directorio, url, "token-de-servicio")
     nucleo = NucleoEdge(
         cfg, tmp_path / "config.json", modo_prueba=True, fuente_video=str(video), envio=envio, listar=lambda: []
     )
@@ -58,6 +57,7 @@ def edge_real(tmp_path, servidor_fog, monkeypatch):
     api.iniciar()
     monkeypatch.setattr(config, "EDGE_URL", f"http://127.0.0.1:{api.puerto}")
     monkeypatch.setattr(config, "MODO_PRUEBA_SENAL", True)
+    monkeypatch.setattr(config, "EDGE_TOKEN", "token-de-servicio")
     yield app, nucleo
     api.detener()
     nucleo.detener()
@@ -124,10 +124,3 @@ def test_edge_exige_jwt(crear_app):
     app = crear_app(autenticado=False)
     assert app.client.get("/edge/estado").status_code == 401
     assert app.client.get("/matches/activo").status_code == 401
-
-
-def test_combate_activo_es_el_ultimo_configurado(crear_app):
-    app = crear_app()
-    primero = app.configurar()
-    segundo = app.configurar()
-    assert app.client.get("/matches/activo").json()["match_id"] == segundo != primero

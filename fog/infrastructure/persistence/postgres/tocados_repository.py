@@ -91,18 +91,21 @@ class PostgresTocadosRepository(TocadosRepositoryPort):
             ).first()
         return ClipDeTocado(fila.id, fila.uri, fila.sha256, float(fila.fps)) if fila else None
 
-    async def uris_clips(self, combate_id: uuid.UUID | None = None) -> list[str]:
+    async def uris_clips(
+        self, combate_id: uuid.UUID | None = None, evento_id: uuid.UUID | None = None
+    ) -> list[str]:
         sql = "SELECT uri FROM sabre.clip WHERE TRUE"
         params: dict = {}
         if combate_id is not None:
             sql += " AND combate_id = :c"
             params["c"] = combate_id
+        if evento_id is not None:
+            # El almacén direcciona por hash: un archivo que usa también un clip de otra sesión no se toca.
+            sql += (
+                " AND combate_id IN (SELECT id FROM sabre.combate WHERE evento_id = :e)"
+                " AND uri NOT IN (SELECT uri FROM sabre.clip WHERE combate_id IS NULL OR combate_id NOT IN "
+                "(SELECT id FROM sabre.combate WHERE evento_id = :e))"
+            )
+            params["e"] = evento_id
         async with self._session_factory() as session:
             return [f.uri for f in (await session.execute(text(sql), params)).all()]
-
-    async def combate_mas_reciente(self) -> uuid.UUID | None:
-        async with self._session_factory() as session:
-            fila = (
-                await session.execute(text("SELECT id FROM sabre.combate ORDER BY creado_en DESC, id DESC LIMIT 1"))
-            ).first()
-        return fila.id if fila else None

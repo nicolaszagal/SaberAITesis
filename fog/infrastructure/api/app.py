@@ -57,6 +57,7 @@ def crear_app(
     app.include_router(routes.router_publico)
     app.include_router(auth_routes.router_login)
     app.include_router(auth_routes.router_sesion)
+    app.include_router(routes.router_edge)  # antes que `router`: /matches/activo y /matches/{id}
     app.include_router(routes.router)
     app.include_router(edge_routes.router)
     if not remoto:

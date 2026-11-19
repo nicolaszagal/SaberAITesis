@@ -296,3 +296,49 @@ def test_el_respaldo_excluye_los_clips_y_conserva_keypoints(sesion, entorno, tmp
     assert "storage/keypoints/cd/cde.npz" in contenido
     assert "abc.mp4" not in contenido and "storage/clips" not in contenido
     assert "fn_verificar_auditoria(): 0 filas alteradas" in r.stdout
+
+
+def _clip_unico(sesion, frames: int) -> Path:
+    """Sube un tocado con un clip de contenido único (el almacén direcciona por hash) y da su archivo."""
+    from tests.fog.conftest import clip_de_prueba
+
+    match_id = sesion.client.get("/matches/activo").json()["match_id"]
+    r = sesion.client.post(
+        f"/matches/{match_id}/tocados", data={"t_luz_a_ms": "300"},
+        files={"file": ("t.mp4", clip_de_prueba(frames), "video/mp4")})
+    assert r.status_code == 200, r.text
+    sha = sesion.sql.filas(
+        "SELECT c.sha256 FROM sabre.clip c JOIN sabre.tocado_clip tc ON tc.clip_id = c.id WHERE tc.tocado_id = :t",
+        t=r.json()["tocado_id"])[0]["sha256"]
+    return sesion.storage_dir / "clips" / sha[:2] / f"{sha}.mp4"
+
+
+def test_cerrar_sesion_con_el_respaldo_real_excluye_los_clips_y_luego_los_borra(sesion, entorno, monkeypatch):
+    """De punta a punta con `respaldar_sesion.sh` real: respalda, verifica y recién entonces purga."""
+    for clave, valor in entorno.items():
+        monkeypatch.setenv(clave, valor)
+    clip = _clip_unico(sesion, 13)
+    assert clip.exists()
+
+    r = sesion.client.post("/sesion/cerrar")
+
+    assert r.status_code == 200, r.text
+    tgz = next(_carpeta_respaldo(entorno).glob("*.tgz"))
+    contenido = subprocess.run(["tar", "-tzf", str(tgz)], capture_output=True, text=True, check=True).stdout
+    assert "storage/clips" not in contenido and ".mp4" not in contenido
+    assert "fn_verificar_auditoria(): 0 filas alteradas" in r.json()["respaldo"]
+    assert not clip.exists()
+    assert sesion.client.get("/matches/activo").status_code == 404
+
+
+def test_cerrar_sesion_con_el_respaldo_roto_no_borra_ningun_clip(sesion, entorno, monkeypatch):
+    for clave, valor in {**entorno, "RESPALDO_DIR": str(BACKEND / "dentro_del_repo")}.items():
+        monkeypatch.setenv(clave, valor)  # el script se niega a respaldar dentro del repo
+    clip = _clip_unico(sesion, 14)
+    assert clip.exists()
+
+    r = sesion.client.post("/sesion/cerrar")
+
+    assert r.status_code == 500 and r.json()["codigo"] == "respaldo_fallido"
+    assert clip.exists()
+    assert sesion.client.get("/matches/activo").status_code == 200

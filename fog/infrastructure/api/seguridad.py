@@ -82,6 +82,51 @@ async def exigir_autenticacion(
         ) from None
 
 
+def _token_edge_valido(conexion: HTTPConnection) -> bool:
+    """True si la petición trae el token de servicio de Edge y viene de 127.0.0.1.
+
+    Exige el token configurado (`EDGE_TOKEN`), la IP del socket en loopback y que la petición no
+    haya pasado por un proxy (sin `X-Forwarded-For`): una petición remota reenviada por el proxy
+    local no puede hacerse pasar por Edge.
+    """
+    esperado = config.EDGE_TOKEN
+    recibido = conexion.headers.get("x-edge-token", "")
+    if not esperado or not hmac.compare_digest(recibido.encode(), esperado.encode()):
+        return False
+    host = conexion.client.host if conexion.client else ""
+    return host in ("127.0.0.1", "::1") and "x-forwarded-for" not in conexion.headers
+
+
+@inject
+async def exigir_edge_o_jwt(
+    conexion: HTTPConnection,
+    validar: ValidarToken = Depends(Provide[Container.validar_token]),
+) -> str:
+    """Dependencia de las rutas de tocados: token de servicio de Edge o JWT del operador.
+
+    Con la cabecera `X-Edge-Token` solo vale el token de servicio (y solo desde 127.0.0.1): si es
+    inválido responde 401 sin caer al JWT. Sin ella, exige `Authorization: Bearer` como siempre.
+
+    Returns:
+        `"edge"` con el token de servicio; el usuario autenticado con el JWT.
+
+    Raises:
+        HTTPException: 401 si el token de Edge es inválido o falta el JWT.
+    """
+    if "x-edge-token" in conexion.headers:
+        if _token_edge_valido(conexion):
+            return "edge"
+        raise HTTPException(
+            status_code=401, detail="No autenticado", headers={"WWW-Authenticate": "Bearer"}
+        )
+    try:
+        return validar.execute(_token_de(conexion), ip_cliente(conexion))
+    except TokenInvalido:
+        raise HTTPException(
+            status_code=401, detail="No autenticado", headers={"WWW-Authenticate": "Bearer"}
+        ) from None
+
+
 class EncabezadosSeguridad:
     """Agrega las cabeceras de seguridad a toda respuesta HTTP.
 

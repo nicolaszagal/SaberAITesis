@@ -35,6 +35,7 @@ from fog.application.abrir_revision import (
     VideoGuardado,
     frame_del_tocado,
 )
+from fog.application.cerrar_sesion import CerrarSesion, RespaldoFallido, SinCombateActivo
 from fog.application.configurar_combate import ConfigurarCombate, DatosTirador
 from fog.application.consultar_combate import ObtenerCombate
 from fog.application.consultar_pose import ConsultarPose
@@ -54,6 +55,7 @@ from fog.application.servicio_tocados import ServicioTocados
 from fog.application.registrar_veredicto import RegistrarVeredicto
 from fog.application.resumir_validacion import ResumirValidacion
 from fog.composition import Container
+from fog.ports.combate_activo import CombateActivoPort
 from fog.domain.audit_models import Combate
 from fog.domain.errors import (
     ClasificacionPendiente,
@@ -95,6 +97,7 @@ from fog.infrastructure.api.schemas import (
     RevisionDetalleResponse,
     RevisionResumenResponse,
     RolLiteral,
+    SesionCerradaResponse,
     SugerenciaResponse,
     TocadoCreadoResponse,
     TocadoItemResponse,
@@ -104,7 +107,7 @@ from fog.infrastructure.api.schemas import (
 )
 from fog.infrastructure.api import errores
 from fog.infrastructure.api.errores import ErrorConCodigo
-from fog.infrastructure.api.seguridad import exigir_autenticacion
+from fog.infrastructure.api.seguridad import exigir_autenticacion, exigir_edge_o_jwt
 from fog.infrastructure.clips.clip_file_reader import (
     ClipTooLargeError,
     ExtraccionAgotadaError,
@@ -123,6 +126,8 @@ from fog.ports.unidad_de_trabajo import UnidadDeTrabajoPort
 # propio router para poder omitirlo en el despliegue remoto (ver app.py).
 log = logging.getLogger("fog.api")
 router = APIRouter(dependencies=[Depends(exigir_autenticacion)])
+# Rutas de tocados: aceptan además el token de servicio de Edge, solo desde 127.0.0.1 (EDGE02).
+router_edge = APIRouter(dependencies=[Depends(exigir_edge_o_jwt)])
 router_publico = APIRouter()
 router_ws = APIRouter(dependencies=[Depends(exigir_autenticacion)])
 
@@ -214,6 +219,7 @@ async def listar_usuarios(
 async def configure_match(
     body: MatchConfigRequest,
     configurar_combate: ConfigurarCombate = Depends(Provide[Container.configurar_combate]),
+    activo: CombateActivoPort = Depends(Provide[Container.combate_activo]),
 ) -> MatchConfigResponse:
     try:
         combate = await configurar_combate.execute(
@@ -231,6 +237,7 @@ async def configure_match(
         )
     except RecursoNoEncontrado as exc:
         raise HTTPException(status_code=404, detail=f"no existe: {exc}") from exc
+    activo.establecer(combate.id)  # un combate activo por nodo: Edge sube los tocados a este
     return MatchConfigResponse(
         match_id=str(combate.id),
         weapon_side_A=body.weapon_side_A,
@@ -238,20 +245,24 @@ async def configure_match(
     )
 
 
-@router.get(
+@router_edge.get(
     "/matches/activo",
     tags=["tocados"],
-    summary="Combate configurado más recientemente (lo usa Edge para subir tocados) (EDGE02)",
-    description="`{\"match_id\": ...}` del último `POST /matches/config`. 404 si no hay ninguno.",
-    responses={404: {"description": "Todavía no se configuró ningún combate."}},
+    summary="Combate activo del nodo: al que Edge sube los tocados (EDGE02)",
+    description=(
+        "`{\"match_id\": ...}` del combate que `POST /matches/config` marcó como activo (uno por "
+        "nodo; el siguiente `config` lo reemplaza y `POST /sesion/cerrar` lo limpia). Acepta el token "
+        "de servicio de Edge (`X-Edge-Token`, solo desde 127.0.0.1) o el JWT. 404 si no hay."
+    ),
+    responses={404: {"description": "No hay un combate activo."}},
 )
 @inject
 async def combate_activo(
-    tocados=Depends(Provide[Container.tocados_repository_consulta]),
+    activo: CombateActivoPort = Depends(Provide[Container.combate_activo]),
 ) -> dict[str, str]:
-    combate_id = await tocados.combate_mas_reciente()
+    combate_id = activo.obtener()
     if combate_id is None:
-        raise HTTPException(404, "todavía no se configuró ningún combate (POST /matches/config)")
+        raise HTTPException(404, "no hay un combate activo (POST /matches/config)")
     return {"match_id": str(combate_id)}
 
 
@@ -441,7 +452,7 @@ def _item_tocado(fila, estado: str, ultimo: bool) -> TocadoItemResponse:
     )
 
 
-@router.post(
+@router_edge.post(
     "/matches/{match_id}/tocados",
     response_model=TocadoCreadoResponse,
     tags=["tocados"],
@@ -580,6 +591,41 @@ async def registrar_decision_pista(
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     return DecisionPistaResponse(clase=d.clase, anulado=d.anulado, registrado_en=_con_zona_horaria(d.registrado_en))
+
+
+@router.post(
+    "/sesion/cerrar",
+    response_model=SesionCerradaResponse,
+    tags=["tocados"],
+    summary="Cierra la sesión: respaldo verificado (sin clips) y, solo si pasa, purga los clips (EDGE02)",
+    description=(
+        "Ejecuta el respaldo verificado del evento del combate activo (`scripts/respaldar_sesion.sh`: dump, "
+        "`.tgz` sin clips, manifiesto y restauración de prueba). **Solo si el respaldo y su verificación "
+        "pasan**, borra los archivos de clip de la sesión en Fog y en Edge y deja al nodo sin combate "
+        "activo. La base conserva `clip.sha256` y los metadatos (la auditoría guarda el hash, no el clip). "
+        "409 `sin_combate_activo` si no hay sesión; 500 `respaldo_fallido` si el respaldo falló: no se "
+        "borró nada, el `detail` trae la salida del respaldo y se puede reintentar."
+    ),
+    responses={
+        409: {"description": "No hay combate activo."},
+        500: {"description": "El respaldo falló: no se borró nada."},
+    },
+)
+@inject
+async def cerrar_sesion(
+    caso: CerrarSesion = Depends(Provide[Container.cerrar_sesion]),
+) -> SesionCerradaResponse:
+    try:
+        r = await caso.execute()
+    except SinCombateActivo as exc:
+        raise ErrorConCodigo(409, str(exc), "sin_combate_activo") from exc
+    except RespaldoFallido as exc:
+        raise ErrorConCodigo(
+            500, f"El respaldo falló y no se borró nada: {exc}", "respaldo_fallido"
+        ) from exc
+    return SesionCerradaResponse(
+        respaldo=r.respaldo, clips_borrados=r.clips_borrados, archivos_edge_borrados=r.archivos_edge_borrados
+    )
 
 
 @router.get(
