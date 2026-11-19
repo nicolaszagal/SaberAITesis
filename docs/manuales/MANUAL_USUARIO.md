@@ -301,7 +301,7 @@ Estas definiciones describen la anotación del conjunto de datos con el que se e
 - CU-04 Capturar acción en tiempo real con buffer circular (F-001, F-014, F-015, F-017) y lectura del aparato Favero por RJ12 (F-002, F-004, F-016): fuera de alcance (solicitud de cambio del 20/11/2026; trabajo futuro).
 - CU-05, flujo alterno: rechazo de la solicitud de revisión por el árbitro; la interfaz no tiene botón de rechazo.
 - Ventana del clip (RF-01, D-19): Fog recorta el clip a 2,0 s antes y 0,5 s después del primer instante marcado.
-- Revisión del clip de ambas cámaras con ±3 s alrededor del toque y cuadros sincronizados (F-006, F-007): la interfaz reproduce un solo clip.
+- Revisión del clip de ambas cámaras con ±3 s alrededor del toque (F-006): la interfaz reproduce un solo clip. El avance cuadro a cuadro (F-007) sí está, con una cámara.
 - CU-08 Superposición biomecánica de esqueleto, arma y trayectoria (F-031).
 - CU-09 Justificación de la clasificación, eventos clave y criterio FIE (F-035, F-008) y mensaje "Evidencia insuficiente".
 - CU-12, filtros por combate, fecha y árbitro, y verificación del hash con marca de registro alterado: la pantalla muestra el hash pero no lo verifica.

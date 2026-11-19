@@ -1,7 +1,6 @@
 # Build context = backend/, usado por fog/Dockerfile y cloud/Dockerfile
 # (ambos dependen de shared/, que vive acá en la raíz — ver
-# docker-compose.yml). edge/ se buildea con su propio contexto
-# (edge/.dockerignore) y no pasa por acá.
+# docker-compose.yml).
 
 .venv/
 __pycache__/
@@ -10,7 +9,6 @@ __pycache__/
 .ruff_cache/
 
 tests/
-edge/
 docs/
 datos/
 datos-humo/

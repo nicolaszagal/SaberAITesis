@@ -63,7 +63,7 @@ mitigación es la vida corta del token y rotar `AUTH_JWT_SECRET` (invalida todos
   `/ws/veredicto/{revision_id}` no existe. En local el navegador no puede enviar
   `Authorization`, así que se acepta el token en la query
   (`/ws/veredicto/{revision_id}?token=<jwt>`); sin token válido se cierra con 1008 antes de
-  aceptar. En V2 se reemplaza por autenticación por primer mensaje (ver
+  aceptar. Reemplazarlo por autenticación por primer mensaje queda pendiente y sin release asignado (ver
   `Tesis/prompts/DEPLOY/PENDIENTE_V2_websocket_camara.md`); no usar `?token=` en ningún entorno
   accesible desde internet.
 
@@ -681,8 +681,8 @@ bloqueante sobre este stream y reenvía el resultado por WebSocket en cuanto lle
 ## 7. Fog → Front: WebSocket de veredicto
 
 > **Autenticación: solo local, temporal.** Con `ENTORNO=remoto` esta ruta no existe. En local
-> exige el JWT en `?token=` (ver sección 0); en V2 se reemplaza por autenticación por primer
-> mensaje (`Tesis/prompts/DEPLOY/PENDIENTE_V2_websocket_camara.md`).
+> exige el JWT en `?token=` (ver sección 0); reemplazarlo por autenticación por primer
+> mensaje queda pendiente y sin release asignado (`Tesis/prompts/DEPLOY/PENDIENTE_V2_websocket_camara.md`).
 
 `GET /ws/veredicto/{revision_id}`: el WebSocket se identifica por revisión, con el
 `revision_id` que devuelven `POST /matches/{match_id}/clip` o `POST /webrtc/offer`. Si la

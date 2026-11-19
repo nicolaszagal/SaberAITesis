@@ -61,7 +61,6 @@ Los clips quedan en `datos/storage`.
 - La URL es pública mientras el túnel esté abierto; la única barrera es la contraseña básica. La aplicación no tiene autenticación y el CORS de Fog está abierto (DEF-23): no deje el túnel fuera de la ventana.
 - Si el Mac se suspende o pierde red, el árbitro pierde el acceso. Use `caffeinate` y conexión estable.
 - Los clips del árbitro se guardan en este Mac; trátelos según el consentimiento informado (RNF-16).
-- La vista previa de cámaras (WebSocket, Validación 2) no está disponible por el túnel y no se usa en la Validación 1.
 
 ## 7. Cierre de la sesión piloto (DEPLOY04)
 

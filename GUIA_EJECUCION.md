@@ -131,10 +131,6 @@ mensajes está en `CONTRATO_API.md` sección 7.
 Cloud no expone HTTP; es un loop de consumo de Redis (`python -m cloud.main`)
 sin servidor.
 
-Edge (captura RTSP de los iPhones → WebSocket para el front) es un tercer
-servicio independiente, solo necesario si estás probando con video real de
-las cámaras — Fog/Cloud no dependen de él. Ver sección 6.4.
-
 ### 4.1 Exportar la evidencia de una validación (L02)
 
 Con PostgreSQL arriba y las variables `DATABASE_URL` y `EVIDENCE_DIR` fijadas (y, si quieres la
@@ -198,7 +194,7 @@ real del clip) están en su docstring. Resultados de la última corrida:
 ```bash
 cd backend && source .venv/bin/activate
 pytest tests/ -q
-ruff check fog cloud shared edge --select E,F,W
+ruff check fog cloud shared --select E,F,W
 ```
 
 Cada prueba tiene un límite de 120 s (`timeout = 120` en `pytest.ini`, plugin `pytest-timeout==2.4.0`,
@@ -222,7 +218,7 @@ URL necesita permiso `CREATEDB`.
 La prueba de κ contra `sklearn` (`tests/fog/test_resumen_validacion.py`) se omite si
 `scikit-learn` no está instalado; no está en `requirements.txt`.
 
-`ruff.toml` fija `line-length = 120`; `ruff check fog cloud shared edge --select E,F,W` no reporta avisos.
+`ruff.toml` fija `line-length = 120`; `ruff check fog cloud shared --select E,F,W` no reporta avisos.
 
 `tests/smoke_manual.py` es una herramienta manual para el flujo WebRTC contra Fog+Cloud+Redis
 ya levantados; no es parte de la suite (su nombre evita los patrones `test_*.py` para que
@@ -242,16 +238,16 @@ La instalación y operación de la Validación 1 con Docker Compose está en
 [`docs/manuales/GUIA_INSTALACION.md`](docs/manuales/GUIA_INSTALACION.md)
 (`docker-compose.yml` único en la raíz de `backend/`, proyecto `sabre`, servicios
 `postgres`, `redis`, `cloud`, `fog` y `frontend`). Esta sección documenta solo lo
-que esa guía no cubre: Cloud en Render (6.2 y 6.3) y Edge (6.4).
+que esa guía no cubre: Cloud en Render (6.2 y 6.3).
 
 Build context: `fog/Dockerfile` y `cloud/Dockerfile` viven en sus módulos, pero el
 contexto es `backend/` porque ambos copian `shared/` y los artefactos de
-`dataset/lstm_6class/`. `edge/` se construye con contexto propio.
+`dataset/lstm_6class/`.
 
 Fog corre en red puente con el puerto 8001 publicado: la Validación 1 no usa WebRTC
 (`docs_claude/contexto_sabre.md` sección 8). El flujo WebRTC necesitaría red de host
 (aiortc elige al azar sus puertos UDP de ICE, aiortc/aiortc#487) y en Docker Desktop
-para Mac esa red es beta; queda para un posible perfil v2.
+para Mac esa red es beta; queda como trabajo futuro.
 
 El entrypoint de Fog (`fog/docker-entrypoint.sh`) aplica `alembic upgrade head` y
 registra el modelo desplegado solo si no hay una versión activa
@@ -308,111 +304,11 @@ vía `redis.from_url`).
 El `docker-compose.yml` de `backend/` ya incluye un Redis propio para la
 Validación 1 local; Upstash solo aplica si Cloud corre en Render.
 
-### 6.4 Edge, local (Docker) — captura RTSP → WebSocket
+### 6.4 Edge (retirado de `main`)
 
-Servicio independiente de Fog/Cloud: redistribuye el video de las dos
-cámaras como frames JPEG por WebSocket al front. No hace pose, features ni
-inferencia — eso sigue siendo trabajo de Fog/Cloud.
-
-```
-iPhone (Larix, RTMP) → mediamtx (RTSP) → edge/ (bridge WS) → front
-```
-
-**Requisitos:** dos iPhones con Larix Broadcaster (u otra app RTMP) en la
-misma red que la máquina que corre `mediamtx`, publicando a
-`rtmp://<IP de esa máquina>:1935/live/front` y `.../live/top`. Solo Docker
-— `mediamtx` no tiene instalación por venv, se usa la imagen oficial.
-
-**`mediamtx` no se levanta desde `backend/`.** Ya está definido en
-`SaberAISoftware/docker-compose.yml` (sibling de `backend/` — mismo nivel
-que `dataset/`, ver sección 1), contenedor `sabre_mediamtx`, mismo profile
-`local`, mismos puertos 1935/8554 — es una única instancia compartida por
-todo el sistema (front y Edge le apuntan a la misma), no una por repo.
-
-Antes de levantar Edge, **desde cualquier lado**, confirmar si ya está
-arriba:
-
-```bash
-docker ps --filter name=sabre_mediamtx
-```
-
-Si el comando anterior no devuelve ninguna fila (no si ya aparece
-`sabre_mediamtx` corriendo, como es lo normal si el front ya lo levantó
-antes), recién ahí hace falta levantarlo — desde `SaberAISoftware/`, **no**
-desde `backend/` ni `backend/edge/` (ese repo tiene su propio
-`docker-compose.yml`, distinto al de `backend/`):
-
-```bash
-cd ../SaberAISoftware   # sibling de backend/, no backend/edge/
-docker compose --profile local up -d mediamtx
-```
-
-```bash
-cd backend/edge
-cat > .env <<'EOF'
-RTSP_FRONT_URL=rtsp://host.docker.internal:8554/live/front
-RTSP_TOP_URL=rtsp://host.docker.internal:8554/live/top
-WS_PORT=8002
-JPEG_QUALITY=70
-TARGET_FPS=15
-EOF
-```
-
-| variable          | default arriba                                       | requerida | uso |
-|--------------------|-----------------------------------------------------|-----------|-----|
-| `RTSP_FRONT_URL`   | `rtsp://host.docker.internal:8554/live/front`        | sí        | URL RTSP de la cámara "front" servida por mediamtx |
-| `RTSP_TOP_URL`     | `rtsp://host.docker.internal:8554/live/top`          | sí        | URL RTSP de la cámara "top" |
-| `WS_PORT`          | `8002`                                               | no        | puerto del servidor WebSocket |
-| `JPEG_QUALITY`     | `70`                                                 | no        | calidad de codificación JPEG (0-100) |
-| `TARGET_FPS`       | `15`                                                 | no        | framerate de redistribución hacia los clientes WS |
-
-Sin `RTSP_FRONT_URL`/`RTSP_TOP_URL` el proceso falla al arrancar con
-`KeyError` — comportamiento esperado (falla rápido en vez de arrancar mal
-configurado).
-
-Levantar, con `mediamtx` ya arriba (paso anterior) — `edge/docker-compose.yml`
-es propio del módulo, no hace falta `--profile` ni correr desde `backend/`:
-
-```bash
-cd backend/edge
-docker compose up -d edge
-docker compose logs -f edge   # opcional, ver los logs sin bloquear la terminal
-```
-
-Verificar:
-
-- **edge** sirviendo WebSocket: conectarse a `ws://localhost:8002/front` o
-  `ws://localhost:8002/top` (también se aceptan `/ws/camera/front` y
-  `/ws/camera/top`; un mensaje binario JPEG por frame). Un GET
-  HTTP plano a `http://localhost:8002/` responde `426 Upgrade Required`
-  — es el comportamiento esperado del healthcheck del compose, no un error
-  (`docker ps` debería mostrar el contenedor como `healthy`).
-- **Reconexión:** si se corta la señal de un iPhone después de haber
-  transmitido, los logs de `edge` muestran `Stream perdido, reconectando
-  en Xs...` (backoff 1s→2s→4s→8s) y `Stream restaurado` al recuperarse —
-  no hace falta reiniciar el contenedor.
-
-**`Sin stream todavía (¿nadie publicó a .../live/front?)` en loop no es un
-error** — es el estado normal mientras ningún iPhone esté transmitiendo
-todavía a ese path (`edge` sigue reintentando con backoff hasta que
-alguien publique; en los logs de `mediamtx` esto se ve como `no stream is
-available on path 'live/front'`). Solo es un problema real si persiste
-**después** de que Larix confirme que está transmitiendo.
-
-**Probar el pipeline sin los iPhones**, publicando un patrón de prueba con
-`ffmpeg` desde la misma máquina que corre `mediamtx` (confirma
-mediamtx + edge de punta a punta antes de depender del hardware):
-
-```bash
-ffmpeg -re -f lavfi -i testsrc=size=320x240:rate=10 \
-  -c:v libx264 -g 10 -pix_fmt yuv420p -f flv rtmp://localhost:1935/live/front
-```
-
-`mediamtx` tarda unos segundos desde que abre la conexión RTMP hasta que
-loggea `stream is available and online` (necesita ver el primer
-keyframe) — no implica ningún problema, solo hay que esperarlo antes de
-que `edge` loggee `Stream restaurado` y un cliente WS empiece a recibir
-frames.
+El nodo Edge (puente RTSP → WebSocket de las cámaras, `mediamtx`, captura y señal Favero) salió del
+alcance por la solicitud de cambio del 20/11/2026. Su código vive en la rama `future/edge-favero`
+(ver `docs/FUTURO_EDGE_FAVERO.md` allí). En `main` el clip se carga a mano (Paso 1 · Clip).
 
 ## 7. Limitaciones conocidas de esta entrega
 
@@ -424,9 +320,6 @@ frames.
 - Cloud precalienta el modelo al arrancar (F-027): una inferencia con ceros (T = `MIN_FRAMES`, 192
   features) cuyo resultado se descarta, con una línea INFO "modelo precalentado en N ms". Si falla,
   Cloud no arranca. Antes la primera inferencia tomó 950 ms (ver `docs/evidencia/prueba_humo_Q02.md`).
-- Edge no tiene tests automatizados ni conexión con Fog/Cloud (solo redistribuye video crudo al
-  front); su healthcheck de Docker verifica que el servidor WebSocket responda, no que las cámaras
-  RTSP estén conectadas — para eso hay que mirar los logs (ver sección 6.4).
 
 ## Pruebas lentas (paridad entrenamiento ↔ Fog)
 
