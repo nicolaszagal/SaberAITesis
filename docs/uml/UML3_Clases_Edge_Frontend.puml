@@ -85,7 +85,6 @@ fogApi ..> "Fog API (REST)" : HTTP JSON / multipart
 note bottom of fogApi : No usa WebRTC ni el WebSocket de veredicto.
 note as N1
   Sin uso desde ninguna pantalla (código presente):
-  CameraView, StickFigurePose y las entidades
-  Camera, Match, System, FencerProfile.
+  las entidades Match, System y FencerProfile.
 end note
 @enduml
