@@ -34,6 +34,7 @@ from fog.application.consultar_razonamiento import ConsultarRazonamiento
 from fog.application.listar_catalogos import ListarEventos, ListarUsuarios
 from fog.application.process_match import ProcessIncomingMatch
 from fog.application.resumir_validacion import ResumirValidacion
+from fog.application.purgar_clips import PurgarClips
 from fog.application.registrar_clasificacion import RegistrarClasificacion
 from fog.application.servicio_tocados import ServicioTocados
 from fog.application.registrar_veredicto import RegistrarVeredicto
@@ -356,6 +357,10 @@ class Container(containers.DeclarativeContainer):
         forward_verdict=forward_verdict,
         registrar_clasificacion=registrar_clasificacion,
         sessions=sessions,
+        storage=file_storage,
         clip_timeout_s=config.clip_upload_timeout_s,
         verdict_timeout_s=config.clip_upload_verdict_timeout_s,
+    )
+    purgar_clips = providers.Singleton(
+        PurgarClips, tocados=tocados_repository_consulta, storage=file_storage
     )

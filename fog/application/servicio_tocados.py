@@ -35,6 +35,7 @@ from fog.domain.models import (
     lado_de_brazo,
 )
 from fog.infrastructure.webrtc.session_registry import SessionRegistry
+from fog.ports.file_storage import FileStoragePort
 from fog.ports.procesador_clip import ProcesadorClipPort
 from fog.ports.tocados_repository import DecisionPista, TocadoListado, TocadosRepositoryPort
 from fog.ports.unidad_de_trabajo import UnidadDeTrabajoPort
@@ -80,6 +81,7 @@ class ServicioTocados:
         forward_verdict: ForwardVerdictToClient,
         registrar_clasificacion: RegistrarClasificacion,
         sessions: SessionRegistry,
+        storage: FileStoragePort | None = None,
         *,
         clip_timeout_s: float = 60.0,
         verdict_timeout_s: float = 30.0,
@@ -92,6 +94,7 @@ class ServicioTocados:
         self._forward = forward_verdict
         self._registrar = registrar_clasificacion
         self._sessions = sessions
+        self._storage = storage
         self._clip_timeout_s = clip_timeout_s
         self._verdict_timeout_s = verdict_timeout_s
         self._var_plazo_s = var_plazo_s
@@ -168,7 +171,13 @@ class ServicioTocados:
     async def listar(self, combate_id: uuid.UUID, limite: int = 20) -> list[tuple[TocadoListado, str]]:
         """Los últimos tocados con su estado de preproceso (procesando, listo o error)."""
         filas = await self._tocados.listar(combate_id, limite)
-        return [(f, self._estado(f)) for f in filas]
+        return [(self._con_clip_vigente(f), self._estado(f)) for f in filas]
+
+    def _con_clip_vigente(self, fila: TocadoListado) -> TocadoListado:
+        """`tiene_clip` solo si el archivo sigue en el almacén (se purga al cerrar la sesión)."""
+        if self._storage is None or fila.clip_uri is None or not fila.tiene_clip:
+            return fila
+        return dataclasses.replace(fila, tiene_clip=self._storage.ruta_local(fila.clip_uri) is not None)
 
     def _estado(self, fila: TocadoListado) -> str:
         trabajo = self._trabajos.get(fila.id)

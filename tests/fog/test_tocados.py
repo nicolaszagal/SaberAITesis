@@ -222,3 +222,27 @@ def test_pose_incompleta_deja_el_tocado_listo_como_no_disponible(crear_app):
     _esperar_listos(app, match_id, 1)
     r = app.client.post(f"/tocados/{tid}/revision").json()
     assert r["disponible"] is False and r["motivo"] == "pose_incompleta"
+
+
+def test_purgar_clips_borra_los_archivos_pero_conserva_el_hash_y_la_auditoria(crear_app):
+    """Tras cerrar la sesión no queda ningún video en el almacén; la cadena de auditoría sigue válida."""
+    import asyncio
+
+    app = crear_app()
+    match_id = app.configurar()
+    tid = _subir(app, match_id).json()["tocado_id"]
+    _esperar_listos(app, match_id, 1)
+    revision_id = app.client.post(f"/tocados/{tid}/revision").json()["revision_id"]
+    assert app.veredicto(revision_id).status_code == 200  # deja registro de auditoría
+    sha = _filas(app, "SELECT sha256 FROM sabre.clip WHERE combate_id = :m", m=match_id)[0]["sha256"]
+    assert any(app.storage_dir.rglob("*.mp4"))
+
+    purgados = asyncio.run(app.container.purgar_clips().execute())
+
+    assert purgados >= 1
+    assert not any(app.storage_dir.rglob("*.mp4")) and not any(app.storage_dir.rglob("*.mov"))
+    assert app.client.get(f"/tocados/{tid}/clip").status_code == 404
+    assert _lista(app, match_id)[0]["tiene_clip"] is False  # la lista deja de ofrecer la repetición
+    assert _filas(app, "SELECT sha256 FROM sabre.clip WHERE combate_id = :m", m=match_id)[0]["sha256"] == sha
+    assert _filas(app, "SELECT count(*) AS n FROM sabre.fn_verificar_auditoria()")[0]["n"] == 0
+    assert asyncio.run(app.container.purgar_clips().execute()) == 0  # idempotente

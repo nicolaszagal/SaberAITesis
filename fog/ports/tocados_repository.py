@@ -60,6 +60,7 @@ class TocadoListado:
     revision_id: uuid.UUID | None
     cerrado: bool
     decision_pista: DecisionPista | None
+    clip_uri: str | None = None
 
 
 @dataclass(frozen=True)
