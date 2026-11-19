@@ -34,7 +34,9 @@ from fog.application.consultar_razonamiento import ConsultarRazonamiento
 from fog.application.listar_catalogos import ListarEventos, ListarUsuarios
 from fog.application.process_match import ProcessIncomingMatch
 from fog.application.resumir_validacion import ResumirValidacion
+from fog.application.purgar_clips import PurgarClips
 from fog.application.registrar_clasificacion import RegistrarClasificacion
+from fog.application.servicio_tocados import ServicioTocados
 from fog.application.registrar_veredicto import RegistrarVeredicto
 from fog.infrastructure.auth.argon2_verificador import Argon2Verificador
 from fog.infrastructure.auth.jwt_emisor import JwtEmisor
@@ -79,6 +81,8 @@ from fog.infrastructure.persistence.postgres.modelo_version_repository import (
 from fog.infrastructure.persistence.postgres.revision_repository import (
     PostgresRevisionRepository,
 )
+from fog.infrastructure.clips.clip_file_reader import ProcesadorClips
+from fog.infrastructure.persistence.postgres.tocados_repository import PostgresTocadosRepository
 from fog.infrastructure.persistence.postgres.tocado_repository import (
     PostgresTocadoRepository,
 )
@@ -332,4 +336,33 @@ class Container(containers.DeclarativeContainer):
         subscriber=verdict_subscriber,
         sessions=sessions,
         modelos=modelo_version_repository,
+    )
+
+    # Tocados capturados por Edge (EDGE02): preproceso sin revisión y cola con prioridad.
+    tocados_repository_consulta = providers.Singleton(
+        PostgresTocadosRepository, session_factory=db_session_factory
+    )
+    procesador_clips = providers.Singleton(
+        ProcesadorClips,
+        pose_estimator=pose_estimator,
+        executor=executor,
+        storage=file_storage,
+        clip_max_mb=config.clip_max_mb,
+        min_frames=config.min_frames,
+    )
+    servicio_tocados = providers.Singleton(
+        ServicioTocados,
+        uow=unidad_de_trabajo,
+        tocados=tocados_repository_consulta,
+        procesador=procesador_clips,
+        process_match=process_match,
+        forward_verdict=forward_verdict,
+        registrar_clasificacion=registrar_clasificacion,
+        sessions=sessions,
+        storage=file_storage,
+        clip_timeout_s=config.clip_upload_timeout_s,
+        verdict_timeout_s=config.clip_upload_verdict_timeout_s,
+    )
+    purgar_clips = providers.Singleton(
+        PurgarClips, tocados=tocados_repository_consulta, storage=file_storage
     )

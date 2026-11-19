@@ -41,6 +41,24 @@ class LocalFileStorage(FileStoragePort):
     async def read_keypoints(self, uri: str, sha256: str) -> dict[str, np.ndarray]:
         return await asyncio.to_thread(self._read_keypoints, uri, sha256)
 
+    def ruta_local(self, uri: str) -> Path | None:
+        if not uri.startswith(URI_SCHEME):
+            return None
+        path = (self._root / uri.removeprefix(URI_SCHEME)).resolve()
+        if not path.is_relative_to(self._root.resolve()) or not path.is_file():
+            return None
+        return path
+
+    async def eliminar_clip(self, uri: str) -> bool:
+        def borrar() -> bool:
+            path = self.ruta_local(uri)
+            if path is None:
+                return False
+            path.unlink(missing_ok=True)
+            return True
+
+        return await asyncio.to_thread(borrar)
+
     def _save_clip(self, source: Path) -> tuple[str, str]:
         digest = hashlib.sha256()
         with source.open("rb") as f:

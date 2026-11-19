@@ -13,6 +13,7 @@ import uuid
 from dataclasses import replace
 
 import numpy as np
+import pytest
 
 from fog.domain.models import (
     MotivoNoDisponible,
@@ -30,6 +31,15 @@ from tests.fog.fakes import FakeFeatureExtractor, FakePoseEstimator, FakeVerdict
 FPS = 10.0
 T_TOCADO_MS = "3000"
 FRAME_TOCADO = 30
+
+
+@pytest.fixture(autouse=True)
+def _sin_recorte_de_ventana(monkeypatch):
+    """Estas pruebas fijan la pose (doblada) sobre la línea de tiempo del clip subido, que Fog no
+    puede recortar de forma coherente con una pose falsa: se desactiva la ventana de EDGE02 (D-19).
+    El recorte y sus instantes se prueban en `test_recorte_ventana.py` y `test_routes_clip_upload.py`."""
+    from shared import config
+    monkeypatch.setattr(config, "VENTANA_PRE_MS", 10**9)
 N = 24  # frames de la pose, desde el lock
 
 
