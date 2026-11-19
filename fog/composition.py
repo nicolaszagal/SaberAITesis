@@ -38,7 +38,6 @@ from fog.application.resumir_validacion import ResumirValidacion
 from fog.application.cerrar_sesion import CerrarSesion
 from fog.application.purgar_clips import PurgarClips
 from fog.application.registrar_clasificacion import RegistrarClasificacion
-from fog.application.servicio_tocados import ServicioTocados
 from fog.application.registrar_veredicto import RegistrarVeredicto
 from fog.infrastructure.auth.argon2_verificador import Argon2Verificador
 from fog.infrastructure.auth.jwt_emisor import JwtEmisor
@@ -83,10 +82,7 @@ from fog.infrastructure.persistence.postgres.modelo_version_repository import (
 from fog.infrastructure.persistence.postgres.revision_repository import (
     PostgresRevisionRepository,
 )
-from fog.infrastructure.clips.clip_file_reader import ProcesadorClips
 from fog.infrastructure.respaldo.script_respaldo import ScriptRespaldo
-from fog.infrastructure.persistence.combate_activo_archivo import CombateActivoArchivo
-from fog.infrastructure.persistence.postgres.tocados_repository import PostgresTocadosRepository
 from fog.infrastructure.persistence.postgres.tocado_repository import (
     PostgresTocadoRepository,
 )
@@ -342,35 +338,8 @@ class Container(containers.DeclarativeContainer):
         modelos=modelo_version_repository,
     )
 
-    # Tocados capturados por Edge (EDGE02): preproceso sin revisión y cola con prioridad.
-    tocados_repository_consulta = providers.Singleton(
-        PostgresTocadosRepository, session_factory=db_session_factory
-    )
-    procesador_clips = providers.Singleton(
-        ProcesadorClips,
-        pose_estimator=pose_estimator,
-        executor=executor,
-        storage=file_storage,
-        clip_max_mb=config.clip_max_mb,
-        min_frames=config.min_frames,
-    )
-    servicio_tocados = providers.Singleton(
-        ServicioTocados,
-        uow=unidad_de_trabajo,
-        tocados=tocados_repository_consulta,
-        procesador=procesador_clips,
-        process_match=process_match,
-        forward_verdict=forward_verdict,
-        registrar_clasificacion=registrar_clasificacion,
-        sessions=sessions,
-        storage=file_storage,
-        clip_timeout_s=config.clip_upload_timeout_s,
-        verdict_timeout_s=config.clip_upload_verdict_timeout_s,
-    )
-    purgar_clips = providers.Singleton(
-        PurgarClips, tocados=tocados_repository_consulta, storage=file_storage
-    )
-    combate_activo = providers.Singleton(CombateActivoArchivo, directorio=config.storage_dir)
+    # Cierre de sesión (EDGE02, D-22): respaldo verificado sin clips y, solo si pasa, purga de los clips.
+    purgar_clips = providers.Singleton(PurgarClips, clips=clip_repository, storage=file_storage)
     respaldo_sesion = providers.Singleton(
         ScriptRespaldo,
         script=providers.Callable(lambda: shared_config.RESPALDO_SCRIPT),
@@ -378,6 +347,5 @@ class Container(containers.DeclarativeContainer):
         timeout_s=providers.Callable(lambda: shared_config.RESPALDO_TIMEOUT_S),
     )
     cerrar_sesion = providers.Singleton(
-        CerrarSesion, uow=unidad_de_trabajo, activo=combate_activo, respaldo=respaldo_sesion,
-        purgar=purgar_clips, edge_dir=providers.Callable(lambda: shared_config.EDGE_TOCADOS_DIR),
+        CerrarSesion, uow=unidad_de_trabajo, respaldo=respaldo_sesion, purgar=purgar_clips,
     )

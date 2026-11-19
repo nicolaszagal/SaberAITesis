@@ -420,7 +420,7 @@ frames.
 - `InMemoryMatchRepository` solo guarda las sesiones de procesamiento de Fog (se pierden al
   reiniciar); lo que se audita (combates, clips, clasificaciones, veredictos) está en PostgreSQL.
 - Sin integración física con la luz Favero real: la Validación 1 la simula con `t_luz_a_ms` y
-  `t_luz_b_ms` en la carga del clip (Validación 2 usa el aparato real).
+  `t_luz_b_ms` en la carga del clip (el aparato Favero real está fuera de alcance: solicitud de cambio del 20/11/2026).
 - Cloud precalienta el modelo al arrancar (F-027): una inferencia con ceros (T = `MIN_FRAMES`, 192
   features) cuyo resultado se descarta, con una línea INFO "modelo precalentado en N ms". Si falla,
   Cloud no arranca. Antes la primera inferencia tomó 950 ms (ver `docs/evidencia/prueba_humo_Q02.md`).
@@ -438,29 +438,9 @@ frames.
 pytest tests/fog/test_feature_parity_training_vs_fog.py -m slow -q
 ```
 
-## 7. Edge: captura de tocados y señal de prueba (EDGE01, EDGE02)
+## 7. Cierre de sesión (D-22)
 
-El servicio de Edge corre en el mismo equipo que Fog (nativo, no en Docker: necesita la cámara y el puerto serie).
-
-```bash
-cd backend && source .venv/bin/activate
-# Token de servicio de Edge hacia Fog (una vez; al azar, en .secrets/edge_token.txt, nunca en el repo):
-sh scripts/crear_edge_token.sh        # Fog (fog_nativo.sh) y Edge lo leen de ahí, o de la variable EDGE_TOKEN
-# Sin cable RJ12: botón de señal de prueba (los tocados quedan como fuente 'simulado')
-MODO_PRUEBA_SENAL=1 python -m edge.captura.servicio --sin-lector
-# Con el aparato:
-python -m edge.captura.servicio --puerto '/dev/cu.usbmodem*'
-```
-
-Para que el botón aparezca en el frontend, Fog también necesita `MODO_PRUEBA_SENAL=1` en su entorno (si no, `POST /edge/senal-prueba` responde 404).
-Fog debe tener `EDGE_URL` (por defecto `http://127.0.0.1:8765`) apuntando a la API local de Edge.
-
-- **Cámara:** se elige en Configuración → Cámara (o `datos/edge/config.json`). Permiso de macOS: Ajustes del Sistema → Privacidad y seguridad → Cámara, para la aplicación desde la que corres Python (Terminal, iTerm, VS Code). Sin permiso OpenCV abre pero no entrega frames.
-- **Medir el buffer con tu cámara:** `python -m edge.medir_buffer --camara 0 --segundos 20` (RAM, CPU y fps de frames crudos frente a JPEG).
-- **Calibrar la latencia:** `python -m edge.calibrar_latencia ...` (ver `edge/captura/LEEME.md`).
-- **Cerrar la sesión:** botón "Cerrar sesión de validación" en Configuración (`POST /sesion/cerrar`): hace el respaldo verificado (sin clips) y, solo si pasa, borra los clips. Necesita `RESPALDO_DIR` y las variables del respaldo en el entorno de Fog (ver `scripts/respaldar_sesion.sh`).
-- **Combate activo:** `POST /matches/config` marca el combate como activo (uno por nodo); Edge sube los tocados a ese. Se limpia al cerrar la sesión.
-- **Variables:** `VENTANA_PRE_MS` (2000) y `VENTANA_POST_MS` (500) en Fog y Edge; `EDGE_K_TOCADOS`, `EDGE_FPS`, `EDGE_DIR_TOCADOS`.
+Ningún clip se conserva después de la sesión. El botón "Cerrar sesión de validación" (Configuración) llama a `POST /sesion/cerrar`: hace el respaldo verificado (sin clips) y, solo si pasa, borra los clips de la sesión. Necesita `RESPALDO_DIR` y las variables del respaldo en el entorno de Fog (ver `scripts/respaldar_sesion.sh`). Herramienta manual: `python scripts/purgar_clips.py --evento <uuid> --confirmar`. La ventana del clip (`VENTANA_PRE_MS=2000`, `VENTANA_POST_MS=500`) recorta en Fog los clips cargados a mano.
 
 ## 8. Modo local por defecto y contraseña de PostgreSQL (FIX05)
 

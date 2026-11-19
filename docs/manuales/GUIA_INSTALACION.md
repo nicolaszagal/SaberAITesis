@@ -396,6 +396,5 @@ Aprobado: misma clase en 10/10 y diferencia máxima de probabilidad dentro de la
 
 | Tema | Dónde |
 |---|---|
-| V2 (Edge y MediaMTX): perfil `v2` del compose. No verificado en esta versión. | `docker compose --profile v2 up -d`; detalle en `GUIA_EJECUCION.md`, sección 6.4 |
 | Despliegue de Cloud en Render | `GUIA_EJECUCION.md`, secciones 6.2 y 6.3 |
 | Modo de desarrollo (venv, pruebas, frontend con Expo) | `GUIA_EJECUCION.md` |

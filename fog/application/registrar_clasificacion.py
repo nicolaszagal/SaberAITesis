@@ -206,7 +206,7 @@ class RegistrarClasificacion:
         self,
         *,
         tocado_id: uuid.UUID,
-        revision_id: uuid.UUID | None,
+        revision_id: uuid.UUID,
         tracked: TrackedSequence,
         resultado: VerdictView | UnavailableResult,
         latencia_ms: int,
@@ -219,8 +219,7 @@ class RegistrarClasificacion:
 
         Args:
             tocado_id: tocado clasificado.
-            revision_id: revisión que recibe la clasificación; `None` si el tocado se
-                preprocesa sin revisión (EDGE02): se asigna después con `Solicitar VAR`.
+            revision_id: revisión que recibe la clasificación.
             tracked: pose+tracking del clip (keypoints crudos).
             resultado: veredicto de Cloud o "no disponible" con su motivo.
             latencia_ms: milisegundos desde la recepción del clip hasta la
@@ -273,8 +272,7 @@ class RegistrarClasificacion:
                     motivo_no_disp=resultado.motivo.value,
                     **comunes,
                 )
-            if revision_id is not None:
-                await tx.revisiones.asignar_clasificacion(revision_id, clasificacion.id)
+            await tx.revisiones.asignar_clasificacion(revision_id, clasificacion.id)
         return clasificacion
 
     def _razonar(

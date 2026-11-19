@@ -61,6 +61,7 @@ def sesion(crear_app):
     """App con dos revisiones con veredicto (cadena de auditoría con registros)."""
     app = crear_app()
     match_id = app.configurar()
+    app.match_id = match_id
     for _ in range(2):
         resp = app.subir_clip(match_id)
         assert resp.status_code == 200, resp.text
@@ -299,17 +300,15 @@ def test_el_respaldo_excluye_los_clips_y_conserva_keypoints(sesion, entorno, tmp
 
 
 def _clip_unico(sesion, frames: int) -> Path:
-    """Sube un tocado con un clip de contenido único (el almacén direcciona por hash) y da su archivo."""
+    """Sube un clip de contenido único (el almacén direcciona por hash) y devuelve su archivo."""
     from tests.fog.conftest import clip_de_prueba
 
-    match_id = sesion.client.get("/matches/activo").json()["match_id"]
-    r = sesion.client.post(
-        f"/matches/{match_id}/tocados", data={"t_luz_a_ms": "300"},
-        files={"file": ("t.mp4", clip_de_prueba(frames), "video/mp4")})
+    r = sesion.subir_clip(sesion.match_id, clip=clip_de_prueba(frames))
     assert r.status_code == 200, r.text
     sha = sesion.sql.filas(
-        "SELECT c.sha256 FROM sabre.clip c JOIN sabre.tocado_clip tc ON tc.clip_id = c.id WHERE tc.tocado_id = :t",
-        t=r.json()["tocado_id"])[0]["sha256"]
+        "SELECT c.sha256 FROM sabre.clip c JOIN sabre.tocado_clip tc ON tc.clip_id = c.id "
+        "JOIN sabre.revision_var r ON r.tocado_id = tc.tocado_id WHERE r.id = :r",
+        r=r.json()["revision_id"])[0]["sha256"]
     return sesion.storage_dir / "clips" / sha[:2] / f"{sha}.mp4"
 
 
@@ -320,7 +319,7 @@ def test_cerrar_sesion_con_el_respaldo_real_excluye_los_clips_y_luego_los_borra(
     clip = _clip_unico(sesion, 13)
     assert clip.exists()
 
-    r = sesion.client.post("/sesion/cerrar")
+    r = sesion.client.post("/sesion/cerrar", json={"match_id": sesion.match_id})
 
     assert r.status_code == 200, r.text
     tgz = next(_carpeta_respaldo(entorno).glob("*.tgz"))
@@ -328,7 +327,6 @@ def test_cerrar_sesion_con_el_respaldo_real_excluye_los_clips_y_luego_los_borra(
     assert "storage/clips" not in contenido and ".mp4" not in contenido
     assert "fn_verificar_auditoria(): 0 filas alteradas" in r.json()["respaldo"]
     assert not clip.exists()
-    assert sesion.client.get("/matches/activo").status_code == 404
 
 
 def test_cerrar_sesion_con_el_respaldo_roto_no_borra_ningun_clip(sesion, entorno, monkeypatch):
@@ -337,8 +335,7 @@ def test_cerrar_sesion_con_el_respaldo_roto_no_borra_ningun_clip(sesion, entorno
     clip = _clip_unico(sesion, 14)
     assert clip.exists()
 
-    r = sesion.client.post("/sesion/cerrar")
+    r = sesion.client.post("/sesion/cerrar", json={"match_id": sesion.match_id})
 
     assert r.status_code == 500 and r.json()["codigo"] == "respaldo_fallido"
     assert clip.exists()
-    assert sesion.client.get("/matches/activo").status_code == 200

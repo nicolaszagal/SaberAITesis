@@ -45,9 +45,6 @@ BIND_HOST=$(fog_bind_host) || exit 1
 
 exportar_entorno_fog
 
-# EDGE02: token de servicio de Edge (scripts/crear_edge_token.sh); el entorno manda sobre el archivo.
-[ -n "${EDGE_TOKEN:-}" ] || { [ -s .secrets/edge_token.txt ] && EDGE_TOKEN=$(cat .secrets/edge_token.txt) && export EDGE_TOKEN; } || true
-
 # DEPLOY10: en modo remoto (--remoto) Fog solo arranca si la última `probar` de este equipo pasó y es de este
 # commit; con FOG_DEVICE distinto de cpu, también en local y con ese dispositivo.
 REMOTO=""

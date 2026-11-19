@@ -32,3 +32,12 @@ class ClipRepositoryPort(ABC):
     @abstractmethod
     async def obtener(self, clip_id: uuid.UUID) -> Clip | None:
         raise NotImplementedError
+
+    @abstractmethod
+    async def uris_de_sesion(self, evento_id: uuid.UUID) -> list[str]:
+        """URIs de los clips de una sesión (evento) que ningún clip de otra sesión comparte.
+
+        El almacén direcciona por hash: un archivo que usa también un clip de otra sesión no se lista,
+        para no borrarlo al purgar.
+        """
+        raise NotImplementedError

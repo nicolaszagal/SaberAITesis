@@ -492,48 +492,14 @@ class HealthResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Tocados capturados por Edge (EDGE02)
+# Cierre de sesión
 # ---------------------------------------------------------------------------
 
 
-class TocadoCreadoResponse(BaseModel):
-    """Respuesta de POST /matches/{match_id}/tocados: el tocado ya existe y se preprocesa."""
+class SesionCerrarRequest(BaseModel):
+    """Cuerpo de POST /sesion/cerrar."""
 
-    tocado_id: str
-    match_id: str
-    estado: str = Field(..., description="'procesando' mientras corre el preproceso.")
-
-
-class DecisionPistaRequest(BaseModel):
-    """Decisión en pista (sin mostrar la sugerencia, D-04): una clase o anulado."""
-
-    clase: str | None = Field(None, description="Clase del modelo (AttackA, ..., RiposteB).")
-    anulado: bool = Field(False, description="True si el tocado se anula (sin clase).")
-    registrado_por: str | None = Field(None, description="Usuario (uuid) que registra, opcional.")
-
-
-class DecisionPistaResponse(BaseModel):
-    clase: str | None
-    anulado: bool
-    registrado_en: datetime
-
-
-class TocadoItemResponse(BaseModel):
-    """Fila de "Últimos tocados". No incluye la sugerencia: solo aparece dentro de la revisión."""
-
-    tocado_id: str
-    creado_en: datetime
-    fuente: str
-    luz_A: bool
-    luz_B: bool
-    t_luz_a_ms: int | None
-    t_luz_b_ms: int | None
-    estado: str = Field(..., description="procesando | listo | error (preproceso).")
-    tiene_clip: bool = Field(..., description="False si el clip ya se purgó (cierre de sesión).")
-    revision_id: str | None = Field(None, description="Revisión abierta con Solicitar VAR.")
-    revisado: bool = Field(..., description="True si tiene revisión; si no, 'No revisado'.")
-    admite_var: bool = Field(..., description="True solo para el tocado más reciente sin revisión.")
-    decision_pista: DecisionPistaResponse | None = None
+    match_id: uuid.UUID = Field(..., description="Combate cuya sesión (evento) se cierra.")
 
 
 class SesionCerradaResponse(BaseModel):
@@ -541,4 +507,3 @@ class SesionCerradaResponse(BaseModel):
 
     respaldo: str = Field(..., description="Salida del respaldo verificado.")
     clips_borrados: int = Field(..., description="Archivos de clip de Fog borrados.")
-    archivos_edge_borrados: int = Field(..., description="Clips y JSON de Edge borrados.")
