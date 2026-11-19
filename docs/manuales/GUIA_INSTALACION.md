@@ -377,7 +377,7 @@ Verifica el manifiesto antes de tocar nada, restaura en una base temporal, compa
 sh scripts/instalar_fog.sh probar
 ```
 
-Aprobado: misma clase en 10/10 y diferencia máxima de probabilidad dentro de la cota de `scripts/datos/referencia_salidas.json`. Escribe `datos/evidencia/equivalencia_<equipo>_<fecha>.json` con las versiones instaladas; si falla, compare las versiones con las del Mac (`referencia`) en ese reporte.
+Aprobado: misma clase en 10/10 y diferencia máxima de probabilidad dentro de la cota de `scripts/datos/referencia_salidas.json` (0.01, provisional). Escribe `datos/evidencia/equivalencia_<equipo>_<fecha>.json` con las versiones instaladas; si falla, compare las versiones con las del Mac (`referencia`) en ese reporte.
 
 6. `sh scripts/instalar_fog.sh estado` muestra versión, commit, modelo activo, dispositivo, último respaldo, túnel y el resultado de la última `probar`.
 
@@ -390,7 +390,7 @@ Aprobado: misma clase en 10/10 y diferencia máxima de probabilidad dentro de la
 ### Limitaciones conocidas
 
 - `requirements-fog.linux-x86_64.lock` se generó por metadatos de PyPI con `scripts/generar_lock_linux.py` (mismas versiones que el lock del Mac más las dependencias solo de Linux: CUDA y triton); no es un `pip freeze` de un Linux real. La instalación en Linux está **pendiente de probar** en el PC de casa.
-- La cota de probabilidad de `probar` se midió en un solo equipo (dos corridas seguidas en el Mac); no incluye el ruido entre plataformas.
+- La cota de probabilidad de `probar` es **0.01, provisional: a recalibrar con la primera medición entre plataformas**. Se confirmó tras medir dos corridas seguidas en un solo equipo (el Mac, diferencia 0.0), así que no incluye el ruido entre plataformas.
 
 ## Anexo. Fuera de la Validación 1
 

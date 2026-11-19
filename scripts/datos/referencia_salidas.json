@@ -16,7 +16,7 @@
     "scipy": "1.18.1"
   },
   "decimales": 4,
-  "cota_probabilidad": null,
+  "cota_probabilidad": 0.01,
   "clips": {
     "AttackA_0023": {
       "clase": "AttackB",
@@ -138,5 +138,6 @@
       },
       "keypoints_sha256": "a0b74838cc037767e931bcb3a90cce75e79ac5c1ce98cec67450992968b51d7a"
     }
-  }
+  },
+  "cota_nota": "Provisional: a recalibrar con la primera medición entre plataformas."
 }
