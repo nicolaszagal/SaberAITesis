@@ -1,0 +1,114 @@
+{
+ "concordancia": {
+  "n": 93,
+  "pct": 50.54
+ },
+ "disponibles": 94,
+ "kappa": {
+  "banda": "aceptable",
+  "calculable": true,
+  "cumple": false,
+  "kappa": 0.3712,
+  "motivo": null,
+  "n": 93,
+  "umbral": 0.61
+ },
+ "latencia": {
+  "cumple": true,
+  "max_ms": 18967,
+  "mediana_ms": 8754.0,
+  "n_disponibles": 94,
+  "n_no_disponibles": 0,
+  "n_total": 94,
+  "p95_excede_umbral": false,
+  "p95_ms": 17194,
+  "pct_le_60s": 100.0,
+  "sin_medicion": 0,
+  "umbral_ms": 60000
+ },
+ "latencia_inferencia": {
+  "cumple": true,
+  "max_ms": 216,
+  "mediana_ms": 6.0,
+  "n_disponibles": 94,
+  "n_medidas": 94,
+  "p95_ms": 13,
+  "pct_le_50ms": 97.87,
+  "sin_medicion": 0,
+  "umbral_ms": 50
+ },
+ "matriz_confusion": {
+  "clases": [
+   "AttackA",
+   "AttackB",
+   "ContrattackA",
+   "ContrattackB",
+   "RiposteA",
+   "RiposteB"
+  ],
+  "columnas": "arbitro",
+  "filas": "sistema",
+  "matriz": [
+   [
+    12,
+    1,
+    0,
+    1,
+    0,
+    1
+   ],
+   [
+    2,
+    23,
+    1,
+    2,
+    0,
+    0
+   ],
+   [
+    3,
+    5,
+    4,
+    0,
+    1,
+    0
+   ],
+   [
+    5,
+    3,
+    1,
+    4,
+    0,
+    3
+   ],
+   [
+    2,
+    3,
+    2,
+    0,
+    2,
+    0
+   ],
+   [
+    5,
+    3,
+    0,
+    2,
+    0,
+    2
+   ]
+  ]
+ },
+ "n_revisiones": 94,
+ "no_disponibles": {
+  "n": 0,
+  "por_motivo": {
+   "clase_fuera_mvp": 0,
+   "confianza_baja": 0,
+   "mensaje_invalido": 0,
+   "pose_incompleta": 0,
+   "sin_senal_favero": 0,
+   "timeout": 0
+  }
+ }
+}
