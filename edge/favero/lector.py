@@ -220,11 +220,15 @@ class Flanco:
         lado: "A" (roja, izquierda) o "B" (verde, derecha), según `MAPEO_LADOS`.
         luz: "ROJA" o "VERDE".
         t_ns: `time.monotonic_ns()` al llegar el último byte de la trama.
+        fuente: 'favero' o 'simulado'; `None` = la de la captura (el lector serie no la fija).
+        origen: de dónde salió la señal si no es el aparato (p. ej. 'boton'); `None` si es el aparato.
     """
 
     lado: str
     luz: str
     t_ns: int
+    fuente: str | None = None
+    origen: str | None = None
 
 
 class DetectorFlancos:

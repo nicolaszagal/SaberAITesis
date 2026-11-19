@@ -98,3 +98,10 @@ class PostgresTocadosRepository(TocadosRepositoryPort):
             params["c"] = combate_id
         async with self._session_factory() as session:
             return [f.uri for f in (await session.execute(text(sql), params)).all()]
+
+    async def combate_mas_reciente(self) -> uuid.UUID | None:
+        async with self._session_factory() as session:
+            fila = (
+                await session.execute(text("SELECT id FROM sabre.combate ORDER BY creado_en DESC, id DESC LIMIT 1"))
+            ).first()
+        return fila.id if fila else None

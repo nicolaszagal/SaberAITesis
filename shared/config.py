@@ -119,6 +119,12 @@ MIN_FRAMES = 3
 VENTANA_PRE_MS = int(os.environ.get("VENTANA_PRE_MS", "2000"))
 VENTANA_POST_MS = int(os.environ.get("VENTANA_POST_MS", "500"))
 
+# Edge local (EDGE02): Fog le reenvía por 127.0.0.1 la configuración de cámara, el estado y la
+# señal de prueba (`/edge/*`). `MODO_PRUEBA_SENAL=1` habilita el botón de señal de prueba; sin
+# él, `POST /edge/senal-prueba` responde 404 en Fog y en Edge.
+EDGE_URL = os.environ.get("EDGE_URL", "http://127.0.0.1:8765")
+MODO_PRUEBA_SENAL = os.environ.get("MODO_PRUEBA_SENAL") == "1"
+
 CLIP_MAX_MB = float(os.environ.get("CLIP_MAX_MB", "200"))
 
 # Tiempo que Fog espera la señal de luz Favero (POST /webrtc/{match_id}/luz)

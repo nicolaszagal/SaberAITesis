@@ -104,3 +104,8 @@ class TocadosRepositoryPort(ABC):
     async def uris_clips(self, combate_id: uuid.UUID | None = None) -> list[str]:
         """URIs de todos los clips (de un combate, o de todos si es None)."""
         raise NotImplementedError
+
+    @abstractmethod
+    async def combate_mas_reciente(self) -> uuid.UUID | None:
+        """El combate configurado más recientemente (el que usa Edge para subir tocados)."""
+        raise NotImplementedError

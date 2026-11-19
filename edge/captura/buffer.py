@@ -73,6 +73,16 @@ class BufferCircular:
         with self._lock:
             return [f for f in self._frames if desde_ns <= f.t_ns <= hasta_ns]
 
+    def ultimo(self) -> FrameMarcado | None:
+        """El frame más nuevo (para la vista previa), o `None` si está vacío."""
+        with self._lock:
+            return self._frames[-1] if self._frames else None
+
+    def vaciar(self) -> None:
+        """Descarta todos los frames (al cambiar de cámara o de resolución)."""
+        with self._lock:
+            self._frames.clear()
+
     def __len__(self) -> int:
         with self._lock:
             return len(self._frames)

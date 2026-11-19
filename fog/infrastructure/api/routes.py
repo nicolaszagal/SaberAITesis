@@ -239,6 +239,23 @@ async def configure_match(
 
 
 @router.get(
+    "/matches/activo",
+    tags=["tocados"],
+    summary="Combate configurado más recientemente (lo usa Edge para subir tocados) (EDGE02)",
+    description="`{\"match_id\": ...}` del último `POST /matches/config`. 404 si no hay ninguno.",
+    responses={404: {"description": "Todavía no se configuró ningún combate."}},
+)
+@inject
+async def combate_activo(
+    tocados=Depends(Provide[Container.tocados_repository_consulta]),
+) -> dict[str, str]:
+    combate_id = await tocados.combate_mas_reciente()
+    if combate_id is None:
+        raise HTTPException(404, "todavía no se configuró ningún combate (POST /matches/config)")
+    return {"match_id": str(combate_id)}
+
+
+@router.get(
     "/matches/{match_id}",
     response_model=CombateResponse,
     tags=["matches"],
@@ -438,7 +455,10 @@ def _item_tocado(fila, estado: str, ultimo: bool) -> TocadoItemResponse:
         "anteriores) y la clasificación queda guardada **sin revisión** (D-04): la revisión se "
         "abre con POST /tocados/{tocado_id}/revision. Un clip más largo que la ventana se recorta."
     ),
-    responses={404: {"description": "El combate no fue creado."}, 422: {"description": "Instantes o fuente inválidos."}},
+    responses={
+        404: {"description": "El combate no fue creado."},
+        422: {"description": "Instantes o fuente inválidos."},
+    },
 )
 @inject
 async def registrar_tocado(

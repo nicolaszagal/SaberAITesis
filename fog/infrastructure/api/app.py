@@ -10,7 +10,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from fog.infrastructure.api import auth_routes, errores, routes, seguridad
+from fog.infrastructure.api import auth_routes, edge_routes, errores, routes, seguridad
 from shared import config
 
 # Módulos con `Provide[...]` que el Container debe cablear.
@@ -58,6 +58,7 @@ def crear_app(
     app.include_router(auth_routes.router_login)
     app.include_router(auth_routes.router_sesion)
     app.include_router(routes.router)
+    app.include_router(edge_routes.router)
     if not remoto:
         # WebRTC no se usa en la Validación 1; en remoto no se expone.
         app.include_router(routes.router_ws)
