@@ -14,9 +14,10 @@ AUTH_PASSWORD_HASH=$(printf %s "$SABRE_PASSWORD" | $PY -c "import sys; from argo
 AUTH_JWT_SECRET=$($PY -c "import secrets; print(secrets.token_urlsafe(48))")
 export AUTH_USER SABRE_PASSWORD AUTH_PASSWORD_HASH AUTH_JWT_SECRET
 
-# `docker compose` (plugin) o `docker-compose` (binario suelto, p. ej. colima).
-if docker compose version >/dev/null 2>&1; then DC="docker compose"; else DC="docker-compose"; fi
-C="$DC -p sabre-humo --env-file humo.env -f docker-compose.yml -f docker-compose.humo.yml"
+# `docker compose` o `docker-compose` según el equipo (DEPLOY10: función común).
+. scripts/lib_compose.sh
+detectar_compose || { echo "No hay Docker Compose" >&2; exit 1; }
+C="$COMPOSE_CMD -p sabre-humo --env-file humo.env -f docker-compose.yml -f docker-compose.humo.yml"
 
 $C up -d --build --wait fog
 SESION=$($C exec -T fog python scripts/crear_sesion_validacion.py --evento "Humo" \

@@ -323,6 +323,75 @@ Medición (`prueba_humo.py`, 6 clips, tiempo `ms_clip` de la carga del clip, cli
 
 Las seis sugerencias coincidieron entre Docker y nativo. En modo nativo la pose usa la CPU: el código no fija `device`, el log de Fog no muestra el dispositivo (`ultralytics` queda en WARNING) y una carga del mismo modelo con la llamada por defecto reporta `cpu`, aunque MPS está disponible en el equipo. Usar MPS no se ha probado. Para volver al flujo principal, detenga `fog_nativo.sh` y ejecute `docker compose up -d`.
 
+## 9. Instalar o migrar Fog a otro equipo
+
+Fog corre local (DEPLOY09). Esta sección lo instala en otro equipo y migra sus datos sin perder funcionalidad ni evidencia. Todo pasa por `scripts/instalar_fog.sh`, que **no borra datos** (sin `down -v`, `volume rm` ni `DROP DATABASE` sobre bases con datos) y **no instala nada del sistema**.
+
+**Plataformas**: macOS arm64 (el Mac de la Validación 1) y Linux x86_64. Windows queda fuera. PostgreSQL y Redis siguen en Docker (Colima en macOS, Docker Engine en Linux); Fog corre nativo.
+
+**Por qué hay una prueba de equivalencia.** Una versión distinta de `ultralytics` o del tracker cambia las features (`contexto_sabre.md` §8), y un equipo que "arranca" no prueba que clasifique igual. Por eso `probar` corre 10 clips fijos y exige la misma clase que el Mac de referencia. Y el volumen de PostgreSQL vive dentro de la máquina virtual del motor de Docker: la base se mueve con `exportar` e `importar`, no copiando volúmenes (DEF-31).
+
+### Equipo de origen: exportar
+
+1. Detenga Fog (el respaldo debe hacerse con la base en reposo) y deje PostgreSQL arriba.
+2. Elija el evento a respaldar (el comando lista los eventos si falta `--evento`):
+
+```bash
+sh scripts/instalar_fog.sh exportar --destino /Volumes/Respaldo/fog_migracion --evento <uuid>
+```
+
+El destino debe estar vacío y fuera del repo. Genera `respaldo/` (el respaldo verificado de FIX03), `modelo/`, `lock/`, `referencia/clips/`, `CONTEOS.txt`, `MANIFEST.sha256` y `LEEME_MIGRACION.md` (con el commit de `main` que hay que clonar en el destino).
+
+3. **Mueva a mano las claves.** No entran al paquete: `.env`, `.secrets/` y el certificado y la clave de cliente de Redis del nodo Fog (`REDIS_TLS_CERT`, `REDIS_TLS_KEY`, SEC01). Cópielos por un canal propio (llave USB cifrada o `scp` entre equipos suyos), con permisos 600. El `.env` del destino lo genera `instalar`: no copie el del origen.
+
+### Equipo de destino: instalar, importar, probar
+
+1. Clone `SaberAITesis` y `SaberAI-Frontend` como carpetas hermanas y haga `git checkout <commit de main del LEEME>`.
+2. Compruebe los requisitos (no cambia nada; con `--remoto` también revisa `cloudflared` o `tailscale`):
+
+```bash
+sh scripts/instalar_fog.sh verificar
+```
+
+Lista lo que falta y cómo instalarlo. Si no hay ni `docker compose` ni `docker-compose`: en macOS con Colima, `brew install docker-compose` (queda el binario `docker-compose`; para usarlo como plugin hay que registrar `/opt/homebrew/lib/docker/cli-plugins` en `cliPluginsExtraDirs` de `~/.docker/config.json`); en Linux, el plugin oficial (<https://docs.docker.com/compose/install/linux/>). Todos los scripts usan la misma función (`scripts/lib_compose.sh`) y funcionan con cualquiera de los dos.
+
+3. Instale:
+
+```bash
+sh scripts/instalar_fog.sh instalar --paquete /Volumes/Respaldo/fog_migracion
+```
+
+Crea `.venv` con `requirements-fog.lock` (macOS) o `requirements-fog.linux-x86_64.lock` (Linux), copia el modelo y lo verifica contra `scripts/datos/MODELO.sha256` (si un hash no coincide, aborta), genera `.env` (los valores aleatorios se generan; pide por `getpass` la contraseña maestra), levanta PostgreSQL y Redis, aplica las migraciones y registra el modelo activo. Si el volumen `sabre_pgdata` ya existe con datos no lo toca, y pide la contraseña de esa base en vez de generar otra. Termina avisando que **el equipo no está listo hasta que `probar` pase**.
+
+4. Importe (restaura en una base sin revisiones; se niega si la base de destino ya tiene alguna):
+
+```bash
+sh scripts/instalar_fog.sh importar --desde /Volumes/Respaldo/fog_migracion
+```
+
+Verifica el manifiesto antes de tocar nada, restaura en una base temporal, compara los conteos con `CONTEOS.txt` y exige que `fn_verificar_auditoria()` dé 0 filas; solo entonces la renombra a la base definitiva (la anterior, vacía, queda como `<base>_previa_<n>`; bórrela usted si quiere). Después restaura `datos/storage` y `datos/evidencia` sin pisar archivos.
+
+5. Pruebe la equivalencia (unos minutos con CPU):
+
+```bash
+sh scripts/instalar_fog.sh probar
+```
+
+Aprobado: misma clase en 10/10 y diferencia máxima de probabilidad dentro de la cota de `scripts/datos/referencia_salidas.json` (0.01, provisional). Escribe `datos/evidencia/equivalencia_<equipo>_<fecha>.json` con las versiones instaladas; si falla, compare las versiones con las del Mac (`referencia`) en ese reporte.
+
+6. `sh scripts/instalar_fog.sh estado` muestra versión, commit, modelo activo, dispositivo, último respaldo, túnel y el resultado de la última `probar`.
+
+### Reglas que impone el sistema
+
+- `fog_nativo.sh` se niega a arrancar en modo remoto (`ENTORNO=remoto`) si la última `probar` de ese equipo no pasó o es de otro commit: tras cada `git pull` o commit nuevo hay que repetir `probar`.
+- `FOG_DEVICE` (por defecto `cpu`, lo que corrió en la Validación 1; `mps` o `cuda` opcionales) llega a YOLO. Un dispositivo distinto de `cpu` solo arranca si la última `probar` se corrió con ese mismo dispositivo y pasó.
+- Con `FOG_DEVICE=cuda` en Linux hay que correr `probar` con `FOG_DEVICE=cuda sh scripts/instalar_fog.sh probar`.
+
+### Limitaciones conocidas
+
+- `requirements-fog.linux-x86_64.lock` se generó por metadatos de PyPI con `scripts/generar_lock_linux.py` (mismas versiones que el lock del Mac más las dependencias solo de Linux: CUDA y triton); no es un `pip freeze` de un Linux real. La instalación en Linux está **pendiente de probar** en el PC de casa.
+- La cota de probabilidad de `probar` es **0.01, provisional: a recalibrar con la primera medición entre plataformas**. Se confirmó tras medir dos corridas seguidas en un solo equipo (el Mac, diferencia 0.0), así que no incluye el ruido entre plataformas.
+
 ## Anexo. Fuera de la Validación 1
 
 | Tema | Dónde |

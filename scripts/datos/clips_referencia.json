@@ -1,0 +1,116 @@
+{
+  "descripcion": "Clips fijos de test del dataset (dataset trimmed/test_trimmed) para la prueba de equivalencia de scripts/instalar_fog.sh probar (DEPLOY10).",
+  "criterio_de_seleccion": "De los 104 clips de test, todos con brazo armado anotado en Label Studio (pk=5). Se ordenan por (clase, stem). Seis clips: el primero de cada clase con A zurdo y B diestro; cuatro más: el primero con ambos diestros de AttackA, AttackB, ContrattackB y ContrattackA. Diez en total, 6 zurdos y 4 diestros. Elegido por el asistente en DEPLOY10 para cubrir las 6 clases y ambos brazos; el autor puede reemplazarlo.",
+  "clips": [
+    {
+      "stem": "AttackA_0023",
+      "clase_dataset": "AttackA",
+      "brazo_a": "left",
+      "brazo_b": "right",
+      "luz_a": true,
+      "luz_b": true,
+      "ruta_dataset": "dataset trimmed/test_trimmed/AttackA/AttackA_0023.mp4",
+      "sha256": "7cfb912d8bff84daf187aa8631b15be8e1a517c7d5d3c16d1c99109c0e5e670e",
+      "bytes": 279309
+    },
+    {
+      "stem": "AttackB_0006",
+      "clase_dataset": "AttackB",
+      "brazo_a": "left",
+      "brazo_b": "right",
+      "luz_a": false,
+      "luz_b": true,
+      "ruta_dataset": "dataset trimmed/test_trimmed/AttackB/AttackB_0006.mp4",
+      "sha256": "cf0bdd88107a50966e03bcbd735c63fa73d0c2b31c1244d56ad057de128bf1cb",
+      "bytes": 298503
+    },
+    {
+      "stem": "ContrattackA_0005",
+      "clase_dataset": "ContrattackA",
+      "brazo_a": "left",
+      "brazo_b": "right",
+      "luz_a": true,
+      "luz_b": false,
+      "ruta_dataset": "dataset trimmed/test_trimmed/ContrattackA/ContrattackA_0005.mp4",
+      "sha256": "862755fe3bb49e444993a78772b9bfa7a6de0028568f4c828bb1a762af729b06",
+      "bytes": 420313
+    },
+    {
+      "stem": "ContrattackB_0015",
+      "clase_dataset": "ContrattackB",
+      "brazo_a": "left",
+      "brazo_b": "right",
+      "luz_a": false,
+      "luz_b": true,
+      "ruta_dataset": "dataset trimmed/test_trimmed/ContrattackB/ContrattackB_0015.mp4",
+      "sha256": "ecb370031ae087953e467a62f05ee9074a4f693a36339a018d765a3028d21b0c",
+      "bytes": 412444
+    },
+    {
+      "stem": "RiposteA_0055",
+      "clase_dataset": "RiposteA",
+      "brazo_a": "left",
+      "brazo_b": "right",
+      "luz_a": true,
+      "luz_b": false,
+      "ruta_dataset": "dataset trimmed/test_trimmed/RiposteA/RiposteA_0055.mp4",
+      "sha256": "b167e7fdee9391a994ea30f42a6110df5b6318ec9a093e1d2718f86573b624ae",
+      "bytes": 382302
+    },
+    {
+      "stem": "RiposteB_0062",
+      "clase_dataset": "RiposteB",
+      "brazo_a": "left",
+      "brazo_b": "right",
+      "luz_a": false,
+      "luz_b": true,
+      "ruta_dataset": "dataset trimmed/test_trimmed/RiposteB/RiposteB_0062.mp4",
+      "sha256": "864bb055d85ef0722046a26c6f8614f5cd4164568694f4f189064ba9ded8ce73",
+      "bytes": 530278
+    },
+    {
+      "stem": "AttackA_0007",
+      "clase_dataset": "AttackA",
+      "brazo_a": "right",
+      "brazo_b": "right",
+      "luz_a": true,
+      "luz_b": true,
+      "ruta_dataset": "dataset trimmed/test_trimmed/AttackA/AttackA_0007.mp4",
+      "sha256": "7e54fd091db0159f3cba6348a1668c93ad03c958607857b93c89e65374531150",
+      "bytes": 217772
+    },
+    {
+      "stem": "AttackB_0016",
+      "clase_dataset": "AttackB",
+      "brazo_a": "right",
+      "brazo_b": "right",
+      "luz_a": false,
+      "luz_b": true,
+      "ruta_dataset": "dataset trimmed/test_trimmed/AttackB/AttackB_0016.mp4",
+      "sha256": "f1be3f8326c0fd4ab266205c363edbba4948eb84ef221a0747cb40b89d822e0b",
+      "bytes": 247195
+    },
+    {
+      "stem": "ContrattackB_0001",
+      "clase_dataset": "ContrattackB",
+      "brazo_a": "right",
+      "brazo_b": "right",
+      "luz_a": true,
+      "luz_b": true,
+      "ruta_dataset": "dataset trimmed/test_trimmed/ContrattackB/ContrattackB_0001.mp4",
+      "sha256": "d5bd71c175a77f2a2c1dd25e173f2e9ee4737b4a2a31a9de0c65d010260c2b58",
+      "bytes": 135161
+    },
+    {
+      "stem": "ContrattackA_0002",
+      "clase_dataset": "ContrattackA",
+      "brazo_a": "right",
+      "brazo_b": "right",
+      "luz_a": true,
+      "luz_b": false,
+      "ruta_dataset": "dataset trimmed/test_trimmed/ContrattackA/ContrattackA_0002.mp4",
+      "sha256": "7444d24f078be1e23a1ff413d8f698edf7d82a72bdee7790a8b642bcfbe53eed",
+      "bytes": 97860
+    }
+  ]
+}
