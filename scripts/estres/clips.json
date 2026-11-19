@@ -1,0 +1,195 @@
+{
+  "descripcion": "12 clips fijos de test para ESTRES01 (dataset raw/test); Fog aplica la ventana de DEF-32.",
+  "pistas": {
+    "P1": [
+      "AttackA_0023",
+      "RiposteA_0055",
+      "ContrattackB_0001"
+    ],
+    "P2": [
+      "AttackB_0006",
+      "RiposteB_0062",
+      "ContrattackA_0002"
+    ],
+    "P3": [
+      "ContrattackA_0005",
+      "AttackA_0007",
+      "RiposteA_0021"
+    ],
+    "P4": [
+      "ContrattackB_0015",
+      "AttackB_0016",
+      "RiposteB_0004"
+    ]
+  },
+  "clips": [
+    {
+      "stem": "AttackA_0023",
+      "clase_dataset": "AttackA",
+      "ruta": "dataset/dataset raw/test/AttackA/AttackA_0023.mp4",
+      "weapon_side_A": "left",
+      "weapon_side_B": "right",
+      "t_luz_a_ms": 9033,
+      "t_luz_b_ms": 9033,
+      "t_tocado_ms": 9033,
+      "fps": 30.0,
+      "frames": 300,
+      "bytes": 2136430,
+      "sha256": "560ff8aea9977ec3b178a401e422d8b4dff64ba777109c867277a8260c3cce91"
+    },
+    {
+      "stem": "AttackB_0006",
+      "clase_dataset": "AttackB",
+      "ruta": "dataset/dataset raw/test/AttackB/AttackB_0006.mp4",
+      "weapon_side_A": "left",
+      "weapon_side_B": "right",
+      "t_luz_a_ms": null,
+      "t_luz_b_ms": 9067,
+      "t_tocado_ms": 9067,
+      "fps": 30.0,
+      "frames": 300,
+      "bytes": 1626912,
+      "sha256": "9d540c0bda18cb0f96f290e24d5bfdd71a5589c5013003c0366a3ea765479527"
+    },
+    {
+      "stem": "ContrattackA_0005",
+      "clase_dataset": "ContrattackA",
+      "ruta": "dataset/dataset raw/test/ContrattackA/ContrattackA_0005.mp4",
+      "weapon_side_A": "left",
+      "weapon_side_B": "right",
+      "t_luz_a_ms": 8933,
+      "t_luz_b_ms": null,
+      "t_tocado_ms": 8933,
+      "fps": 30.0,
+      "frames": 300,
+      "bytes": 2149932,
+      "sha256": "f87c14e318709030e1ade137b14f97dd0bdf3839cf2a7808e940705b3e97ddc4"
+    },
+    {
+      "stem": "ContrattackB_0015",
+      "clase_dataset": "ContrattackB",
+      "ruta": "dataset/dataset raw/test/ContrattackB/ContrattackB_0015.mp4",
+      "weapon_side_A": "left",
+      "weapon_side_B": "right",
+      "t_luz_a_ms": null,
+      "t_luz_b_ms": 7700,
+      "t_tocado_ms": 7700,
+      "fps": 30.0,
+      "frames": 300,
+      "bytes": 2340398,
+      "sha256": "47710c576b96ac3116fcdfa7733d81cdc2f52d5d11d6052e754775c47257ac83"
+    },
+    {
+      "stem": "RiposteA_0055",
+      "clase_dataset": "RiposteA",
+      "ruta": "dataset/dataset raw/test/RiposteA/RiposteA_0055.mp4",
+      "weapon_side_A": "left",
+      "weapon_side_B": "right",
+      "t_luz_a_ms": 10233,
+      "t_luz_b_ms": null,
+      "t_tocado_ms": 10233,
+      "fps": 30.0,
+      "frames": 385,
+      "bytes": 3768484,
+      "sha256": "f1f3477783b24c6f3611857792e6e699ab76a813ba32bcd3512182afff19d918"
+    },
+    {
+      "stem": "RiposteB_0062",
+      "clase_dataset": "RiposteB",
+      "ruta": "dataset/dataset raw/test/RiposteB/RiposteB_0062.mp4",
+      "weapon_side_A": "left",
+      "weapon_side_B": "right",
+      "t_luz_a_ms": null,
+      "t_luz_b_ms": 8600,
+      "t_tocado_ms": 8600,
+      "fps": 60.0,
+      "frames": 726,
+      "bytes": 6042814,
+      "sha256": "0bbb6b2420752cff26dbfeed27a765e7fe4f1eb11e54248799d998820bf096f0"
+    },
+    {
+      "stem": "AttackA_0007",
+      "clase_dataset": "AttackA",
+      "ruta": "dataset/dataset raw/test/AttackA/AttackA_0007.mp4",
+      "weapon_side_A": "right",
+      "weapon_side_B": "right",
+      "t_luz_a_ms": 7533,
+      "t_luz_b_ms": 7567,
+      "t_tocado_ms": 7533,
+      "fps": 30.0,
+      "frames": 306,
+      "bytes": 3213695,
+      "sha256": "0904b791036d69b051b0901ad95e09b349c7fda8ab78731cebe733c7f79a6be8"
+    },
+    {
+      "stem": "AttackB_0016",
+      "clase_dataset": "AttackB",
+      "ruta": "dataset/dataset raw/test/AttackB/AttackB_0016.mp4",
+      "weapon_side_A": "right",
+      "weapon_side_B": "right",
+      "t_luz_a_ms": null,
+      "t_luz_b_ms": 10400,
+      "t_tocado_ms": 10400,
+      "fps": 30.0,
+      "frames": 390,
+      "bytes": 2679118,
+      "sha256": "b96f5debbb7d3cd960e3a706f45d5bf857dc737c0e72d9b0b58db6138340cced"
+    },
+    {
+      "stem": "ContrattackB_0001",
+      "clase_dataset": "ContrattackB",
+      "ruta": "dataset/dataset raw/test/ContrattackB/ContrattackB_0001.mp4",
+      "weapon_side_A": "right",
+      "weapon_side_B": "right",
+      "t_luz_a_ms": 1533,
+      "t_luz_b_ms": 1633,
+      "t_tocado_ms": 1533,
+      "fps": 30.0,
+      "frames": 332,
+      "bytes": 3154533,
+      "sha256": "30ccd79f4a083a622f60ff4dc3071fe9831df5092c9005e3f45bed186d58da41"
+    },
+    {
+      "stem": "ContrattackA_0002",
+      "clase_dataset": "ContrattackA",
+      "ruta": "dataset/dataset raw/test/ContrattackA/ContrattackA_0002.mp4",
+      "weapon_side_A": "right",
+      "weapon_side_B": "right",
+      "t_luz_a_ms": 3633,
+      "t_luz_b_ms": null,
+      "t_tocado_ms": 3633,
+      "fps": 30.0,
+      "frames": 221,
+      "bytes": 1708563,
+      "sha256": "f1e5e0b70d698c35d221de191cc7a085ed03fe7ba276922551f3d4ddd895645b"
+    },
+    {
+      "stem": "RiposteA_0021",
+      "clase_dataset": "RiposteA",
+      "ruta": "dataset/dataset raw/test/RiposteA/RiposteA_0021.mp4",
+      "weapon_side_A": "right",
+      "weapon_side_B": "right",
+      "t_luz_a_ms": 8167,
+      "t_luz_b_ms": null,
+      "t_tocado_ms": 8167,
+      "fps": 30.0,
+      "frames": 300,
+      "bytes": 2223843,
+      "sha256": "a6203fb07b8bb52c7db05fdeeef497c653cc9c0162b7e65c3c7368eef1bdfbea"
+    },
+    {
+      "stem": "RiposteB_0004",
+      "clase_dataset": "RiposteB",
+      "ruta": "dataset/dataset raw/test/RiposteB/RiposteB_0004.mp4",
+      "weapon_side_A": "right",
+      "weapon_side_B": "right",
+      "t_luz_a_ms": 7467,
+      "t_luz_b_ms": 7400,
+      "t_tocado_ms": 7400,
+      "fps": 30.0,
+      "frames": 300,
+      "bytes": 1812506,
+      "sha256": "e7e9b738e4413c9c8ded2bfc57d9a608c8094352b108f79b3cf08ad1e4a78084"
+    }
+  ]
+}
