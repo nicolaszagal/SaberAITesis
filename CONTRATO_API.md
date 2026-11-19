@@ -563,6 +563,61 @@ Respuesta (JSON):
 - **Cloud no disponible** (`motivo="mensaje_invalido"`, `timed_out=false`): Cloud publicó
   `disponible=false` (sección 6).
 
+### 4.0 Ventana del clip (EDGE02, cierra DEF-32)
+
+`POST /matches/{match_id}/clip` y `POST /matches/{match_id}/tocados` recortan el clip a
+`[t_tocado − VENTANA_PRE_MS, t_tocado + VENTANA_POST_MS]` (2.000 ms antes y 500 ms después, un solo
+parámetro en `shared/config.py` que usan Edge y Fog), con `t_tocado` = el menor instante de luz.
+El recorte es idempotente con tolerancia de un frame: un clip que ya cubre justo esa ventana (el que
+recorta Edge) no cambia. Si se recorta, el clip guardado es el recortado (su `sha256` es el del
+recortado) y los instantes de luz que se registran en `tocado` son relativos a él. La validación de
+`t_luz_*_ms` (entre 0 y la duración) se hace contra el clip original.
+
+## 4.1 Edge → Fog: tocados capturados (EDGE02, CU-04, CU-05, CU-06)
+
+Edge recorta el clip del tocado y lo sube solo; Fog lo **preprocesa sin abrir la revisión** (D-04).
+
+| Método y ruta | Qué hace |
+|---|---|
+| `GET /matches/activo` | `{"match_id"}` del último combate configurado (lo usa Edge). 404 si no hay. |
+| `POST /matches/{match_id}/tocados` | multipart: `file` (MP4), `t_luz_a_ms`, `t_luz_b_ms` (al menos uno, relativos al primer frame), `fuente` (`favero` o `simulado`, por defecto `favero`), `origen` (opcional, p. ej. `boton`; solo log). Guarda el clip, registra `clip` (`origen='captura'`, `camara='frontal'`) y `tocado`, y responde de inmediato `{tocado_id, match_id, estado: "procesando"}`. 404 combate inexistente; 422 sin luz, fuente inválida o instante fuera del clip; 400 clip ilegible; 413 demasiado grande; 503 sin modelo activo. |
+| `GET /matches/{match_id}/tocados?limite=20` | Los últimos tocados, el más reciente primero: `tocado_id`, `creado_en`, `fuente`, `luz_A/B`, `t_luz_a_ms/b_ms`, `estado` (`procesando`, `listo`, `error`), `tiene_clip`, `revision_id`, `revisado`, `admite_var`, `decision_pista`. **No incluye la sugerencia.** |
+| `POST /tocados/{tocado_id}/revision` | "Solicitar VAR": crea la `revision_var` aceptada y le asigna la clasificación ya calculada (o espera hasta 60 s a que termine). Responde igual que `POST /matches/{id}/clip` (`ClipUploadResponse`). Idempotente. 409 `ventana_var_cerrada` si llegó un tocado posterior; 404 si no existe. |
+| `POST /tocados/{tocado_id}/decision-pista` | `{clase?, anulado, registrado_por?}`: una clase del modelo o `anulado`. Solo de adición (`sabre.decision_pista`): la fila más reciente reemplaza a las anteriores. Se acepta aunque el procesamiento siga en curso o haya fallado, y aunque el tocado ya no admita VAR. 422 si falta la clase y no se anula, o vienen ambas. |
+| `GET /tocados/{tocado_id}/clip` | MP4 para la repetición. 404 si no existe o ya se purgó. |
+
+- **Estado derivado:** "No revisado" = tocado sin `revision_var` (no se guarda). `admite_var` es verdadero solo para el
+  tocado más reciente del combate sin revisión: al llegar el siguiente, el anterior queda cerrado.
+- **Cola de procesamiento** (un trabajador, la pose usa la CPU): 1) el tocado con VAR pedido, 2) el más reciente,
+  3) los anteriores pendientes, en segundo plano. Cada tocado se clasifica con el mismo flujo (pose, features, Cloud,
+  razonamiento) y la `clasificacion` queda guardada contra el `tocado`, sin revisión. Si el procesamiento no termina,
+  la sugerencia sale `disponible=false` con el motivo (`timeout`, `pose_incompleta`).
+- **Sin revisión no hay auditoría:** el preproceso nunca crea `revision_var` ni `registro_auditoria`.
+
+### Edge local y `/edge/*`
+
+Edge escucha **solo en 127.0.0.1** (`EDGE_URL`, por defecto `http://127.0.0.1:8765`). El navegador no le habla:
+Fog reenvía (JWT) estas rutas. Si Edge no responde, 503 con `codigo: "edge_no_disponible"`.
+
+| Fog | Edge | Descripción |
+|---|---|---|
+| `GET /edge/camaras` | `GET /camaras` | `[{indice, nombre}]` de las cámaras del equipo |
+| `GET /edge/config` | `GET /config` | `{camara_indice, ancho, alto, fps}` |
+| `PUT /edge/config` | `PUT /config` | Cambia la configuración; 422 si no cumple ≥ 720p y ≥ 30 fps (RNF-13) |
+| `GET /edge/estado` | `GET /estado` | Cámara (abierta, fps medidos, avisos), señal (`fuente`, `sin_senal_favero`), `modo_prueba`, envío |
+| `GET /edge/preview` | `GET /preview.jpg` | Un cuadro JPEG (no es video en vivo); 404 si aún no hay frames |
+| `POST /edge/senal-prueba` | `POST /senal-prueba` | `{luz_a, luz_b}`. **Solo con `MODO_PRUEBA_SENAL=1`**; sin él, 404 en Fog y en Edge. El tocado queda con `fuente='simulado'` y origen `boton` |
+
+Edge envía los tocados con el usuario maestro (`EDGE_FOG_USER`/`EDGE_FOG_PASSWORD` o `.secrets/edge_fog_user.txt` y
+`.secrets/edge_fog_password.txt`); si Fog no responde, el tocado queda `"envio": "pendiente"` en su JSON y Edge reintenta.
+
+### Purga de clips (política de datos personales)
+
+Ningún clip se conserva después de la sesión. `scripts/purgar_clips.py --confirmar` borra los archivos de clip de Fog
+(`STORAGE_DIR`) y los de Edge (`datos/edge/tocados/`) **después** del respaldo. La base conserva `clip.sha256` y los
+metadatos, así que la cadena de auditoría sigue verificable (`fn_verificar_auditoria()` devuelve 0 filas).
+`respaldar_sesion.sh` excluye `storage/clips` del `.tgz`.
+
 ## 5. Fog → Cloud: `fog:features` (Redis Stream)
 
 Cada clip procesado por Fog (cada revisión) genera **una sola entrada** en el stream:
