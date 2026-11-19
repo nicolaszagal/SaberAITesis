@@ -36,6 +36,11 @@ datos/prueba_remota_*
 datos/*.log
 datos/*.pid
 datos/fog_remoto_url.txt
+# Estado de ejecución del modo remoto (fog_remoto_modo.txt, fog_remoto_vence.txt, ...)
+datos/*.txt
+
+# Volcado de Redis local
+*.rdb
 
 # Duplicados de Finder ("archivo 2.ext")
 * 2
