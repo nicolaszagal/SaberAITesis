@@ -45,3 +45,5 @@ datos/*.txt
 # Duplicados de Finder ("archivo 2.ext")
 * 2
 * 2.*
+
+humo.env

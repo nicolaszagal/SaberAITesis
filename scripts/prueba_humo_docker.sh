@@ -14,6 +14,15 @@ AUTH_PASSWORD_HASH=$(printf %s "$SABRE_PASSWORD" | $PY -c "import sys; from argo
 AUTH_JWT_SECRET=$($PY -c "import secrets; print(secrets.token_urlsafe(48))")
 export AUTH_USER SABRE_PASSWORD AUTH_PASSWORD_HASH AUTH_JWT_SECRET
 
+# humo.env no se versiona (lleva la contraseña de la base de esta prueba): si falta, se crea
+# desde humo.env.example con una contraseña aleatoria.
+if [ ! -f humo.env ]; then
+    CLAVE=$($PY -c "import secrets; print(secrets.token_urlsafe(24))")
+    sed "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$CLAVE/" humo.env.example > humo.env
+    chmod 600 humo.env
+    unset CLAVE
+fi
+
 # `docker compose` o `docker-compose` según el equipo (DEPLOY10: función común).
 . scripts/lib_compose.sh
 detectar_compose || { echo "No hay Docker Compose" >&2; exit 1; }
