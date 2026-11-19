@@ -3,7 +3,7 @@
 #
 # exportar_entorno_fog fija y exporta las variables que lee Fog (DATABASE_URL, REDIS_URL, rutas del modelo,
 # FOG_DEVICE...). Variables opcionales: DATOS_DIR, DATASET_DIR, MODEL_RUN_ID, POSTGRES_HOST_PORT,
-# REDIS_HOST_PORT, POSTGRES_DB_NAME, REDIS_URL_REMOTO, FOG_DEVICE.
+# REDIS_HOST_PORT, POSTGRES_DB_NAME, REDIS_URL_REMOTO (solo con MODO_REMOTO=1), FOG_DEVICE, SECRETS_DIR.
 
 MODEL_RUN_ID_POR_DEFECTO=20260928_141021
 
@@ -30,9 +30,14 @@ exportar_entorno_fog() {
 }
 
 # --- Archivos de configuración -------------------------------------------------------------------
-# Con ENV_FILE explícito se usa solo ese archivo. Sin él, `.env` (si existe) y, encima, el archivo de
-# secretos del Mac, `.secrets/fog_remoto.env` (ENV_SECRETO), si existe: ahí viven AUTH_*, ENTORNO,
-# REDIS_* y POSTGRES_DB_NAME de la configuración real; el `.env` puede ser mínimo.
+# MODO LOCAL POR DEFECTO. Con ENV_FILE explícito se usa solo ese archivo. Sin él se carga `.env` (si existe) y,
+# SOLO con MODO_REMOTO=1 (la opción `--remoto` de fog_nativo.sh e instalar_fog.sh), encima el archivo de secretos
+# del Mac, `.secrets/fog_remoto.env` (ENV_SECRETO): ahí viven AUTH_*, ENTORNO, REDIS_* y POSTGRES_DB_NAME de la
+# configuración remota. Sin `--remoto` ese archivo no se lee, aunque exista.
+#
+# La contraseña de PostgreSQL tiene UNA sola fuente: `.secrets/postgres_password.txt` (SECRETS_DIR). Si el
+# archivo existe manda sobre cualquier POSTGRES_PASSWORD de un `.env` (y avisa si difieren); si no existe, vale
+# la de los `.env` (equipos sin `.secrets`).
 
 # archivos_env: imprime, uno por línea, los archivos a cargar (los que existen).
 archivos_env() {
@@ -41,11 +46,43 @@ archivos_env() {
         return 0
     fi
     [ -f "$ENV_FILE" ] && printf '%s\n' "$ENV_FILE"
-    [ -f "${ENV_SECRETO:-.secrets/fog_remoto.env}" ] && printf '%s\n' "${ENV_SECRETO:-.secrets/fog_remoto.env}"
+    if [ "${MODO_REMOTO:-0}" = 1 ] && [ -f "${ENV_SECRETO:-.secrets/fog_remoto.env}" ]; then
+        printf '%s\n' "${ENV_SECRETO:-.secrets/fog_remoto.env}"
+    fi
     return 0
 }
 
-# cargar_archivos_env: exporta las variables de todos los archivos de archivos_env, en orden.
+# archivo_clave_postgres: ruta del archivo con la contraseña de PostgreSQL.
+archivo_clave_postgres() {
+    printf '%s' "${SECRETS_DIR:-.secrets}/postgres_password.txt"
+}
+
+# cargar_clave_postgres: exporta POSTGRES_PASSWORD desde `.secrets/postgres_password.txt` si existe.
+cargar_clave_postgres() {
+    _archivo=$(archivo_clave_postgres)
+    [ -s "$_archivo" ] || return 0
+    _valor=$(tr -d '\n\r' < "$_archivo")
+    if [ -n "${POSTGRES_PASSWORD:-}" ] && [ "$POSTGRES_PASSWORD" != "$_valor" ]; then
+        echo "AVISO: la POSTGRES_PASSWORD de los archivos .env no coincide con $_archivo; manda $_archivo (quite esa línea del .env)." >&2
+    fi
+    POSTGRES_PASSWORD=$_valor
+    export POSTGRES_PASSWORD
+}
+
+# aplicar_modo: fija ENTORNO según el modo. Local por defecto; remoto solo con MODO_REMOTO=1. En local se
+# ignoran las variables del modo remoto que hubiera en el entorno del shell (Redis de Railway, token de proxy).
+aplicar_modo() {
+    if [ "${MODO_REMOTO:-0}" = 1 ]; then
+        ENTORNO=remoto
+    else
+        ENTORNO=local
+        unset REDIS_URL_REMOTO PROXY_SHARED_TOKEN REDIS_TLS_CA REDIS_TLS_CERT REDIS_TLS_KEY
+    fi
+    export ENTORNO
+}
+
+# cargar_archivos_env: exporta las variables de todos los archivos de archivos_env, en orden, y después la
+# contraseña de PostgreSQL de `.secrets`. No fija el modo: eso lo hace `aplicar_modo`.
 cargar_archivos_env() {
     for archivo in $(archivos_env); do
         case "$archivo" in /*) ruta=$archivo ;; *) ruta=./$archivo ;; esac
@@ -53,5 +90,6 @@ cargar_archivos_env() {
         . "$ruta"
         set +a
     done
+    cargar_clave_postgres
     return 0
 }

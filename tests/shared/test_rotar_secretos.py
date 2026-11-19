@@ -97,7 +97,7 @@ def test_genera_secretos_nuevos_con_permisos_600(entorno):
     assert (secretos / "redis" / "ca.crt").read_text() != "CA-VIEJA"
     pg = (secretos / "postgres_password.txt").read_text()
     assert pg.isalnum() and pg != "sabre_local"
-    assert f"POSTGRES_PASSWORD={pg}\n" in env.read_text()
+    assert "POSTGRES_PASSWORD" not in env.read_text()  # fuente única: .secrets/postgres_password.txt
     assert "FOG_HOST_PORT=8001" in env.read_text()
 
 

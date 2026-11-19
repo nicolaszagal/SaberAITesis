@@ -16,7 +16,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: sabre
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?copiar .env.example a .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?usar scripts/compose.sh (la contraseña sale de .secrets/postgres_password.txt)}
       POSTGRES_DB: sabre
     volumes:
       - sabre_pgdata:/var/lib/postgresql/data

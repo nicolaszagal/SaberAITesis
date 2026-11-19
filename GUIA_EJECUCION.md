@@ -461,3 +461,8 @@ Fog debe tener `EDGE_URL` (por defecto `http://127.0.0.1:8765`) apuntando a la A
 - **Cerrar la sesión:** botón "Cerrar sesión de validación" en Configuración (`POST /sesion/cerrar`): hace el respaldo verificado (sin clips) y, solo si pasa, borra los clips. Necesita `RESPALDO_DIR` y las variables del respaldo en el entorno de Fog (ver `scripts/respaldar_sesion.sh`).
 - **Combate activo:** `POST /matches/config` marca el combate como activo (uno por nodo); Edge sube los tocados a ese. Se limpia al cerrar la sesión.
 - **Variables:** `VENTANA_PRE_MS` (2000) y `VENTANA_POST_MS` (500) en Fog y Edge; `EDGE_K_TOCADOS`, `EDGE_FPS`, `EDGE_DIR_TOCADOS`.
+
+## 8. Modo local por defecto y contraseña de PostgreSQL (FIX05)
+
+- `sh scripts/fog_nativo.sh` y `sh scripts/instalar_fog.sh ...` son **locales por defecto**: solo `.env`, `ENTORNO=local`, sin el bloqueo de `probar`. El modo remoto (cargar `.secrets/fog_remoto.env`, `ENTORNO=remoto` y el bloqueo) exige `--remoto` explícito: `sh scripts/fog_nativo.sh --remoto`. `--mostrar` (fog_nativo) y `modo` (instalar_fog) enseñan el modo y los archivos sin arrancar nada.
+- La contraseña de PostgreSQL vive **solo** en `.secrets/postgres_password.txt`; no va en el `.env`. Compose se invoca con `sh scripts/compose.sh -f docker-compose.yml -f docker-compose.nativo.yml up -d` para que la reciba. `sh scripts/verificar_clave_postgres.sh` comprueba que la de `.secrets` entra y que `sabre_local` se rechaza.

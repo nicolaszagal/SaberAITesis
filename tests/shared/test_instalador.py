@@ -205,7 +205,8 @@ def test_generar_env_falla_si_falta_la_clave():
 def test_la_plantilla_real_tiene_todas_las_claves_que_rellena_instalar():
     plantilla = (BACKEND / ".env.example").read_text()
     instalador.generar_env(plantilla, {k: "v" for k in
-                                       ("POSTGRES_PASSWORD", "AUTH_USER", "AUTH_PASSWORD_HASH", "AUTH_JWT_SECRET", "RESPALDO_DIR")})
+                                       ("AUTH_USER", "AUTH_PASSWORD_HASH", "AUTH_JWT_SECRET", "RESPALDO_DIR")})
+    assert "POSTGRES_PASSWORD" not in plantilla.replace("# La contraseña de PostgreSQL NO va aquí", "")  # fuente única: .secrets
 
 
 # --- Docker Compose: una sola función común -----------------------------------------------
@@ -256,21 +257,64 @@ def test_ningun_script_escribe_docker_compose_a_mano():
 # --- Configuración real del Mac: .env mínimo + .secrets/fog_remoto.env ---------------------
 
 
-def _cargar(tmp_path, explicito: str | None = None):
+def _cargar(tmp_path, explicito: str | None = None, remoto: bool = False):
     (tmp_path / ".secrets").mkdir(exist_ok=True)
     (tmp_path / ".env").write_text("POSTGRES_PASSWORD=desde_env\nRESPALDO_DIR=/r\n")
     (tmp_path / ".secrets" / "fog_remoto.env").write_text("AUTH_USER=maestro\nPOSTGRES_PASSWORD=desde_secretos\nENTORNO=remoto\n")
     pre = f"ENV_FILE={explicito}; ENV_FILE_EXPLICITO=1;" if explicito else "ENV_FILE=.env;"
-    cmd = f'{pre} . {BACKEND}/scripts/lib_fog_env.sh; cargar_archivos_env; echo "$AUTH_USER|$POSTGRES_PASSWORD|$RESPALDO_DIR|$ENTORNO"'
+    pre += f" MODO_REMOTO={1 if remoto else 0};"
+    cmd = f'{pre} . {BACKEND}/scripts/lib_fog_env.sh; cargar_archivos_env; aplicar_modo; echo "$AUTH_USER|$POSTGRES_PASSWORD|$RESPALDO_DIR|$ENTORNO"'
     return subprocess.run(["sh", "-c", cmd], cwd=tmp_path, capture_output=True, text=True).stdout.strip()
 
 
-def test_sin_env_file_explicito_usa_env_y_encima_el_archivo_de_secretos(tmp_path):
-    assert _cargar(tmp_path) == "maestro|desde_secretos|/r|remoto"
+def test_por_defecto_es_local_y_no_lee_fog_remoto_env(tmp_path):
+    assert _cargar(tmp_path) == "|desde_env|/r|local"
+
+
+def test_con_remoto_carga_env_y_encima_fog_remoto_env_y_fija_entorno_remoto(tmp_path):
+    assert _cargar(tmp_path, remoto=True) == "maestro|desde_secretos|/r|remoto"
+
+
+def test_la_clave_de_postgres_sale_de_secrets_y_manda_sobre_el_env(tmp_path):
+    (tmp_path / ".secrets").mkdir(exist_ok=True)
+    (tmp_path / ".secrets" / "postgres_password.txt").write_text("deSecrets\n")
+    assert _cargar(tmp_path) == "|deSecrets|/r|local"
+    assert _cargar(tmp_path, remoto=True) == "maestro|deSecrets|/r|remoto"
+
+
+def test_fog_nativo_local_y_remoto_con_mostrar(tmp_path):
+    import os
+    env = tmp_path / "e.env"
+    env.write_text("RESPALDO_DIR=/r\nPOSTGRES_PASSWORD=xyz\nREDIS_URL_REMOTO=rediss://u:clave@h/0\n")
+    base = {**os.environ, "ENV_FILE": str(env), "DATOS_DIR": str(tmp_path / "d"), "VENV_DIR": str(BACKEND / ".venv"),
+            "SECRETS_DIR": str(tmp_path / "nada"), "ENTORNO": "remoto"}
+    run = lambda *a: subprocess.run(["sh", str(BACKEND / "scripts" / "fog_nativo.sh"), *a],
+                                    cwd=BACKEND, env=base, capture_output=True, text=True)
+    local = run("--mostrar")
+    assert local.returncode == 0, local.stderr
+    assert "modo: local" in local.stdout and "ENTORNO=local" in local.stdout
+    assert "BIND_HOST=0.0.0.0" in local.stdout and "redis://127.0.0.1" in local.stdout
+    assert "clave" not in local.stdout and "xyz" not in local.stdout
+    remoto = run("--remoto", "--mostrar")
+    assert "modo: remoto" in remoto.stdout and "ENTORNO=remoto" in remoto.stdout
+    assert "BIND_HOST=127.0.0.1" in remoto.stdout and "rediss://***@h/0" in remoto.stdout
+    assert remoto.returncode == 1 and "probar --remoto" in remoto.stderr  # sin `probar` aprobada: bloqueo
+    assert run("--otra").returncode == 2
+
+
+def test_instalar_fog_modo_local_por_defecto_y_remoto_explicito(tmp_path):
+    import os
+    sec = tmp_path / "fog_remoto.env"
+    sec.write_text("ENTORNO=remoto\n")
+    env = {**os.environ, "ENV_SECRETO": str(sec), "SECRETS_DIR": str(tmp_path / "nada")}
+    run = lambda *a: subprocess.run(["sh", str(BACKEND / "scripts" / "instalar_fog.sh"), *a],
+                                    cwd=BACKEND, env=env, capture_output=True, text=True).stdout
+    assert "modo: local" in run("modo") and str(sec) not in run("modo")
+    assert "modo: remoto" in run("modo", "--remoto") and str(sec) in run("modo", "--remoto")
 
 
 def test_con_env_file_explicito_usa_solo_ese_archivo(tmp_path):
-    assert _cargar(tmp_path, explicito=".env") == "|desde_env|/r|"
+    assert _cargar(tmp_path, explicito=".env") == "|desde_env|/r|local"
 
 
 def test_sin_ningun_archivo_no_falla_y_no_carga_nada(tmp_path):
@@ -282,3 +326,39 @@ def test_instalar_no_exige_auth_en_el_env_minimo():
     fuente = (BACKEND / "scripts" / "instalar_fog.sh").read_text()
     assert "archivos_env" in fuente and "ENV_FILE_EXPLICITO" in fuente
     assert "--env-file" not in fuente
+
+
+def test_verificar_clave_postgres_acepta_la_de_secrets_y_rechaza_sabre_local(tmp_path):
+    """Con un Postgres desechable cuya clave es la de .secrets: esa entra y `sabre_local` no."""
+    import os
+    import shutil
+    import time
+    if not shutil.which("docker") or not shutil.which("psql"):
+        pytest.skip("hace falta docker y psql")
+    clave = "ClaveDePrueba123"
+    (tmp_path / "postgres_password.txt").write_text(clave)
+    nombre = f"pg-clave-{os.getpid()}"
+    r = subprocess.run(["docker", "run", "-d", "--rm", "--name", nombre, "-e", "POSTGRES_USER=sabre",
+                        "-e", f"POSTGRES_PASSWORD={clave}", "-e", "POSTGRES_DB=sabre", "-p", "127.0.0.1:5459:5432",
+                        "postgres:16-alpine"], capture_output=True, text=True)
+    if r.returncode != 0:
+        pytest.skip(f"docker no disponible: {r.stderr[:80]}")
+    try:
+        for _ in range(40):
+            if subprocess.run(["docker", "exec", nombre, "pg_isready", "-h", "127.0.0.1", "-U", "sabre"],
+                              capture_output=True).returncode == 0:
+                break
+            time.sleep(0.5)
+        time.sleep(1)
+        env = {**os.environ, "SECRETS_DIR": str(tmp_path)}
+        ok = subprocess.run(["sh", str(BACKEND / "scripts" / "verificar_clave_postgres.sh"), "5459"],
+                            cwd=BACKEND, env=env, capture_output=True, text=True)
+        assert ok.returncode == 0, ok.stdout + ok.stderr
+        assert "de .secrets: ACEPTADA" in ok.stdout and "(sabre_local): rechazada" in ok.stdout
+        assert clave not in ok.stdout + ok.stderr  # nunca imprime la clave
+        (tmp_path / "postgres_password.txt").write_text("otraClave999")
+        mal = subprocess.run(["sh", str(BACKEND / "scripts" / "verificar_clave_postgres.sh"), "5459"],
+                             cwd=BACKEND, env=env, capture_output=True, text=True)
+        assert mal.returncode == 1 and "RECHAZADA" in mal.stdout
+    finally:
+        subprocess.run(["docker", "stop", nombre], capture_output=True)

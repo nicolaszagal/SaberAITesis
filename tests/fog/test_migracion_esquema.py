@@ -18,7 +18,11 @@ BACKEND = Path(__file__).resolve().parents[2]
 SQL_COPIA = (
     BACKEND / "fog/infrastructure/persistence/migrations/sql/0001_esquema_sabre.sql"
 )
-SQL_DOCS = BACKEND.parent / "docs_claude" / "sabre_ai_schema.sql"
+# docs_claude/ está en la raíz del repo Tesis (backend/ vive en Tesis/Software/backend); se prueban ambos niveles.
+SQL_DOCS = next(
+    (c for c in (b / "docs_claude" / "sabre_ai_schema.sql" for b in BACKEND.parents[:3]) if c.exists()),
+    BACKEND.parent / "docs_claude" / "sabre_ai_schema.sql",
+)
 
 
 @pytest.fixture
