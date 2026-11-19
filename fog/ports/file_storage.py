@@ -59,3 +59,28 @@ class FileStoragePort(ABC):
             FileNotFoundError: si la URI no existe en el almacén.
         """
         raise NotImplementedError
+
+    @abstractmethod
+    def ruta_local(self, uri: str) -> Path | None:
+        """Ruta en disco de un archivo guardado, para leerlo o servirlo.
+
+        Args:
+            uri: URI devuelta por `save_clip` o `save_keypoints`.
+
+        Returns:
+            La ruta si el archivo existe en este almacén; `None` si no existe (por ejemplo, un
+            clip ya purgado al cerrar la sesión) o la URI no es de este almacén.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    async def eliminar_clip(self, uri: str) -> bool:
+        """Borra el archivo de un clip (política de datos personales, EDGE02).
+
+        Args:
+            uri: URI devuelta por `save_clip`.
+
+        Returns:
+            True si había un archivo y se borró; False si ya no existía.
+        """
+        raise NotImplementedError

@@ -112,6 +112,13 @@ MIN_FRAMES = 3
 # Tamaño máximo aceptado para POST /matches/{match_id}/clip (DEF-13): un
 # archivo por encima de este límite se rechaza con 413 antes de escribirlo
 # a disco. Ver fog/infrastructure/clips/clip_file_reader.py.
+# Ventana del clip alrededor del tocado (EDGE02, cierra DEF-32; reemplaza los 5 s de RF-01):
+# 2000 ms antes y 500 ms después. La usan Edge, que recorta en vivo, y Fog, que recorta los
+# clips subidos a mano. Un clip que ya viene recortado no cambia (idempotente, tolerancia de
+# un frame).
+VENTANA_PRE_MS = int(os.environ.get("VENTANA_PRE_MS", "2000"))
+VENTANA_POST_MS = int(os.environ.get("VENTANA_POST_MS", "500"))
+
 CLIP_MAX_MB = float(os.environ.get("CLIP_MAX_MB", "200"))
 
 # Tiempo que Fog espera la señal de luz Favero (POST /webrtc/{match_id}/luz)

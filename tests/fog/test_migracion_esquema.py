@@ -77,7 +77,7 @@ async def test_migracion_aplica_sobre_base_limpia(alembic_cfg, engine):
         version = (
             await conn.execute(text("SELECT version_num FROM public.alembic_version"))
         ).scalar_one()
-        assert version == "0006"
+        assert version == "0007"
 
 
 async def test_downgrade_y_reaplicacion(alembic_cfg, engine):
