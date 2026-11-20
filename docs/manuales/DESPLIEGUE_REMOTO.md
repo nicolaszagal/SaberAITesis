@@ -2,7 +2,7 @@
 
 > **Solo para el autor.** Cómo desplegar el frontend y Cloud en Railway, y cómo emitir y revocar los tokens de los nodos Fog. Los revisores no leen este documento: reciben una URL y un archivo de token y siguen el modo B de [`GUIA_EJECUCION.md`](GUIA_EJECUCION.md).
 >
-> El diseño anterior (DEPLOY09: Redis nativo, Tailscale y un solo Fog) está en [`historico/DESPLIEGUE_REMOTO_DEPLOY09_tailnet.md`](historico/DESPLIEGUE_REMOTO_DEPLOY09_tailnet.md). Su estado se explica en la sección 8.
+> El diseño anterior (DEPLOY09: Redis nativo, Tailscale y un solo Fog) está en [`historico/DESPLIEGUE_REMOTO_DEPLOY09_tailnet.md`](historico/DESPLIEGUE_REMOTO_DEPLOY09_tailnet.md). Su retiro se explica en la sección 8.
 
 ## 1. Arquitectura
 
@@ -18,7 +18,7 @@ Navegador ──HTTPS──> [Railway] frontend (nginx, solo estático)
 
 Diagrama: [`../uml/UML7_Despliegue.png`](../uml/UML7_Despliegue.png). Contrato de `POST /v1/clasificar`: [`../../CONTRATO_API.md`](../../CONTRATO_API.md), sección 5.1.
 
-- **Frontend (Railway).** Imagen estática (`SaberAISoftware/deploy/railway/Dockerfile.estatico`): sin `/api`, sin reenviador y sin Tailscale. El nodo Fog no se fija al construir: el usuario lo escribe en el login ("Nodo Fog", `http://localhost:8001` por defecto) y el navegador lo recuerda.
+- **Frontend (Railway).** Imagen estática (`SaberAISoftware/deploy/railway/Dockerfile`): sin `/api`, sin reenviador y sin Tailscale. El nodo Fog no se fija al construir: el usuario lo escribe en el login ("Nodo Fog", `http://localhost:8001` por defecto) y el navegador lo recuerda.
 - **Cloud (Railway).** `cloud/Dockerfile`. Sin `REDIS_URL`, corre solo con HTTP (`POST /v1/clasificar`, `GET /health`) y **no persiste nada**. Su `PORT` lo asigna Railway.
 - **Fog (equipo de cada usuario).** `CLOUD_TRANSPORTE=http`: no usa Redis ni PKI. Autentica ante Cloud con un token propio de su nodo.
 - **Autenticación.** Cada Fog tiene su propio JWT (`AUTH_JWT_SECRET`): un usuario existe solo en su nodo. Sin proxy no hay `PROXY_SHARED_TOKEN`: la protección es el JWT, CORS y la escucha en loopback.
@@ -30,7 +30,7 @@ Proyecto `sabre-ai-tailscale` (el nombre es histórico). **El plan Free permite 
 | Servicio | Contenido | Dockerfile (`RAILWAY_DOCKERFILE_PATH`) | Dominio |
 |---|---|---|---|
 | `cloud-http` | Cloud con HTTP | `cloud/Dockerfile` | `cloud-http-production.up.railway.app` |
-| `frontend` | frontend estático | `deploy/railway/Dockerfile.estatico` (antes `deploy/railway/Dockerfile`, el de Tailscale) | `frontend-production-23fc2e14.up.railway.app` |
+| `frontend` | frontend estático | `deploy/railway/Dockerfile` (antes la imagen con Tailscale y proxy; ahora la estática) | `frontend-production-23fc2e14.up.railway.app` |
 | `cloud` | Cloud del diseño de Tailscale | `cloud/Dockerfile` | sin dominio, **sin usar** |
 
 Los dominios los asigna Railway y cambian si el servicio se crea de nuevo. `cloud` conserva sus variables selladas del camino anterior (`REDIS_URL`, `REDIS_TLS_*_B64`, `TS_AUTHKEY`) sin tocar: no se borraron porque no se pueden recuperar y el retiro del camino de la tailnet espera la aprobación del autor (sección 8).
@@ -43,7 +43,7 @@ Los dominios los asigna Railway y cambian si el servicio se crea de nuevo. `clou
 | `cloud-http` | `CLOUD_NODOS_SHA256` | entradas `nombre:hash`, ver sección 3 |
 | `cloud-http` | `ENTORNO` | `remoto` (apaga `/docs`, `/redoc` y `/openapi.json`) |
 | `cloud-http` | opcionales | `CLOUD_HTTP_MAX_BODY_BYTES` (2 MiB), `CLOUD_HTTP_LIMITE_PETICIONES` (30) y `CLOUD_HTTP_LIMITE_VENTANA_S` (60), `CLOUD_HTTP_PETICION_TIMEOUT_S` (20) |
-| `frontend` | `RAILWAY_DOCKERFILE_PATH` | `deploy/railway/Dockerfile.estatico` |
+| `frontend` | `RAILWAY_DOCKERFILE_PATH` | `deploy/railway/Dockerfile` |
 | `frontend` | `FOG_ORIGENES_EXTRA` | opcional: orígenes `https://` de Fog remotos que la CSP debe permitir, separados por espacios. Sin comodín: un valor inválido impide arrancar el contenedor |
 
 La CSP del frontend es `connect-src 'self' http://localhost:* http://127.0.0.1:*` más `FOG_ORIGENES_EXTRA`. No hay comodín `https:`.
@@ -179,9 +179,11 @@ Tarifas de Railway (docs.railway.com/pricing, consultadas el 20/11/2026): memori
 | Cloud no arranca y dice `CLOUD_NODOS_SHA256: ...` | La variable está mal formada (formato `nombre:hash`, hash de 64 hexadecimales) |
 | El contenedor del frontend no arranca y dice `FOG_ORIGENES_EXTRA` | Un origen no es `https://host[:puerto]` (sin comodines ni rutas) |
 
-## 8. Estado del camino de la tailnet (DEPLOY09)
+## 8. Camino de la tailnet (DEPLOY09): retirado
 
-**Deprecado, todavía en `main`.** El camino Redis por la tailnet (sidecar de Tailscale en las dos imágenes, reenviadores `socat`, `deploy/tailscale/politica.hujson`, `scripts/fog_remoto.sh`, `scripts/prueba_tailnet.sh` y la PKI de Redis) sigue en el repositorio: el prompt DEPLOY11 manda retirarlo en un commit propio, **con la aprobación previa del autor y después de la prueba real**, y conservarlo en la rama `historico/tailnet` de backend y frontend. La prueba real de esta sección 5 está hecha; falta esa aprobación. El Redis local del modo A se queda.
+Retirado de `main` el 20/11/2026 con la aprobación del autor, en un commit propio, y conservado en la rama **`historico/tailnet`** de backend y de frontend (la rama sale del `main` anterior al retiro). Se quitó: el sidecar de Tailscale y el reenviador `socat` de las imágenes de Cloud y del frontend, `deploy/tailscale/` (incluida `politica.hujson`), `scripts/fog_remoto.sh`, `scripts/prueba_tailnet.sh`, `scripts/prueba_revocacion_tailnet.sh`, el proxy `/api` de DEPLOY03 (`docker-compose.remoto.yml`, `proxy/`, `scripts/prueba_remota.sh`) y la imagen vieja del frontend (`deploy/railway/Dockerfile` con proxy `/api`), cuyo lugar toma la imagen estática. El Redis del modo A se queda.
+
+Para volver a ese diseño: `git switch historico/tailnet`. Siguen en `main`, sin uso en el modo remoto, el Redis nativo con PKI (`scripts/redis_nativo.sh`, `generar_pki_redis.sh`, `rotar_secretos.sh`) y el soporte `rediss://` de Cloud y Fog; son candidatos a retirarse si el autor lo decide. El servicio `cloud` de Railway conserva sus variables selladas del camino anterior sin usar: bórrelo cuando quiera (el plan Free permite 3 servicios).
 
 ## 9. Riesgos aceptados
 

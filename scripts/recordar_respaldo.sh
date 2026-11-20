@@ -1,6 +1,6 @@
 #!/bin/sh
 # Avisa si la base tiene revisiones nuevas desde el último respaldo verificado (FIX03).
-# La llaman fog_nativo.sh (al arrancar) y fog_remoto.sh stop. No falla nunca: solo avisa.
+# La llama fog_nativo.sh (al arrancar). No falla nunca: solo avisa.
 #
 # Variables: las de lib_respaldo.sh (RESPALDO_DIR, PG_CONTAINER, POSTGRES_DB_NAME...).
 # Con la base del despliegue remoto, defina POSTGRES_DB_NAME=sabre_expo.
