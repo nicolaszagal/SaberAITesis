@@ -170,9 +170,9 @@ Se leen en `shared/config.py` (la fuente de verdad). Con `scripts/fog_nativo.sh`
 En un clon limpio de `main` (entorno nuevo con `requirements-fog.lock` y `scikit-learn==1.9.1`), con `TEST_DATABASE_URL` apuntando al PostgreSQL de Docker, en un MacBook Air Apple M4 (macOS 27.0.1, Python 3.14.5):
 
 ```text
-618 passed, 2 skipped, 5 deselected, 1 warning in 134.65s (0:02:14)
+618 passed, 2 skipped, 3 deselected, 1 warning in 131.82s (0:02:11)
 ```
 
-- Las 2 omitidas son las de arriba. Las 5 deseleccionadas son las `slow` (sección 1.3).
+- Las 2 omitidas son las de la sección 1.1. Las deseleccionadas son las `slow` (sección 1.3): son 3 en un clon sin el conjunto de datos y 5 cuando el autor lo tiene junto al repositorio (el número depende de los clips que encuentra).
 - Sin `scikit-learn` la misma corrida dio `617 passed, 1 failed, 2 skipped` (el fallo de κ).
 - `ruff check fog cloud shared --select E,F,W`: `All checks passed!`.
