@@ -355,10 +355,11 @@ cmd_instalar() {
     paso_env
     paso_base
     echo
+    remoto=""
+    [ "$MODO_REMOTO" = 1 ] && remoto="--remoto"
     echo "################################################################"
-    echo "#  INSTALACIÓN TERMINADA, PERO EL EQUIPO NO ESTÁ LISTO."
-    echo "#  Falta la prueba de equivalencia:  sh scripts/instalar_fog.sh probar"
-    echo "#  Hasta que pase, Fog no arranca en modo remoto (ni con FOG_DEVICE distinto de cpu)."
+    # shellcheck disable=SC2086
+    "$PY_SIS" scripts/instalador.py mensaje-final --dispositivo "${FOG_DEVICE:-cpu}" $remoto | sed 's/^/#  /'
     echo "################################################################"
 }
 

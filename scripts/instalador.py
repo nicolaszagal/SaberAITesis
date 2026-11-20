@@ -12,6 +12,7 @@ Uso desde el shell:
     python3 scripts/instalador.py generar-env [--plantilla .env.example] [--destino .env] [--volumen-existente]
     python3 scripts/instalador.py lista-clips --dataset <dir> [--extra <dir>]
     python3 scripts/instalador.py estado-probar --datos <dir>
+    python3 scripts/instalador.py mensaje-final [--dispositivo cpu] [--remoto]
     python3 scripts/instalador.py obtener-modelo --dataset <dir> --ruta <ruta> --hash <sha256> --origen-repo <dir> [--url <url>]
 """
 
@@ -457,6 +458,28 @@ def evaluar_bloqueo(reporte: dict | None, commit: str, dispositivo: str, remoto:
     return True, "equivalencia aprobada para este commit y dispositivo"
 
 
+def mensaje_final_instalacion(remoto: bool, dispositivo: str) -> str:
+    """Texto con el que termina `instalar_fog.sh instalar`, según si el equipo exige la prueba de equivalencia.
+
+    Args:
+        remoto: True si la instalación es del modo remoto (`--remoto`).
+        dispositivo: `FOG_DEVICE` vigente.
+
+    Returns:
+        El aviso a imprimir: "falta la prueba de equivalencia" solo si `evaluar_bloqueo` la exigiría.
+    """
+    if evaluar_bloqueo(None, "", dispositivo, remoto)[0]:
+        return (
+            "Instalación terminada. En modo local con cpu no se exige la prueba de equivalencia.\n"
+            "Siguiente paso: arrancar Fog con  sh scripts/fog_nativo.sh"
+        )
+    return (
+        "INSTALACIÓN TERMINADA, PERO EL EQUIPO NO ESTÁ LISTO.\n"
+        "Falta la prueba de equivalencia:  sh scripts/instalar_fog.sh probar\n"
+        "Hasta que pase, Fog no arranca en modo remoto (ni con FOG_DEVICE distinto de cpu)."
+    )
+
+
 def _cmd_bloqueo(args) -> int:
     hallado = ultimo_reporte(Path(args.datos))
     permitido, motivo = evaluar_bloqueo(hallado[1] if hallado else None, args.commit, args.dispositivo, args.remoto)
@@ -515,6 +538,9 @@ def main(argv: list[str] | None = None) -> int:
     lc.add_argument("--clips-json", default=str(Path(__file__).with_name("datos") / "clips_referencia.json"))
     e = sub.add_parser("estado-probar")
     e.add_argument("--datos", required=True)
+    mf = sub.add_parser("mensaje-final")
+    mf.add_argument("--dispositivo", default="cpu")
+    mf.add_argument("--remoto", action="store_true")
     om = sub.add_parser("obtener-modelo")
     om.add_argument("--dataset", required=True)
     om.add_argument("--ruta", required=True)
@@ -549,6 +575,9 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         for ruta in rutas.values():
             print(ruta)
+        return 0
+    if args.cmd == "mensaje-final":
+        print(mensaje_final_instalacion(args.remoto, args.dispositivo))
         return 0
     if args.cmd == "obtener-modelo":
         try:

@@ -414,3 +414,18 @@ def test_obtener_modelo_existente_no_se_sobrescribe(tmp_path):
 def test_obtener_modelo_sin_origen_falla(tmp_path):
     with pytest.raises(FileNotFoundError):
         instalador.obtener_archivo_modelo(tmp_path / "dataset", "x.bin", _sha(b"x"), None, None)
+
+
+# --- mensaje final de `instalar` (DOC01) ---------------------------------------
+
+
+def test_mensaje_final_local_con_cpu_no_exige_probar():
+    texto = instalador.mensaje_final_instalacion(remoto=False, dispositivo="cpu")
+    assert "NO ESTÁ LISTO" not in texto
+    assert "fog_nativo.sh" in texto
+
+
+@pytest.mark.parametrize("remoto,dispositivo", [(True, "cpu"), (False, "mps")])
+def test_mensaje_final_exige_probar_donde_el_bloqueo_la_exige(remoto, dispositivo):
+    assert "probar" in instalador.mensaje_final_instalacion(remoto, dispositivo)
+    assert instalador.evaluar_bloqueo(None, "", dispositivo, remoto)[0] is False
