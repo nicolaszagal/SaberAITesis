@@ -345,6 +345,116 @@ def require_auth() -> None:
         )
 
 
+# --- Transporte Fog -> Cloud por HTTP (DEPLOY11) ---------------------------------------------------
+# `redis` (por defecto, modo A local) o `http` (modo remoto: Fog sale por HTTPS hacia Cloud y no usa Redis).
+CLOUD_TRANSPORTES = ("redis", "http")
+CLOUD_TRANSPORTE = (os.environ.get("CLOUD_TRANSPORTE") or "redis").strip().lower()
+
+# Fog: dirección de Cloud y archivo con el token del nodo. Solo `https://` (o `http://localhost` en pruebas).
+CLOUD_URL = (os.environ.get("CLOUD_URL") or "").strip()
+CLOUD_TOKEN_FILE = os.environ.get("CLOUD_TOKEN_FILE", ".secrets/cloud_token.txt")
+# Tiempo máximo de una clasificación pedida a Cloud, desde Fog. Debe quedar bajo
+# CLIP_UPLOAD_VERDICT_TIMEOUT_S: si no, la espera del veredicto la corta antes (RNF-04: 60 s en total).
+CLOUD_HTTP_TIMEOUT_S = float(os.environ.get("CLOUD_HTTP_TIMEOUT_S", "25.0"))
+
+# Cloud: hashes SHA-256 de los tokens de nodo, `nombre:hash` separados por comas o saltos de línea.
+# Sin esta variable Cloud no abre su API HTTP (solo consume Redis, como en el modo A).
+CLOUD_NODOS_SHA256 = os.environ.get("CLOUD_NODOS_SHA256") or None
+# Puerto de la API HTTP de Cloud: `PORT` es el que asigna Railway.
+CLOUD_HTTP_PUERTO = int(os.environ.get("PORT") or os.environ.get("CLOUD_HTTP_PUERTO") or "8002")
+CLOUD_HTTP_HOST = os.environ.get("CLOUD_HTTP_HOST", "0.0.0.0")
+# Cuerpo máximo de POST /v1/clasificar. Una revisión típica pesa unas decenas de KB (T x 192 x 4 bytes,
+# en base64): 2 MiB deja margen holgado y corta cargas absurdas.
+CLOUD_HTTP_MAX_BODY_BYTES = int(os.environ.get("CLOUD_HTTP_MAX_BODY_BYTES", str(2 * 1024 * 1024)))
+# Peticiones por token y por ventana. Una revisión VAR hace una sola petición.
+CLOUD_HTTP_LIMITE_PETICIONES = int(os.environ.get("CLOUD_HTTP_LIMITE_PETICIONES", "30"))
+CLOUD_HTTP_LIMITE_VENTANA_S = float(os.environ.get("CLOUD_HTTP_LIMITE_VENTANA_S", "60"))
+# Tiempo máximo de una petición en Cloud (cola de inferencia incluida). Menor que el de Fog.
+CLOUD_HTTP_PETICION_TIMEOUT_S = float(os.environ.get("CLOUD_HTTP_PETICION_TIMEOUT_S", "20.0"))
+
+
+def redis_activo() -> bool:
+    """Indica si Cloud debe consumir Redis: solo si hay `REDIS_URL` en el entorno.
+
+    Returns:
+        True si `REDIS_URL` está definido y no vacío.
+    """
+    return bool(REDIS_URL_ENV)
+
+
+def validar_cloud_url(url: str) -> str:
+    """Comprueba que `CLOUD_URL` sea `https://` (o `http://localhost`/`127.0.0.1` en pruebas).
+
+    Args:
+        url: valor de `CLOUD_URL`.
+
+    Returns:
+        La URL sin barra final.
+
+    Raises:
+        RuntimeError: si falta, no es una URL con host o usa `http://` hacia un host remoto.
+            El mensaje nunca incluye la URL completa (podría llevar credenciales).
+    """
+    from urllib.parse import urlsplit
+
+    if not url:
+        raise RuntimeError("CLOUD_TRANSPORTE=http exige CLOUD_URL: falta.")
+    partes = urlsplit(url)
+    if partes.scheme not in ("http", "https") or not partes.hostname:
+        raise RuntimeError("CLOUD_URL no es una URL válida (https://host[:puerto]).")
+    if partes.username or partes.password:
+        raise RuntimeError("CLOUD_URL no admite usuario ni clave: el token va en su archivo.")
+    if partes.scheme == "http" and partes.hostname not in ("localhost", "127.0.0.1"):
+        raise RuntimeError(
+            "CLOUD_URL debe empezar por https:// (http:// solo se admite hacia localhost, en pruebas)."
+        )
+    return url.rstrip("/")
+
+
+def validar_transporte_cloud(transporte: str) -> str:
+    """Comprueba el valor de `CLOUD_TRANSPORTE`.
+
+    Args:
+        transporte: `redis` o `http`.
+
+    Returns:
+        El mismo valor.
+
+    Raises:
+        RuntimeError: si no es uno de los admitidos.
+    """
+    if transporte not in CLOUD_TRANSPORTES:
+        raise RuntimeError(f"CLOUD_TRANSPORTE={transporte!r} no es válido: use redis o http.")
+    return transporte
+
+
+def leer_token_cloud(ruta: str | None = None) -> str:
+    """Lee el token de nodo de su archivo (por defecto `.secrets/cloud_token.txt`).
+
+    Args:
+        ruta: archivo del token; por defecto `CLOUD_TOKEN_FILE`.
+
+    Returns:
+        El token, sin saltos de línea ni espacios al borde.
+
+    Raises:
+        RuntimeError: si el archivo no existe o está vacío. El mensaje nombra el archivo,
+            nunca el contenido.
+    """
+    archivo = ruta or CLOUD_TOKEN_FILE
+    try:
+        with open(archivo, encoding="utf-8") as f:
+            token = f.read().strip()
+    except OSError:
+        raise RuntimeError(
+            f"CLOUD_TRANSPORTE=http exige el token de nodo en {archivo}: no se pudo leer "
+            "(use `instalar_fog.sh importar-token <archivo>`)."
+        ) from None
+    if not token:
+        raise RuntimeError(f"El archivo del token de nodo ({archivo}) está vacío.")
+    return token
+
+
 # Mapeo fijo v1, confirmado por Nicolas: A=ROJ (izquierda en cámara), B=VER (derecha).
 FENCER_COLOR = {"A": "ROJ", "B": "VER"}
 

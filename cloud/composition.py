@@ -1,7 +1,9 @@
-"""Composition root de Cloud — análogo a fog/composition.py. Cloud no
-expone API HTTP (es un consumidor de Redis Streams puro), por lo que no
-hay wiring de FastAPI aquí: main.py simplemente instancia el Container y
-llama al caso de uso directamente.
+"""Composition root de Cloud — análogo a fog/composition.py.
+
+Cloud tiene dos adaptadores de entrada sobre el mismo caso de uso de clasificación: el
+consumidor de Redis Streams (modo local) y la API HTTP (DEPLOY11, modo remoto). Los
+proveedores de Redis solo se instancian si main.py los pide, así que sin `REDIS_URL` Cloud
+corre solo con HTTP y no abre ninguna conexión a Redis.
 """
 
 from __future__ import annotations
@@ -11,6 +13,9 @@ import torch
 from dependency_injector import containers, providers
 
 from cloud.application.classify_and_publish import ClassifyAndPublish
+from cloud.application.clasificar_secuencia import ClasificarSecuencia
+from cloud.infrastructure.api.app import crear_app
+from cloud.infrastructure.api.nodos import RegistroNodos
 from cloud.infrastructure.arbitration.null_arbitration_policy import (
     NullArbitrationPolicy,
 )
@@ -57,6 +62,22 @@ class Container(containers.DeclarativeContainer):
 
     model_version_name = providers.Singleton(
         LSTM6ClassAdapter.model_version_name, run_dir=config.model_run_dir,
+    )
+
+    clasificar_secuencia = providers.Singleton(
+        ClasificarSecuencia,
+        classifier=classifier,
+        arbitration=arbitration_policy,
+        modelo_version_name=model_version_name,
+    )
+
+    # Entrada HTTP (DEPLOY11): solo si hay hashes de nodos (CLOUD_NODOS_SHA256).
+    registro_nodos = providers.Singleton(
+        lambda texto: RegistroNodos.desde_texto(texto), texto=config.nodos_sha256
+    )
+
+    api_http = providers.Singleton(
+        crear_app, clasificar=clasificar_secuencia, nodos=registro_nodos
     )
 
     feature_consumer = providers.Singleton(RedisFeatureConsumer, client=redis_client)
