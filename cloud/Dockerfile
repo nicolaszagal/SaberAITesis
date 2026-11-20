@@ -1,8 +1,7 @@
-# Imagen de Cloud (worker: consume Redis Streams, corre el LSTM, publica
-# veredicto). Sin servidor HTTP — en Render, desplegar como "Background
-# Worker", NO como "Web Service" (Render espera que un Web Service abra un
-# puerto HTTP para su health check; Cloud no expone ninguno — ver
-# https://render.com/docs/background-workers).
+# Imagen de Cloud: clasifica con el LSTM. Dos entradas, según las variables de entorno:
+# - Redis Streams (modo local): solo si hay REDIS_URL. Sin puerto público.
+# - API HTTP (modo remoto, DEPLOY11): solo si hay CLOUD_NODOS_SHA256. Escucha en $PORT (Railway lo asigna;
+#   8002 por defecto). Sin REDIS_URL, Cloud corre solo con HTTP.
 # DEPLOY09: Tailscale fijo en la versión probada en la Parte 0. Solo se copian los binarios; se
 # activan únicamente si el entorno trae TS_AUTHKEY (ver docker-entrypoint.sh).
 ARG TS_VERSION=1.104.4
