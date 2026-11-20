@@ -2,7 +2,7 @@
 
 # Guía de ejecución — Backend SABRE.AI
 
-Manuales de la Validación 1: [Manual de usuario](docs/manuales/MANUAL_USUARIO.md) y [Guía de instalación](docs/manuales/GUIA_INSTALACION.md).
+Manuales de la Validación 1: [Manual de usuario](../MANUAL_USUARIO.md) y [Guía de instalación](../GUIA_INSTALACION.md).
 
 ## 1. Requisitos previos
 
@@ -225,7 +225,7 @@ con `scripts/prueba_humo.py` (sección 4.2).
 ## 6. Docker
 
 La instalación y operación de la Validación 1 con Docker Compose está en
-[`docs/manuales/GUIA_INSTALACION.md`](docs/manuales/GUIA_INSTALACION.md)
+[`docs/manuales/GUIA_INSTALACION.md`](../GUIA_INSTALACION.md)
 (`docker-compose.yml` único en la raíz de `backend/`, proyecto `sabre`, servicios
 `postgres`, `redis`, `cloud`, `fog` y `frontend`). Esta sección documenta solo lo
 que esa guía no cubre: Cloud en Render (6.2 y 6.3).

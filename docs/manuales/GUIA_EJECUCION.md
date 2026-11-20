@@ -57,7 +57,7 @@ INFO:     Started server process [N]
 INFO:     Uvicorn running on http://0.0.0.0:8001 (Press CTRL+C to quit)
 ```
 
-Fog quedó listo en **5 s** y **7 s** en las dos mediciones. En la primera sesión con revisiones, `fog_nativo.sh` avisa si hay revisiones sin respaldar ("SIN RESPALDO"): ver la sección de respaldos. Compruebe:
+Fog quedó listo en **5 s** y **7 s** en las dos mediciones. Si la base tiene revisiones sin respaldar, `fog_nativo.sh` lo avisa con un recuadro `FALTA RESPALDAR: N revisiones nuevas ...` (y "Respaldo al día (N revisiones ...)" si no): ver la sección de respaldos. No detiene el arranque. Compruebe:
 
 ```bash
 curl -s -w " %{http_code}\n" http://localhost:8001/health
@@ -182,7 +182,7 @@ Verificando el respaldo (restauración en base temporal)
 Respaldo verificado: <RESPALDO_DIR>/R001-<fecha UTC>
 ```
 
-Se crea `RESPALDO_DIR/R<NNN>-<fecha>/` con un `.dump` (formato custom de `pg_dump`), un `.tgz` y `MANIFEST.sha256`. Si algo no cuadra, la carpeta se renombra a `*.FALLIDO` y el script sale con error. **El botón "Cerrar sesión de validación" y `exportar_evidencia.py` ya ejecutan este respaldo**; el manual solo hace falta si cierra a mano. `fog_nativo.sh` avisa al arrancar si hay revisiones sin respaldar.
+Se crea `RESPALDO_DIR/R<NNN>-<fecha>/` con un `.dump` (formato custom de `pg_dump`), un `.tgz` y `MANIFEST.sha256`. Si algo no cuadra, la carpeta se renombra a `*.FALLIDO` y el script sale con error. **El botón "Cerrar sesión de validación" y `exportar_evidencia.py` ya ejecutan este respaldo**; el manual solo hace falta si cierra a mano. `fog_nativo.sh` avisa al arrancar si hay revisiones sin respaldar (`FALTA RESPALDAR`).
 
 Verificar un respaldo existente (sin tocar la base):
 
