@@ -1,3 +1,5 @@
+> **DOCUMENTO HISTÓRICO. Vigente hasta el 13/11/2026 (DEPLOY09 reemplazó el túnel de cloudflared por Tailscale). El modo remoto actual está en [`../DESPLIEGUE_REMOTO.md`](../DESPLIEGUE_REMOTO.md). No siga estas instrucciones: las vigentes están en [`../GUIA_INSTALACION.md`](../GUIA_INSTALACION.md), [`../GUIA_EJECUCION.md`](../GUIA_EJECUCION.md) y [`../MANUAL_USUARIO.md`](../MANUAL_USUARIO.md).**
+
 # Prueba remota del árbitro (DEPLOY03)
 
 Permite que el árbitro use la Validación 1 desde su navegador mientras Fog, Cloud, PostgreSQL y Redis corren en el Mac del autor (modo piloto). No se despliega nada en la nube. Instrucciones para el árbitro: `INSTRUCCIONES_ARBITRO_REMOTO.md`.

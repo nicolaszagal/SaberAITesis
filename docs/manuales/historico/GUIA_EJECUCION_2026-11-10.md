@@ -1,3 +1,5 @@
+> **DOCUMENTO HISTÓRICO. Vigente hasta el 19/11/2026 (LIMPIEZA01 y SCOPE01 retiraron de `main` el flujo WebRTC y el nodo Edge). Habla de WebRTC, Cloud en Render, Redis en Upstash y el Edge antiguo. No siga estas instrucciones: las vigentes están en [`../GUIA_INSTALACION.md`](../GUIA_INSTALACION.md), [`../GUIA_EJECUCION.md`](../GUIA_EJECUCION.md) y [`../MANUAL_USUARIO.md`](../MANUAL_USUARIO.md).**
+
 # Guía de ejecución — Backend SABRE.AI
 
 Manuales de la Validación 1: [Manual de usuario](docs/manuales/MANUAL_USUARIO.md) y [Guía de instalación](docs/manuales/GUIA_INSTALACION.md).

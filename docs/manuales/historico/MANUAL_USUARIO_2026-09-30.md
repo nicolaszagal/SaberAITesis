@@ -1,3 +1,5 @@
+> **DOCUMENTO HISTÓRICO. Vigente hasta el 19/11/2026. Describe una interfaz sin inicio de sesión, sin trazos ni razonamiento (anteriores a DEPLOY05, EXP01-04 y UX01). No siga estas instrucciones: las vigentes están en [`../GUIA_INSTALACION.md`](../GUIA_INSTALACION.md), [`../GUIA_EJECUCION.md`](../GUIA_EJECUCION.md) y [`../MANUAL_USUARIO.md`](../MANUAL_USUARIO.md).**
+
 # Manual de usuario de SABRE.AI
 
 Versión de la interfaz: Validación 1 (carga de clip y tocado simulado). Destinatarios: el árbitro y el operador que usan la interfaz durante una sesión. La instalación del sistema está en `GUIA_INSTALACION.md`.

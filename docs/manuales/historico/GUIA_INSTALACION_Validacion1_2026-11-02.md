@@ -1,3 +1,5 @@
+> **DOCUMENTO HISTÓRICO. Vigente hasta el 13/11/2026 (DEPLOY09 y DEPLOY10 añadieron login, secretos propios, Fog nativo e `instalar_fog.sh`). Describe la instalación con solo Docker Compose de la Validación 1, sin autenticación. No siga estas instrucciones: las vigentes están en [`../GUIA_INSTALACION.md`](../GUIA_INSTALACION.md), [`../GUIA_EJECUCION.md`](../GUIA_EJECUCION.md) y [`../MANUAL_USUARIO.md`](../MANUAL_USUARIO.md).**
+
 # Guía de instalación de SABRE.AI
 
 Destinatario: la persona que instala y pone en marcha el sistema. Versión cubierta: Validación 1 (carga de clip y tocado simulado). El uso de la interfaz está en `MANUAL_USUARIO.md`.
