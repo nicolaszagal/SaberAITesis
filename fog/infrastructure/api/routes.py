@@ -987,13 +987,14 @@ async def modelo_activo(
     "/health",
     response_model=HealthResponse,
     tags=["salud"],
-    summary="Estado de Fog, Redis y PostgreSQL",
+    summary="Estado de Fog, de Redis o Cloud, y de PostgreSQL",
     description=(
-        "`ok` o `error` por componente. Fog es `ok` si responde. Redis "
-        "(PING) y PostgreSQL (SELECT 1) tienen 2 s de tiempo límite. 200 si "
+        "`ok` o `error` por componente. Fog es `ok` si responde. Con el transporte `redis` "
+        "informa `redis` (PING); con `http` (DEPLOY11) informa `cloud` (GET /health de Cloud). "
+        "PostgreSQL (SELECT 1) y el transporte tienen 2 s de tiempo límite. 200 si "
         "todo está `ok`; 503 con el mismo cuerpo si alguno falla."
     ),
-    responses={503: {"model": HealthResponse, "description": "Redis o PostgreSQL no responden."}},
+    responses={503: {"model": HealthResponse, "description": "El transporte a Cloud o PostgreSQL no responden."}},
 )
 @inject
 async def health(
@@ -1004,7 +1005,7 @@ async def health(
         nombre: "ok" if responde else "error"
         for nombre, responde in (
             ("fog", estado.fog),
-            ("redis", estado.redis),
+            (estado.nombre_nube, estado.nube),
             ("postgres", estado.postgres),
         )
     }

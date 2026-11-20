@@ -103,27 +103,37 @@ class ObtenerModeloActivo:
 @dataclass(frozen=True)
 class EstadoSalud:
     fog: bool
-    redis: bool
+    nube: bool  # Redis (transporte local) o Cloud por HTTP (DEPLOY11)
     postgres: bool
+    nombre_nube: str = "redis"  # "redis" o "cloud": clave con la que `/health` informa `nube`
 
     @property
     def ok(self) -> bool:
-        return self.fog and self.redis and self.postgres
+        return self.fog and self.nube and self.postgres
 
 
 class ConsultarSalud:
-    def __init__(self, redis: SondaSaludPort, postgres: SondaSaludPort):
-        self._redis = redis
+    def __init__(self, nube: SondaSaludPort, postgres: SondaSaludPort, nombre_nube: str = "redis"):
+        """Crea la consulta.
+
+        Args:
+            nube: sonda de lo que lleva las features a Cloud (Redis o la API HTTP de Cloud).
+            postgres: sonda de PostgreSQL.
+            nombre_nube: `redis` o `cloud`, el nombre del componente en `/health`.
+        """
+        self._nube = nube
         self._postgres = postgres
+        self._nombre_nube = nombre_nube
 
     async def execute(self) -> EstadoSalud:
-        """Comprueba Redis y PostgreSQL. Fog está en `True` porque responde.
+        """Comprueba el transporte hacia Cloud y PostgreSQL. Fog está en `True` porque responde.
 
         Returns:
             El estado de cada componente.
         """
         return EstadoSalud(
             fog=True,
-            redis=await self._redis.responde(),
+            nube=await self._nube.responde(),
             postgres=await self._postgres.responde(),
+            nombre_nube=self._nombre_nube,
         )

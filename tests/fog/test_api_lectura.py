@@ -268,3 +268,15 @@ def test_los_endpoints_de_lectura_no_aceptan_escritura(crear_app):
     for ruta in rutas:
         assert app.client.post(ruta, json={}).status_code in (404, 405, 422)
         assert app.client.delete(ruta).status_code in (404, 405)
+
+
+def test_health_con_transporte_http_informa_cloud_y_no_redis(crear_app):
+    """DEPLOY11: con CLOUD_TRANSPORTE=http la sonda es la de Cloud y /health no menciona Redis."""
+    app = crear_app()
+    for cloud_ok, estado, esperado in ((True, 200, "ok"), (False, 503, "error")):
+        app.container.consultar_salud.override(providers.Object(
+            ConsultarSalud(SondaFalsa(cloud_ok), SondaFalsa(True), nombre_nube="cloud")
+        ))
+        resp = app.client.get("/health")
+        assert resp.status_code == estado
+        assert resp.json() == {"fog": "ok", "cloud": esperado, "postgres": "ok"}

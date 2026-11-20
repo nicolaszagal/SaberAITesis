@@ -46,11 +46,21 @@ config.require_paths(
 )
 # DEPLOY05: sin usuario maestro ni secreto JWT de >= 32 bytes, Fog no arranca.
 config.require_auth()
-# DEPLOY09: en remoto Redis exige rediss:// y los tres REDIS_TLS_*, sin valor por defecto.
-config.require_redis_remoto()
+# DEPLOY11: con el transporte `http` Fog no usa Redis; solo se exige su configuración con `redis`.
+config.validar_transporte_cloud(config.CLOUD_TRANSPORTE)
+if config.CLOUD_TRANSPORTE == "redis":
+    # DEPLOY09: en remoto Redis exige rediss:// y los tres REDIS_TLS_*, sin valor por defecto.
+    config.require_redis_remoto()
+else:
+    config.validar_cloud_url(config.CLOUD_URL)
+    config.leer_token_cloud()  # falla al arrancar, y no en la primera revisión, si falta el token
 
 container = Container()
 container.config.redis_url.from_value(config.REDIS_URL)
+container.config.cloud_transporte.from_value(config.CLOUD_TRANSPORTE)
+container.config.cloud_url.from_value(config.CLOUD_URL)
+container.config.cloud_token_file.from_value(config.CLOUD_TOKEN_FILE)
+container.config.cloud_http_timeout_s.from_value(config.CLOUD_HTTP_TIMEOUT_S)
 container.config.yolo_pose_model_path.from_value(config.YOLO_POSE_MODEL_PATH)
 container.config.fog_device.from_value(config.validar_dispositivo(config.FOG_DEVICE))
 container.config.feature_stats_path.from_value(config.FEATURE_STATS_PATH)
@@ -79,7 +89,10 @@ async def lifespan(app: FastAPI):
     log.info("Cargando modelo YOLO y extractor de features (192-dim)...")
     container.pose_estimator()
     container.feature_extractor()
-    container.redis_client()
+    if config.CLOUD_TRANSPORTE == "redis":
+        container.redis_client()
+    else:
+        container.http_cloud()
     # DEF-16: barrido periódico que libera las MatchSession cerradas hace
     # más de SESSION_TTL_S (ver SessionRegistry.sweep_forever).
     sweep_task = asyncio.create_task(
@@ -92,7 +105,10 @@ async def lifespan(app: FastAPI):
     sweep_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await sweep_task
-    await container.redis_client().close()
+    if config.CLOUD_TRANSPORTE == "redis":
+        await container.redis_client().close()
+    else:
+        await container.http_cloud().cerrar()
 
 
 app = crear_app(

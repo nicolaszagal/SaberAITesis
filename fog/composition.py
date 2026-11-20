@@ -48,6 +48,8 @@ from fog.infrastructure.evidencia.registro_jsonl import RegistroEvidenciaJsonl
 from fog.infrastructure.explicacion.parametros_json import ParametrosExplicacionJson
 from fog.infrastructure.features.new192_feature_extractor import New192FeatureExtractor
 from fog.infrastructure.features.preprocessing_profile import load_profile
+from fog.infrastructure.messaging.cloud_sonda_salud import CloudSonda
+from fog.infrastructure.messaging.http_cloud_transport import HttpCloudTransport
 from fog.infrastructure.messaging.redis_feature_publisher import RedisFeaturePublisher
 from fog.infrastructure.messaging.redis_sonda_salud import RedisSonda
 from fog.infrastructure.messaging.redis_verdict_subscriber import RedisVerdictSubscriber
@@ -237,6 +239,10 @@ class Container(containers.DeclarativeContainer):
         PostgresSonda, session_factory=db_session_factory
     )
     sonda_redis = providers.Singleton(RedisSonda, client=redis_client)
+    sonda_cloud = providers.Singleton(CloudSonda, url=config.cloud_url)
+    # DEPLOY11: un Selector solo instancia el proveedor elegido; con `http` no se crea el cliente de Redis.
+    transporte_cloud = providers.Callable(lambda t: t or "redis", config.cloud_transporte)
+    sonda_nube = providers.Selector(transporte_cloud, redis=sonda_redis, http=sonda_cloud)
 
     listar_revisiones = providers.Singleton(
         ListarRevisiones, consulta=consulta_revision_repository
@@ -266,7 +272,10 @@ class Container(containers.DeclarativeContainer):
         ObtenerModeloActivo, modelos=modelo_version_repository
     )
     consultar_salud = providers.Singleton(
-        ConsultarSalud, redis=sonda_redis, postgres=sonda_postgres
+        ConsultarSalud,
+        nube=sonda_nube,
+        postgres=sonda_postgres,
+        nombre_nube=providers.Callable(lambda t: "cloud" if t == "http" else "redis", transporte_cloud),
     )
 
     # Resumen de validación (L02): todo desde la base; el JSONL de L01 solo
@@ -313,10 +322,25 @@ class Container(containers.DeclarativeContainer):
     )
     validar_token = providers.Singleton(ValidarToken, emisor=emisor_tokens)
 
-    feature_publisher = providers.Singleton(RedisFeaturePublisher, client=redis_client)
+    # Transporte hacia Cloud (DEPLOY11): `redis` (modo local) o `http` (Fog sale por HTTPS, sin Redis).
+    # Con `http` un solo adaptador implementa el publicador y el suscriptor.
+    http_cloud = providers.Singleton(
+        HttpCloudTransport,
+        url=config.cloud_url,
+        token=providers.Callable(lambda ruta: shared_config.leer_token_cloud(ruta), config.cloud_token_file),
+        timeout_s=config.cloud_http_timeout_s,
+    )
 
-    verdict_subscriber = providers.Singleton(
-        RedisVerdictSubscriber, client=redis_client
+    feature_publisher = providers.Selector(
+        transporte_cloud,
+        redis=providers.Singleton(RedisFeaturePublisher, client=redis_client),
+        http=http_cloud,
+    )
+
+    verdict_subscriber = providers.Selector(
+        transporte_cloud,
+        redis=providers.Singleton(RedisVerdictSubscriber, client=redis_client),
+        http=http_cloud,
     )
 
     sessions = providers.Singleton(SessionRegistry)
