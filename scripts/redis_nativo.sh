@@ -6,8 +6,8 @@
 #   sh scripts/redis_nativo.sh stop
 #   sh scripts/redis_nativo.sh status
 #
-# Es el Redis que ve la nube: scripts/fog_remoto.sh lo publica en la tailnet solo mientras dura la
-# ventana de acceso. El Redis de Homebrew (6379, sin TLS ni usuarios) no se toca: es de desarrollo.
+# Era el Redis que veía la nube por la tailnet (DEPLOY09; retirada en DEPLOY11, ver la rama historico/tailnet).
+# Desde DEPLOY11 el modo remoto no usa Redis. El Redis de Homebrew (6379, sin TLS ni usuarios) no se toca: es de desarrollo.
 # Requiere .secrets/redis/ con la PKI y las contraseñas de scripts/rotar_secretos.sh. Los usuarios
 # `fog` y `cloud` se generan con redis/generar_acl.sh (mismos permisos que en las pruebas de ACL).
 #

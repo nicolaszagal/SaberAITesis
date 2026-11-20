@@ -1,36 +1,10 @@
 #!/bin/sh
-# Si hay certificados de cliente en base64 (despliegue remoto, DEPLOY07), los
+# Si hay certificados de cliente en base64 (Redis remoto con mTLS, DEPLOY07), los
 # escribe en memoria (/dev/shm, permisos 600) y apunta REDIS_TLS_* a ellos.
 # Sin las variables (Compose local) arranca sin cambios.
 #
-# DEPLOY09: con TS_AUTHKEY (clave efímera de Tailscale etiquetada tag:cloud) une el contenedor a la
-# tailnet en modo userspace y abre un único reenviador, 127.0.0.1:6379 -> $TS_MAC_HOST:6379 (el
-# Redis del Mac). La política de la tailnet solo deja a tag:cloud llegar a ese puerto. REDIS_URL
-# apunta a rediss://cloud:...@localhost:6379/0. Nunca se imprime la clave.
+# DEPLOY11: el camino de la tailnet (Tailscale + socat) se retiró; está en la rama historico/tailnet.
 set -eu
-
-if [ -n "${TS_AUTHKEY:-}" ]; then
-    # Unirse a la tailnet implica despliegue remoto: activa la validación estricta de Redis.
-    export ENTORNO="${ENTORNO:-remoto}"
-    SOCK=/tmp/tailscaled.sock
-    # Con el MTU por defecto (1280) los paquetes completos Mac -> Railway no llegan (medido el 13/11/2026:
-    # respuestas de hasta 1000 bytes pasan, de 1300 en adelante se pierden y el handshake TLS expira).
-    # Un MTU menor hace que el contenedor anuncie un MSS menor. Medido: con 1100 llegan 3000 bytes.
-    export TS_DEBUG_MTU="${TS_DEBUG_MTU:-1100}"
-    tailscaled --tun=userspace-networking --statedir=/tmp/ts --socket="$SOCK" >/tmp/tailscaled.log 2>&1 &
-    n=0
-    until [ -S "$SOCK" ]; do
-        n=$((n + 1))
-        [ "$n" -lt 50 ] || { echo "tailscaled no arrancó" >&2; exit 1; }
-        sleep 0.2
-    done
-    tailscale --socket="$SOCK" up --auth-key="$TS_AUTHKEY" --hostname="${TS_HOSTNAME:-sabre-cloud}" \
-        --accept-dns=true --accept-routes=false >/dev/null
-    unset TS_AUTHKEY
-    socat "TCP-LISTEN:6379,bind=127.0.0.1,fork,reuseaddr" \
-        "EXEC:tailscale --socket=$SOCK nc ${TS_MAC_HOST:-sabre-mac} 6379" &
-    echo "tailnet lista: $(tailscale --socket="$SOCK" ip -4)"
-fi
 
 if [ -n "${REDIS_TLS_CA_B64:-}" ]; then
     DIR=/dev/shm/redis-tls

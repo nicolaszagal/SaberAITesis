@@ -184,7 +184,7 @@ cmd_verificar() {
     done
 
     if [ "$remoto" = 1 ] && usa_http; then
-        # DEPLOY11: Fog sale por HTTPS hacia Cloud; no hay túnel, ni Tailscale, ni Redis.
+        # DEPLOY11: Fog sale por HTTPS hacia Cloud; sin Redis.
         "$PY_SIS" -c 'import sys; from urllib.parse import urlsplit as u; p=u(sys.argv[1]); sys.exit(0 if p.hostname and (p.scheme=="https" or (p.scheme=="http" and p.hostname in ("localhost","127.0.0.1"))) and not p.username else 1)' "${CLOUD_URL:-}" \
             && ok "CLOUD_URL válida (https)" \
             || falta "CLOUD_URL falta o no es https://" "sh scripts/instalar_fog.sh modo --remoto --cloud-url https://... --frontend-url https://..."
@@ -199,14 +199,8 @@ cmd_verificar() {
             falta "falta el token de nodo ($token)" "sh scripts/instalar_fog.sh importar-token <archivo que le entregó el autor>"
         fi
     elif [ "$remoto" = 1 ]; then
-        modo=${FOG_REMOTO_MODO:-tailscale}
-        if [ "$modo" = cloudflared ]; then
-            command -v cloudflared >/dev/null 2>&1 && ok "cloudflared instalado" \
-                || falta "No hay cloudflared (modo remoto)" "macOS: brew install cloudflared" "Linux: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/"
-        else
-            command -v tailscale >/dev/null 2>&1 && ok "tailscale instalado" \
-                || falta "No hay tailscale (modo remoto)" "https://tailscale.com/download"
-        fi
+        falta "El modo remoto no está configurado (CLOUD_TRANSPORTE no es http)" \
+              "sh scripts/instalar_fog.sh modo --remoto --cloud-url https://... --frontend-url https://..."
     else
         aviso "Modo remoto no verificado (use: verificar --remoto)"
     fi
@@ -602,11 +596,6 @@ cmd_estado() {
         echo "Último respaldo: $(cat "$(archivo_ultimo)")"
     else
         echo "Último respaldo: ninguno registrado para '$PGBASE'"
-    fi
-    if [ -f "$datos/fog_remoto_modo.txt" ] || [ -f "$datos/fog_remoto_tunel.pid" ] || [ -f "$datos/fog_remoto_vence.txt" ]; then
-        echo "Túnel:          ABIERTO o con restos ($(DATOS_DIR="$datos" sh scripts/fog_remoto.sh status 2>&1 | head -n 1))"
-    else
-        echo "Túnel:          cerrado"
     fi
     echo "Última probar:  $("$PY_SIS" scripts/instalador.py estado-probar --datos "$datos")"
 }
