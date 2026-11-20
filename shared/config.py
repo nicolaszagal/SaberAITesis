@@ -114,7 +114,7 @@ def validar_dispositivo(dispositivo: str) -> str:
 #
 # Sin default (DEF-15): Cloud debe fijar esta variable explícitamente con
 # la ubicación vigente del checkpoint (ver require_paths() más abajo y
-# GUIA_EJECUCION.md).
+# docs/manuales/GUIA_DESARROLLO.md, sección 5).
 MODEL_RUN_DIR = os.environ.get("MODEL_RUN_DIR")
 
 # Estadísticas de estandarización (mean/std, shape (192,), calculadas solo
@@ -123,7 +123,7 @@ MODEL_RUN_DIR = os.environ.get("MODEL_RUN_DIR")
 #
 # Sin default (DEF-15): antes apuntaba a dataset/lstm_4class/feature_stats.npz,
 # que ya no existe en este repo. Fog debe fijar esta variable explícitamente
-# con la ubicación vigente (ver require_paths() más abajo y GUIA_EJECUCION.md).
+# con la ubicación vigente (ver require_paths() más abajo y docs/manuales/GUIA_DESARROLLO.md, sección 5).
 FEATURE_STATS_PATH = os.environ.get("FEATURE_STATS_PATH")
 
 # Preprocesamiento de features por versión de modelo (recorte ±kσ y ablación
@@ -374,5 +374,5 @@ def require_paths(*names: str) -> None:
             + ", ".join(missing)
             + ". dataset/lstm_4class/ ya no existe (DEF-15); no hay ruta por "
             "defecto para el modelo. Fijar cada variable con la ruta del "
-            "archivo vigente antes de arrancar (ver GUIA_EJECUCION.md)."
+            "archivo vigente antes de arrancar (ver docs/manuales/GUIA_DESARROLLO.md, sección 5)."
         )

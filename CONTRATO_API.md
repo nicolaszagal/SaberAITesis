@@ -743,14 +743,14 @@ log técnico.
   `evento` (las precarga la migración 0005; `scripts/crear_sesion_validacion.py` crea más; el
   login es de un usuario maestro único, sección 0; sección 1.2) y una versión de modelo activa
   (`scripts/registrar_modelo.py`). La base del compose publica el puerto
-  `POSTGRES_HOST_PORT` (5433 por defecto, solo loopback; ver `GUIA_EJECUCION.md`). `tocado.registrado_por` queda nulo (el usuario
+  `POSTGRES_HOST_PORT` (5436 por defecto, solo loopback; ver `docs/manuales/GUIA_EJECUCION.md`). `tocado.registrado_por` queda nulo (el usuario
   maestro no identifica al operador). La transacción única del veredicto usa
   `fog/ports/unidad_de_trabajo.py`.
 
 ## 8.1 Almacenamiento y evidencia en disco
 
 Archivos que Fog escribe fuera de la base (rutas fijadas por `STORAGE_DIR` y `EVIDENCE_DIR`,
-`GUIA_EJECUCION.md` sección 3). La base solo guarda URI y hash.
+`docs/manuales/GUIA_DESARROLLO.md` sección 5). La base solo guarda URI y hash.
 
 | Ruta | Contenido | Escribe |
 |---|---|---|
