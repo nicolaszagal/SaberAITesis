@@ -220,7 +220,7 @@ El combate activo se limpia: **Revisión VAR** vuelve a pedir configurarlo ("No 
 
 Si el respaldo falla, **no se borra nada** y aparece "✕ La sesión NO se cerró y no se borró ningún clip." con el motivo y "Reintentar"; avise a quien instala el sistema. Un clip que otra sesión también usó (mismo hash) no se borra, así que `N` puede ser menor que el número de clips cargados. La base conserva el hash de cada clip y los metadatos, no el clip.
 
-Para terminar un combate **sin** cerrar la sesión, pulse **Finalizar combate** en el encabezado: abre "Combate" sin combate activo y conserva las revisiones y los clips.
+Para terminar un combate **sin** cerrar la sesión, pulse **Finalizar combate** en el encabezado: abre "Combate" sin combate activo y solo limpia el combate activo de la interfaz (no envía nada a Fog): las revisiones ya registradas siguen en la base y los clips no se tocan. Sin combate activo, "Revisión VAR" muestra "No hay combate activo" e "Historial", "No hay un evento activo".
 
 ### 4.10 Atajos de teclado
 

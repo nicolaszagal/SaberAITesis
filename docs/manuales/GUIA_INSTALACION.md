@@ -2,7 +2,7 @@
 
 Para una persona con conocimientos técnicos que instala el sistema por primera vez, sin ayuda del autor y sin acceso a sus secretos. Después de instalar, siga [`GUIA_EJECUCION.md`](GUIA_EJECUCION.md) (modo A). El uso de la interfaz está en [`MANUAL_USUARIO.md`](MANUAL_USUARIO.md) y lo que el sistema **no** hace, en [`LIMITACIONES.md`](LIMITACIONES.md).
 
-**Cómo se validó esta guía.** Se siguió en un clon limpio de `main` en una carpeta nueva (un `.venv` nuevo y una base nueva, `sabre_revision`), copiando cada comando del documento. Las salidas "Debe verse" se copiaron de esa ejecución. La tabla de defectos hallados está en la sección 7. Si un paso no se comporta como aquí, es un defecto de la guía: repórtelo.
+**Cómo se validó esta guía.** Se siguió en un clon limpio de `main` en una carpeta nueva (un `.venv` nuevo y una base nueva, `sabre_revision`), copiando cada comando del documento. Las salidas "Debe verse" se copiaron de esa ejecución. La tabla de defectos hallados está en la sección 8. Si un paso no se comporta como aquí, es un defecto de la guía: repórtelo.
 
 ## 1. Qué se instala
 
@@ -100,7 +100,7 @@ Registrado modelo_version <uuid> (lstm6class-20260928_141021): f1_macro_test=0.5
 ################################################################
 ```
 
-(`base sabre creada` dice `sabre_revision` si usó `POSTGRES_DB_NAME=sabre_revision`.) Si el comando se interrumpe, se puede repetir: no borra nada y no toca lo que ya existe.
+(`base sabre creada` dice `sabre_revision` si usó `POSTGRES_DB_NAME=sabre_revision`.) Si el comando se interrumpe, se puede repetir: no borra nada y no toca lo que ya existe. Si ya tenía un volumen `sabre_pgdata` de otra instalación de SABRE.AI, el instalador lo dice (`Ya existe el volumen de PostgreSQL`) y le pide la contraseña de **esa** base en lugar de generar una; un equipo nuevo no ve esa pregunta. La carpeta de respaldos se crea sola si no existe.
 
 No use `sh scripts/instalar_fog.sh probar`: esa prueba de equivalencia exige los 10 clips de referencia del autor y solo hace falta en modo remoto o con una GPU (`FOG_DEVICE` distinto de `cpu`).
 
@@ -141,7 +141,7 @@ Con el hueco sin completar, la instalación igualmente funciona con internet, po
   - `AUTH_PASSWORD_HASH`: el hash Argon2id de la contraseña maestra que usted escribe (mínimo 16 caracteres, por `getpass`, sin eco). **Pregunta:** `Contraseña del usuario maestro (mínimo 16 caracteres):` y `Repetir contraseña:`. La contraseña en sí no se guarda en ningún archivo: **no hay forma de recuperarla**; anótela.
   - `AUTH_JWT_SECRET`: al azar (48 bytes).
   - `RESPALDO_DIR`: la carpeta donde se guardarán los respaldos de sesión. **Pregunta:** `Carpeta de respaldos (RESPALDO_DIR, fuera de Docker y del repo):`. Debe estar **fuera del repositorio y de Docker** (no use `~/.colima` ni `~/.docker`). Ejemplo: `~/sabre-respaldos`. Escriba la ruta completa.
-- Con `ENTORNO=local` (por defecto), Fog **escucha en todas las interfaces** (`0.0.0.0:8001`) para que el frontend en Docker lo alcance. En una red compartida, cualquiera con la dirección llega a la pantalla de login (toda ruta exige token salvo `/health` y `/auth/login`, con bloqueo tras 5 fallos). Si no quiere eso, trabaje en una red de confianza o exporte `FOG_BIND_HOST=127.0.0.1` antes de `fog_nativo.sh` (el frontend de Docker deja de alcanzarlo; use entonces el frontend de desarrollo, ver [`GUIA_DESARROLLO.md`](GUIA_DESARROLLO.md)).
+- Con `ENTORNO=local` (por defecto), Fog **escucha en todas las interfaces** (`0.0.0.0:8001`) para que el frontend en Docker lo alcance. En una red compartida, cualquiera con la dirección llega a la pantalla de login (toda ruta exige token salvo `/health` y `/auth/login`, con bloqueo tras 5 fallos). Si no quiere eso, trabaje en una red de confianza o exporte `FOG_BIND_HOST=127.0.0.1` antes de `sh scripts/fog_nativo.sh`: Fog escucha solo en su equipo. Se verificó: `curl` a `http://localhost:8001/health` responde 200 y a la dirección de la red local (`http://<ip-de-su-equipo>:8001/health`) no conecta, y el inicio de sesión desde `http://localhost:8081` sigue funcionando (el navegador habla con `localhost:8001`).
 
 Si ya tiene un `.env`, el instalador **no lo toca** y solo comprueba que defina `POSTGRES_PASSWORD` (o `.secrets/postgres_password.txt`), `AUTH_USER`, `AUTH_PASSWORD_HASH` y `AUTH_JWT_SECRET`.
 
@@ -203,4 +203,4 @@ Hallados siguiendo la guía en un clon nuevo (DOC01). Los tres primeros se corri
 | 3 | `registrar_modelo.py` buscaba las métricas siempre en `../dataset`, sin respetar `DATASET_DIR` | Ruta fija en el script | `instalar_fog.sh` y `fog_nativo.sh` pasan `--dataset-dir "$DS/lstm_6class"` |
 | 4 | La suite de pruebas daba 1 fallo (`ModuleNotFoundError: sklearn`) con el entorno del lock | El lock de Fog no incluye `scikit-learn` (solo `requirements.txt`) | Documentado en [`GUIA_DESARROLLO.md`](GUIA_DESARROLLO.md): `pip install scikit-learn==1.9.1`. No se edita el lock a mano |
 | 5 | `exportar_evidencia.py` imprimió `ERROR: el evento ... no existe en la base sabre` y siguió | Con una base distinta de `sabre`, el respaldo que invoca usa `POSTGRES_DB_NAME` (por defecto `sabre`) | Documentado: exporte `POSTGRES_DB_NAME` (y `POSTGRES_HOST_PORT` si cambió el puerto) antes de los scripts |
-| 6 | El primer intento de `instalar` terminó en silencio durante el paso 1 | El proceso se cortó durante la descarga de torch y quedó un `pip` huérfano instalando en el mismo `.venv` | No es un defecto del script; se borró el `.venv` y se repitió. Si `instalar` se interrumpe, compruebe con `pgrep -fl "pip install"` que no queda un `pip` vivo antes de repetir |
+| 6 | El primer intento de `instalar` terminó sin mensaje durante el paso 1 y quedó un `pip` huérfano instalando en el mismo `.venv` | No determinada: ocurrió al lanzar el instalador desde un proceso en segundo plano de la sesión de automatización con la que se hizo la verificación; no se repitió en el segundo intento | Se borró el `.venv` y se repitió. Si `instalar` se interrumpe, compruebe con `pgrep -fl "pip install"` que no queda un `pip` vivo antes de repetir |

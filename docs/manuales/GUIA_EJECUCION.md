@@ -34,7 +34,7 @@ sh scripts/compose.sh -f docker-compose.yml -f docker-compose.nativo.yml up -d -
 docker ps --format '{{.Names}} {{.Status}}'
 ```
 
-Debe verse `sabre-postgres-1`, `sabre-redis-1`, `sabre-frontend-1` en `healthy` y `sabre-cloud-1` en `Up` (el prefijo `sabre-` es el nombre del proyecto de Compose).
+Debe verse `sabre-postgres-1`, `sabre-redis-1` y `sabre-frontend-1` en `healthy` (el frontend puede figurar `health: starting` unos segundos) y `sabre-cloud-1` en `Up` (el prefijo `sabre-` es el nombre del proyecto de Compose).
 
 ### A.3 Arrancar Fog
 
@@ -57,7 +57,7 @@ INFO:     Started server process [N]
 INFO:     Uvicorn running on http://0.0.0.0:8001 (Press CTRL+C to quit)
 ```
 
-Fog quedó listo en **5 s** en la medición. En la primera sesión con revisiones, `fog_nativo.sh` avisa si hay revisiones sin respaldar ("SIN RESPALDO"): ver la sección de respaldos. Compruebe:
+Fog quedó listo en **5 s** y **7 s** en las dos mediciones. En la primera sesión con revisiones, `fog_nativo.sh` avisa si hay revisiones sin respaldar ("SIN RESPALDO"): ver la sección de respaldos. Compruebe:
 
 ```bash
 curl -s -w " %{http_code}\n" http://localhost:8001/health
@@ -105,8 +105,9 @@ Medidos en un MacBook Air Apple M4 (16 GB), macOS 27.0.1, Colima de 2 CPU y 2 Gi
 | `instalar_fog.sh instalar`, paso 1 (entorno Python con torch, caché fría de pip) | 467 s |
 | `instalar_fog.sh instalar`, pasos 2 a 4 (modelo con descarga de YOLO de 133 MB, configuración, base) | 122 s |
 | `compose ... up -d --build` (imágenes de Cloud y del frontend) | 4 min 53 s |
+| Segunda corrida completa en un clon nuevo, con las cachés de pip y de Docker ya calientes: clon, `instalar` (venv, modelo, base) y `compose up --build` | 1 min 35 s (70 s + 24 s) |
 
-**Del clon a la primera sugerencia: unos 15 minutos** (467 + 122 + 293 + 5 s de arranque + 15 s de análisis ≈ 902 s), sin contar la instalación de Homebrew, Colima y Docker, ni el tiempo que usted tarde en escribir las respuestas del instalador. Es el número del [`README.md`](../../README.md).
+**Del clon a la primera sugerencia: unos 15 minutos** (467 + 122 + 293 + 5 s de arranque + 15 s de análisis ≈ 902 s), sin contar la instalación de Homebrew, Colima y Docker, ni el tiempo que usted tarde en escribir las respuestas del instalador. Es el número del [`README.md`](../../README.md); con las cachés calientes (por ejemplo, al reinstalar) baja a unos 2 minutos.
 
 ---
 
