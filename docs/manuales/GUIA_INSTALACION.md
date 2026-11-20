@@ -28,7 +28,7 @@ Fog corre fuera de Docker porque en CPU es más rápido y es lo que se usó en l
 | Navegador | Google Chrome (el que se usó para las capturas y el que reproduce H.264) | Otros: no probados. |
 | Node.js | **No hace falta** para el modo A: el frontend se construye dentro de Docker. Solo se necesita para desarrollo (v22.22.0, npm 11.17.0; ver [`GUIA_DESARROLLO.md`](GUIA_DESARROLLO.md)) | |
 
-Conexión a internet: la instalación descarga unos 1,5 GB (torch y demás dependencias, imágenes de Docker y los pesos de YOLO).
+Conexión a internet: la instalación descarga las dependencias (torch incluido), las imágenes de Docker y los pesos de YOLO. No se midió el volumen descargado; el espacio que ocupa todo es el de la fila de disco de arriba.
 
 ### Instalar los requisitos en macOS (Homebrew)
 

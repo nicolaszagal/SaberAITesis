@@ -6,7 +6,7 @@
 
 **Qué hace falta.**
 
-- Un Mac con Apple Silicon (verificado en macOS 27.0.1, arm64; Linux x86_64 **no** está verificado) con Homebrew, unos 4 GB libres y conexión a internet (descarga ≈ 1,5 GB).
+- Un Mac con Apple Silicon (verificado en macOS 27.0.1, arm64; Linux x86_64 **no** está verificado) con Homebrew, 7 GB libres (el instalador lo exige; la instalación ocupó ≈ 3,5 GB) y conexión a internet.
 - `brew install python@3.14 git colima docker docker-compose` y `colima start --cpu 2 --memory 4`. Python debe ser **3.14**.
 - Un clip MP4/MOV de sable de ≥ 720p. **El repositorio no incluye clips** (derechos de imagen y política de datos): `[ORIGEN DE LOS CLIPS DE PRUEBA A DEFINIR POR EL AUTOR]`.
 - Los hashes del modelo con el que se obtuvieron los resultados están en [`docs/manuales/GUIA_INSTALACION.md`](docs/manuales/GUIA_INSTALACION.md), sección 5. El enlace de un paquete de modelo para instalar sin internet es un hueco que completa el autor: `[ENLACE A COMPLETAR POR EL AUTOR]`.
