@@ -82,6 +82,21 @@ npx playwright test
 - `e2e/globalSetup.ts` aborta si lo servido no es el Expo local (por ejemplo, el nginx de un contenedor o un despliegue). Nunca corra las pruebas contra un despliegue.
 - Las pruebas E2E usan datos de prueba propios de `e2e/fixtures/` y una API simulada; no hace falta Fog. Las capturas del manual son otra cosa: usan el sistema real (`e2e/capturas-manual.spec.ts`, ver [`MANUAL_USUARIO.md`](MANUAL_USUARIO.md)).
 
+### 2.1 Regenerar las capturas del manual
+
+Las capturas de [`MANUAL_USUARIO.md`](MANUAL_USUARIO.md) se toman sobre el **sistema real** (Fog, Cloud, Redis y PostgreSQL levantados, sin API simulada) con `e2e/capturas-manual.spec.ts` y su propia configuración, que usa la interfaz ya servida (por defecto la de Docker, `http://localhost:8081`). El spec oculta el video (`opacity: 0`): los clips son de competencia y sus derechos de imagen no son del autor.
+
+```bash
+cd <carpeta-del-proyecto>/SaberAISoftware
+CAPTURAS=1 SISTEMA_REAL=1 SABRE_USUARIO=<usuario> SABRE_PASSWORD=<contraseña> \
+CAPTURAS_DIR=<carpeta-del-proyecto>/backend/docs/manuales/img \
+EVENTO_NOMBRE="<evento sin revisiones>" ARBITRO_NOMBRE="<árbitro del catálogo>" \
+CLIP_1=<ruta> CLIP_2=<ruta> CLIP_SIN_TIRADORES=<ruta> CLIP_1_T_MS=<ms> CLIP_2_T_MS=<ms> \
+npx playwright test -c playwright.capturas.config.ts
+```
+
+Las variables (rutas de los clips y su instante de luz) están descritas en la cabecera del spec. Necesita Google Chrome (`channel: 'chrome'`, el Chromium de Playwright no reproduce H.264) y un evento **sin revisiones**: el spec espera exactamente 3 en el historial y las revisiones no se pueden borrar. El spec termina cerrando la sesión de validación (borra los clips de esa sesión).
+
 ## 3. Arquitectura hexagonal
 
 Fog (`fog/`) y Cloud (`cloud/`) siguen la misma estructura:
