@@ -79,6 +79,6 @@ done
 ENV_FILE="$ENV_FILE" sh scripts/recordar_respaldo.sh || true
 
 alembic upgrade head
-python scripts/registrar_modelo.py "$MODEL_RUN_ID" --solo-si-no-hay-activo
+python scripts/registrar_modelo.py "$MODEL_RUN_ID" --solo-si-no-hay-activo --dataset-dir "$DS/lstm_6class"
 
 exec uvicorn fog.main:app --host "$BIND_HOST" --port "${FOG_HOST_PORT:-8001}"

@@ -28,6 +28,8 @@ VENV_DIR=${VENV_DIR:-.venv}
 PY_SIS=${PYTHON_BIN:-python3}
 COMPOSE_ARCHIVOS="-f docker-compose.yml -f docker-compose.nativo.yml"
 FALTAS=0
+# Pesos de pose de la release oficial de Ultralytics (la misma URL y el mismo SHA-256 que fog/Dockerfile).
+YOLO_POSE_URL=${YOLO_POSE_URL:-https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov8x-pose.pt}
 
 fallo() { echo "ERROR: $*" >&2; exit 1; }
 ok() { echo "  ✓ $*"; }
@@ -235,16 +237,26 @@ paso_modelo() {
             [ "$(sha256_de "$destino")" = "$hash" ] \
                 || fallo "$destino existe pero su hash no coincide con scripts/datos/MODELO.sha256. No se sobrescribe."
             ok "$ruta"
-        else
-            [ -n "${PAQUETE:-}" ] && [ -f "$PAQUETE/modelo/$ruta" ] \
-                || fallo "falta $ruta en $ds. Indique el paquete de modelo: instalar --paquete <carpeta de exportar>"
+        elif [ -n "${PAQUETE:-}" ] && [ -f "$PAQUETE/modelo/$ruta" ]; then
             [ "$(sha256_de "$PAQUETE/modelo/$ruta")" = "$hash" ] || fallo "$PAQUETE/modelo/$ruta no coincide con MODELO.sha256"
             mkdir -p "$(dirname "$destino")"
             cp "$PAQUETE/modelo/$ruta" "$destino"
             [ "$(sha256_de "$destino")" = "$hash" ] || fallo "la copia de $ruta no coincide con MODELO.sha256"
-            ok "$ruta (copiado y verificado)"
+            ok "$ruta (copiado del paquete y verificado)"
+        else
+            # Sin paquete (DOC01): el checkpoint y las estadísticas están versionados en backend/dataset/; los pesos
+            # de YOLO se descargan de la release oficial de Ultralytics. Todo se verifica contra MODELO.sha256.
+            url=""
+            [ "$ruta" != yolov8x-pose.pt ] || url=$YOLO_POSE_URL
+            como=$("$PY_SIS" scripts/instalador.py obtener-modelo --dataset "$ds" --ruta "$ruta" --hash "$hash" \
+                    --origen-repo "$BACKEND_DIR/dataset" ${url:+--url "$url"}) \
+                || fallo "no pude obtener $ruta. Use el paquete de modelo del autor: instalar --paquete <carpeta de exportar>"
+            ok "$ruta ($como y verificado)"
         fi
     done < scripts/datos/MODELO.sha256
+    # registrar_modelo.py lee las métricas de la corrida (results/<run>_metrics.json); no llevan hash propio.
+    "$PY_SIS" scripts/instalador.py fusionar "$BACKEND_DIR/dataset/lstm_6class/results" "$ds/lstm_6class/results" >/dev/null \
+        || aviso "las métricas de $ds/lstm_6class/results difieren de las del repositorio (se conservan las existentes)"
     if [ -n "${PAQUETE:-}" ] && [ -d "$PAQUETE/referencia/clips" ]; then
         datos=${DATOS_DIR:-./datos}
         mkdir -p "$datos/referencia/clips"
@@ -323,7 +335,7 @@ paso_base() {
     exportar_entorno_fog
     py=$(venv_python)
     "$py" -m alembic upgrade head || fallo "alembic upgrade head falló"
-    "$py" scripts/registrar_modelo.py "$MODEL_RUN_ID" --solo-si-no-hay-activo || fallo "no se pudo registrar el modelo activo"
+    "$py" scripts/registrar_modelo.py "$MODEL_RUN_ID" --solo-si-no-hay-activo --dataset-dir "$DS/lstm_6class" || fallo "no se pudo registrar el modelo activo"
     ok "migraciones aplicadas y modelo $MODEL_RUN_ID registrado como activo (si no había otro)"
 }
 
