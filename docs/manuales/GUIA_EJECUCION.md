@@ -1,12 +1,11 @@
 # Guía de ejecución de SABRE.AI
 
-Cómo arrancar, usar y detener el sistema ya instalado ([`GUIA_INSTALACION.md`](GUIA_INSTALACION.md)). Hay tres modos; **los revisores usan el A**.
+Cómo arrancar, usar y detener el sistema ya instalado ([`GUIA_INSTALACION.md`](GUIA_INSTALACION.md)). Hay dos modos: el A es local y el B usa el frontend y Cloud desplegados con **su propio Fog**.
 
 | Modo | Qué es | Para quién |
 |---|---|---|
-| **A · Local, sin hardware** | Fog, Cloud, Redis, PostgreSQL y frontend en su equipo. Carga manual de un clip con las luces marcadas a mano | **Revisores** |
-| B · Con el aparato Favero | Lector Arduino, Edge y cámara | **No está en `main`** (sección B) |
-| C · Remoto | Frontend y Cloud en Railway, Fog en el Mac del autor por Tailscale | Solo el autor (sección C) |
+| **A · Local, sin hardware** | Fog, Cloud, Redis, PostgreSQL y frontend en su equipo. Carga manual de un clip con las luces marcadas a mano | Revisores |
+| **B · Fog propio con frontend y Cloud desplegados** | El frontend y Cloud están en Railway; usted corre solo **su Fog** (y su PostgreSQL) en su equipo. El Fog sale por HTTPS a Cloud con un token de su nodo; no necesita Redis ni Tailscale | Revisores que reciben una URL y un archivo de token |
 
 Todos los comandos se corren desde `<carpeta-del-proyecto>/backend`. Si instaló con otra base o puertos (`POSTGRES_DB_NAME`, `POSTGRES_HOST_PORT`, `REDIS_HOST_PORT`, `FOG_HOST_PORT`), tenga las mismas variables exportadas en cada terminal: los scripts las leen del entorno.
 
@@ -111,21 +110,72 @@ Medidos en un MacBook Air Apple M4 (16 GB), macOS 27.0.1, Colima de 2 CPU y 2 Gi
 
 ---
 
-## Modo B · Con el aparato Favero (no está en `main`)
+## Modo B · Fog propio con frontend y Cloud desplegados
 
-El lector Arduino del aparato Favero, el nodo Edge (captura de cámara con buffer circular) y la señal de prueba **salieron de `main`** por la solicitud de cambio del 20/11/2026 (D-12) y viven en la rama **`future/edge-favero`** del repositorio del backend. Esta guía **no los cubre** porque no se pueden verificar con lo que instala `main`: no hay aparato ni cámara conectados a esta instalación.
+Qué recibe del autor: **(1)** la URL del frontend, **(2)** la URL de Cloud y **(3)** un archivo de token (`<su-nombre>.token`, por un canal seguro). Qué necesita en su equipo: lo mismo que el modo A **menos** Redis, Cloud y frontend: Fog nativo y PostgreSQL en Docker. Fog escucha **solo en `127.0.0.1`**: nada entra a su equipo; su navegador habla con su Fog local y su Fog sale por HTTPS hacia Cloud. Sus clips y su base **no salen de su equipo**: Cloud solo recibe las features de cada revisión y no guarda nada.
 
-Si quiere probarlos, cambie a esa rama (`git switch future/edge-favero`) y siga allí, en este orden:
+Esta receta es para macOS y Linux (Fog nativo). La de Windows está en preparación.
 
-1. `edge/favero/LEEME.md`: cargar el programa en el Arduino y probar el lector con el diagnóstico en autoprueba.
-2. `docs/FUTURO_EDGE_FAVERO.md`: qué hay en la rama y qué quedó pendiente.
-3. `docs/hardware/`: el plan de armado y el límite de resolución de la señal (≈ 42 ms, ver [`LIMITACIONES.md`](LIMITACIONES.md), sección 4).
+Requisito: haber instalado el sistema ([`GUIA_INSTALACION.md`](GUIA_INSTALACION.md)); eso deja `.env` con su usuario y contraseña.
 
-Esa rama tiene sus propias dependencias y su propia documentación. Sus instrucciones fueron escritas para el equipo del autor (incluyen rutas de su Mac): adáptelas.
+**B.1 Configurar el modo remoto** (una vez):
 
-## Modo C · Remoto (solo el autor)
+```bash
+cd <carpeta-del-proyecto>/backend
+sh scripts/instalar_fog.sh modo --remoto --cloud-url https://<URL de Cloud> --frontend-url https://<URL del frontend>
+```
 
-Requiere la tailnet de Tailscale y la cuenta de Railway del autor, y un Redis nativo con la PKI de `scripts/rotar_secretos.sh`. Está en [`DESPLIEGUE_REMOTO.md`](DESPLIEGUE_REMOTO.md). Un revisor no puede reproducirlo y no hace falta para revisar el sistema.
+Escribe `CLOUD_TRANSPORTE=http`, `CLOUD_URL` y `CORS_ORIGINS` en `.secrets/fog_remoto.env` (permisos 600). Solo acepta `https://` (sin usuario ni clave).
+
+**B.2 Instalar su token** (sin mostrarlo):
+
+```bash
+sh scripts/instalar_fog.sh importar-token <ruta del archivo .token>
+```
+
+Lo copia a `.secrets/cloud_token.txt` con permisos 600. Puede borrar el archivo original.
+
+**B.3 Levantar solo PostgreSQL** (sin Redis):
+
+```bash
+colima start --cpu 2 --memory 4        # solo macOS con Colima
+sh scripts/compose.sh -f docker-compose.yml -f docker-compose.nativo.yml -f docker-compose.http.yml up -d
+docker ps --format '{{.Names}} {{.Status}}'      # solo debe verse sabre-postgres-1 (healthy)
+```
+
+**B.4 Probar el equipo a través de Cloud** (10 clips de referencia clasificados por Cloud, con la misma cota de equivalencia que el modo A; tarda unos minutos):
+
+```bash
+sh scripts/instalar_fog.sh probar --remoto
+```
+
+Debe terminar con `Clase igual en 10/10 ...` y `APROBADA`. Sin esa prueba aprobada para esta versión, `fog_nativo.sh --remoto` no arranca.
+
+**B.5 Arrancar Fog** (terminal aparte, queda abierta):
+
+```bash
+sh scripts/fog_nativo.sh --remoto
+curl -s -w " %{http_code}\n" http://localhost:8001/health
+```
+
+Debe verse `{"fog":"ok","cloud":"ok","postgres":"ok"} 200`. `cloud` consulta `GET /health` de Cloud: si dice `error`, revise su conexión a internet o la URL de Cloud.
+
+**B.6 Abrir la aplicación.** En **Chrome o Edge** abra la URL del frontend. En el login, el campo **Nodo Fog** ya dice `http://localhost:8001`:
+
+1. Pulse **Probar conexión**. La primera vez Chrome o Edge preguntan si esa página puede acceder a aplicaciones y servicios de su equipo (red local): elija **Permitir**. Debe verse "Conectado: el Fog responde." Si elige Bloquear, el mensaje lo explica; se cambia en el candado de la barra de direcciones → Configuración del sitio.
+2. Ingrese con el usuario y la contraseña de su `.env` (los mismos del modo A) y siga desde A.4: configurar el combate, cargar el clip con la luz marcada, ver la sugerencia, los trazos, el razonamiento y registrar el veredicto.
+
+Solo se aceptan nodos `http://localhost[:puerto]`, `http://127.0.0.1[:puerto]` o `https://...`. Otra dirección `http://` se rechaza a propósito: el navegador bloquea las llamadas `http://` a otro equipo desde una página `https://` (contenido mixto).
+
+**Navegadores** (medidos el 20/11/2026; detalle en [`DESPLIEGUE_REMOTO.md`](DESPLIEGUE_REMOTO.md), sección 5):
+
+| Navegador | Estado |
+|---|---|
+| Chrome, Edge | Soportado. Pide permiso de red local la primera vez (**Permitir**) |
+| Firefox | Debe funcionar con un aviso parecido, pero **no se pudo verificar** en las pruebas automáticas; si lo usa, cuéntele al autor qué vio |
+| Safari | **No soportado**: bloquea `http://localhost` desde una página `https://`. Use Chrome, Edge o Firefox |
+
+**Detener:** `Ctrl+C` en la terminal de Fog y `sh scripts/compose.sh -f docker-compose.yml -f docker-compose.nativo.yml -f docker-compose.http.yml stop`. Los respaldos y la purga de clips al cerrar la sesión son los mismos del modo A (secciones más abajo). **Su token deja de valer si el autor lo revoca**: en ese caso las revisiones quedan en "Clasificación no disponible" (`timeout`) y el log de Fog dice `Cloud rechazó el token de este nodo (401)`.
 
 ---
 
@@ -248,7 +298,8 @@ Imprime `evento_id`, `arbitro_id` y `operador_id` (con `(creado)` o `(ya existí
 | `fog_nativo.sh` dice `Falta .env` o `postgres no responde en 127.0.0.1:5436` | Falta instalar (`instalar_fog.sh instalar`) o los contenedores están detenidos: A.2. |
 | `curl /health` da 503 con `"redis":"error"` o `"postgres":"error"` | El contenedor correspondiente está detenido: `docker ps` y A.2. `fog` en `ok` y otro en `error` es "Degradado" en el indicador de la interfaz. |
 | `GET /modelo/activo` responde `{"detail":"No autenticado"}` 401 | Es lo esperado sin token: toda ruta exige `Authorization: Bearer` salvo `/health` y `/auth/login` ([`CONTRATO_API.md`](../../CONTRATO_API.md), sección 0). Use el token del paso 3 de la verificación. |
-| La interfaz muestra "Sin conexión" | Fog no está en marcha o el frontend se construyó con otra dirección de Fog. La dirección se incrusta al construir (`EXPO_PUBLIC_FOG_URL=http://localhost:${FOG_HOST_PORT}`): si cambió `FOG_HOST_PORT`, reconstruya con `... up -d --build frontend`. |
+| La interfaz muestra "Sin conexión" | Fog no está en marcha, o la dirección del **Nodo Fog** (campo del login, se recuerda en el navegador) no es la de su Fog. Cámbiela y pulse *Probar conexión*. En el modo A, el valor inicial del campo sale de `EXPO_PUBLIC_FOG_URL=http://localhost:${FOG_HOST_PORT}` al construir: si cambió `FOG_HOST_PORT`, reconstruya con `... up -d --build frontend` o escriba el puerto en el campo. |
+| Modo B: "No se pudo conectar con el servidor" con Fog en marcha | Chrome o Edge sin permiso de red local para esa página (candado → Configuración del sitio → permitir), `CORS_ORIGINS` sin el origen del frontend (repita B.1) o Safari (no soportado) |
 | Login: "Credenciales inválidas" o código 429 | 5 fallos en 15 min bloquean la IP durante 15 min, incluso con la contraseña correcta. Espere. La contraseña no se puede recuperar: genere otro hash (`GUIA_INSTALACION.md`, sección 6). |
 | "Error: no se pudo analizar el clip" con `413` | El clip supera `CLIP_MAX_MB` (200 MB por defecto). |
 | "Clasificación no disponible" por `timeout` | El análisis pasó de 60 s (equipo lento, clip largo o de 60 fps). Ver [`LIMITACIONES.md`](LIMITACIONES.md), sección 2. |

@@ -365,7 +365,8 @@ Definiciones (solo las de `docs_claude/protocolo_validacion.md`):
 
 `GET /health` — `{ "fog": "ok", "redis": "ok", "postgres": "ok" }` (`"error"` por
 componente). Redis (PING) y PostgreSQL (`SELECT 1`) tienen 2 s de tiempo límite. **200** si
-todo está `ok`; **503** con el mismo cuerpo si alguno falla.
+todo está `ok`; **503** con el mismo cuerpo si alguno falla. Con `CLOUD_TRANSPORTE=http` (sección 5.1)
+la clave `redis` se reemplaza por `cloud` (consulta `GET /health` de Cloud): `{ "fog": "ok", "cloud": "ok", "postgres": "ok" }`.
 
 ## 2. Señalización WebRTC (retirada)
 
@@ -552,6 +553,67 @@ Al arrancar, Cloud reclama con `XAUTOCLAIM` las entradas que quedaron pendientes
 worker anterior que murió entre `XREADGROUP` y el `XACK` (idle mínimo configurable por
 `CLAIM_MIN_IDLE_S`, 60 s por defecto) y las reprocesa con la misma validación antes de
 entrar al loop de lectura bloqueante.
+
+## 5.1 Fog → Cloud por HTTP: `POST /v1/clasificar` (modo remoto, DEPLOY11)
+
+Con `CLOUD_TRANSPORTE=http` Fog no usa Redis: manda las features de cada revisión a la API HTTP de
+Cloud y recibe el veredicto en la misma respuesta. Lleva **lo mismo** que `fog:features` (sección 5) y
+devuelve **lo mismo** que `cloud:verdicts:{revision_id}` (sección 6). Ambos transportes llaman al mismo
+caso de uso de clasificación (`ClasificarSecuencia`) y validan con la misma función
+(`cloud/domain/secuencia_features.py`).
+
+**Autenticación por nodo.** `Authorization: Bearer <token>`. Cloud guarda solo el SHA-256 de cada token,
+con el nombre del nodo, en `CLOUD_NODOS_SHA256` (entradas `nombre:hash` separadas por comas o saltos de
+línea; `nombre`: minúsculas, dígitos, `-` y `_`, de 1 a 32; `hash`: 64 hexadecimales). Una variable mal
+formada impide arrancar Cloud. Revocar un token es quitar su entrada y redesplegar.
+
+**Petición** (`Content-Type: application/json`; campos no listados se rechazan):
+
+| campo | tipo | descripción |
+|---|---|---|
+| `match_id` | str | id del combate (1 a 64 caracteres) |
+| `revision_id` | str | id de la revisión (1 a 64). Cloud lo devuelve tal cual |
+| `shape` | str | `"T,192"` (T ≥ 1) |
+| `dtype` | str | `"float32"` |
+| `features` | str | `array.tobytes()` de la secuencia `(T,192)` **en base64** (mismo orden y preprocesamiento que en la sección 5) |
+| `has_luz_A`, `has_luz_B` | bool | luz Favero de cada tirador (por defecto `false`) |
+| `weapon_side_A`, `weapon_side_B` | str | brazo armado, reenviado tal cual |
+
+**Respuesta 200** (`application/json`; los campos sin valor se omiten):
+
+| campo | descripción |
+|---|---|
+| `revision_id`, `match_id` | los de la petición |
+| `disponible` | `true` si hay clasificación (Cloud solo devuelve `false` por esta vía si el modelo no puede clasificar; los errores de contenido son 4xx) |
+| `action_class`, `confidence`, `fencer` | como en la sección 6 (`fencer`: `ROJ` si la clase termina en `A`, `VER` si en `B`) |
+| `probs` | `{"AttackA": 0.61, ...}`, softmax completo posterior al filtro Favero |
+| `latencia_inferencia_ms`, `modelo` | auditoría (F-027, RF-22); `modelo` es `lstm_6class/<run_id>/<archivo>` |
+| `atencion` | pesos de atención por frame (F-035), 4 decimales, largo T |
+| `motivo_no_disp` | solo si `disponible=false` |
+
+**Errores** (cuerpo `{"detail": ...}`; nunca repiten lo recibido):
+
+| código | cuándo |
+|---|---|
+| 401 | sin `Authorization`, o token desconocido o revocado (con `WWW-Authenticate: Bearer`) |
+| 413 | cuerpo mayor que `CLOUD_HTTP_MAX_BODY_BYTES` (2 MiB por defecto) |
+| 422 | campo faltante o sobrante, `dtype`/`shape` fuera del contrato, base64 inválido o tamaño de buffer distinto de `T·192·4` |
+| 429 | más de `CLOUD_HTTP_LIMITE_PETICIONES` (30) por nodo en `CLOUD_HTTP_LIMITE_VENTANA_S` (60 s); con `Retry-After` |
+| 500 | fallo interno del clasificador (sin detalle) |
+| 504 | la petición superó `CLOUD_HTTP_PETICION_TIMEOUT_S` (20 s), cola de inferencia incluida |
+
+**`GET /health`** (sin autenticación): `{"status": "ok"}`. No expone versión, modelo ni nodos.
+
+**Qué guarda Cloud.** Nada: las features no se persisten. Los logs llevan el nombre del nodo, el código
+HTTP y el tiempo (`[nodo] POST /v1/clasificar -> 200 en 38 ms`), nunca el contenido ni el token.
+
+**Cómo lo traduce Fog.** `HttpCloudTransport` implementa el publicador y el suscriptor de veredictos:
+`publish` lanza la petición y `wait_for_verdict` entrega su resultado, así que el dominio y los casos de
+uso no cambian. Los 400, 413 y 422 quedan como "Clasificación no disponible" con `mensaje_invalido`; los
+401, 403, 429, 5xx, la falta de respuesta a tiempo (`CLOUD_HTTP_TIMEOUT_S`, 25 s en Fog) y una respuesta
+ilegible, con `timeout` (RNF-09). Fog solo acepta `CLOUD_URL` con `https://` (o `http://localhost` /
+`http://127.0.0.1` en pruebas) y lee el token de `.secrets/cloud_token.txt`. Con `http`, `GET /health` de
+Fog informa `cloud` (consulta `GET /health` de Cloud) en lugar de `redis`: `{"fog":"ok","cloud":"ok","postgres":"ok"}`.
 
 ## 6. Cloud → Fog: `cloud:verdicts:{revision_id}` (Redis Stream)
 

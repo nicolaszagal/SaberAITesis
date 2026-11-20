@@ -158,6 +158,10 @@ Se leen en `shared/config.py` (la fuente de verdad). Con `scripts/fog_nativo.sh`
 | `LOG_LEVEL` | `INFO` | Nivel del log técnico (`uvicorn.access` y `ultralytics` quedan en WARNING) |
 | `M01_EXPERIMENT_LOG` | — (opcional) | `EXPERIMENT_LOG.md` del entrenamiento: de ahí el resumen (L02) copia la tabla de M01; sin él, "no disponible" |
 | `TEST_DATABASE_URL` | — (solo pruebas) | Ver la sección 1.1 |
+| `CLOUD_TRANSPORTE` | `redis` | Fog: `redis` (modo A) o `http` (modo remoto, DEPLOY11: Fog sale por HTTPS a Cloud y no usa Redis) |
+| `CLOUD_URL`, `CLOUD_TOKEN_FILE`, `CLOUD_HTTP_TIMEOUT_S` | —, `.secrets/cloud_token.txt`, `25` | Fog con `http`: dirección de Cloud (solo `https://`, o `http://localhost` en pruebas), archivo del token de nodo y plazo de cada petición |
+| `CLOUD_NODOS_SHA256` | — | Cloud: hashes SHA-256 de los tokens de nodo (`nombre:hash`, separados por comas o saltos de línea). Sin ella no se abre la API HTTP; sin `REDIS_URL` ni ella, Cloud no arranca |
+| `PORT`, `CLOUD_HTTP_HOST`, `CLOUD_HTTP_MAX_BODY_BYTES`, `CLOUD_HTTP_LIMITE_PETICIONES`, `CLOUD_HTTP_LIMITE_VENTANA_S`, `CLOUD_HTTP_PETICION_TIMEOUT_S` | `8002`, `0.0.0.0`, `2097152`, `30`, `60`, `20` | Cloud HTTP: puerto (Railway asigna `PORT`), interfaz, cuerpo máximo, peticiones por nodo y ventana (s), y plazo por petición (s) |
 | `REDIS_TLS_CA`, `REDIS_TLS_CERT`, `REDIS_TLS_KEY`, `PROXY_SHARED_TOKEN`, `PROXY_SALTOS_CONFIANZA`, `REDIS_SOCKET_TIMEOUT_S`, `REDIS_CONNECT_TIMEOUT_S`, `REDIS_HEALTH_CHECK_S`, `CLOUD_XREAD_BLOCK_MS`, `CLOUD_REDIS_FALLOS_MAX`, `CLOUD_REDIS_ESPERA_S`, `STREAM_MAXLEN` | — | Despliegue remoto: ver [`DESPLIEGUE_REMOTO.md`](DESPLIEGUE_REMOTO.md) |
 
 ## 6. Dependencias

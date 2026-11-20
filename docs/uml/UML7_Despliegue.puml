@@ -1,0 +1,33 @@
+@startuml UML7_Despliegue
+!include skin.iuml
+left to right direction
+title Despliegue de SABRE.AI — modo remoto (DEPLOY11): Fog en el equipo de cada usuario
+
+rectangle "Equipo del usuario (uno por revisor)" as USUARIO {
+  node "Navegador" as NAV
+  component "Fog\nFastAPI\nescucha solo en 127.0.0.1:8001" as FOG
+  database "PostgreSQL 16 (Docker)\nbase propia del nodo" as PG
+  folder "STORAGE_DIR / EVIDENCE_DIR\nclips solo durante la sesión" as STO
+  file ".secrets/cloud_token.txt\npermisos 600" as TOK
+}
+
+cloud "Railway" as RW {
+  component "frontend\nnginx: build estático de Expo\nsin /api ni Tailscale" as FRONT
+  component "cloud-http\nCloud: POST /v1/clasificar\nGET /health\nLSTM BiLSTM 6 clases" as CLOUD
+  file "CLOUD_NODOS_SHA256\nnombre:SHA-256 del token\n(variable sellada)" as HASH
+}
+
+NAV --> FRONT : HTTPS\n(descarga la aplicación)
+NAV --> FOG : HTTP http://localhost:8001\n(permiso de red local del navegador;\nCORS solo del origen del frontend)
+FOG --> PG : SQL (asyncpg)
+FOG --> STO : escribe
+FOG --> TOK : lee el token
+FOG --> CLOUD : HTTPS POST /v1/clasificar\nAuthorization: Bearer <token del nodo>\n(features de la revisión)
+CLOUD ..> HASH : compara SHA-256\n(sin guardar tokens ni features)
+
+note bottom of CLOUD
+  Cloud no persiste nada: cada nodo
+  conserva sus datos en su propio Fog.
+  Revocar = quitar su hash y redesplegar.
+end note
+@enduml
