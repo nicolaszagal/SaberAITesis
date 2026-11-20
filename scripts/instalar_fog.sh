@@ -5,6 +5,9 @@
 # Uso, desde backend/:
 #   sh scripts/instalar_fog.sh verificar [--remoto]      comprueba requisitos sin cambiar nada
 #   sh scripts/instalar_fog.sh modo [--remoto]           muestra el modo y los archivos de configuración que se cargarían
+#   sh scripts/instalar_fog.sh modo --remoto --cloud-url https://... --frontend-url https://...
+#                                                        deja en .secrets/fog_remoto.env CLOUD_TRANSPORTE=http, CLOUD_URL y CORS_ORIGINS (DEPLOY11)
+#   sh scripts/instalar_fog.sh importar-token <archivo>  instala el token de nodo en .secrets/cloud_token.txt (600, sin mostrarlo)
 #   (todas las órdenes son LOCALES por defecto: .secrets/fog_remoto.env y ENTORNO=remoto solo con --remoto)
 #   sh scripts/instalar_fog.sh instalar [--paquete DIR]  entorno, modelo, .env, base (DIR: paquete de `exportar`)
 #   sh scripts/instalar_fog.sh exportar --destino DIR --evento UUID    (equipo de origen)
@@ -153,7 +156,10 @@ cmd_verificar() {
         ok "Espacio libre: ${libres_gb} GB (mínimo $minimo GB)"
     fi
 
-    for par in "FOG_HOST_PORT:${FOG_HOST_PORT:-8001}" "POSTGRES_HOST_PORT:${POSTGRES_HOST_PORT:-5436}" "REDIS_HOST_PORT:${REDIS_HOST_PORT:-6380}"; do
+    puertos="FOG_HOST_PORT:${FOG_HOST_PORT:-8001} POSTGRES_HOST_PORT:${POSTGRES_HOST_PORT:-5436}"
+    # Con Cloud por HTTP (DEPLOY11) Fog no usa Redis: no se exige su puerto.
+    usa_http || puertos="$puertos REDIS_HOST_PORT:${REDIS_HOST_PORT:-6380}"
+    for par in $puertos; do
         nombre=${par%%:*}
         puerto=${par#*:}
         if puerto_ocupado "$puerto"; then
@@ -177,7 +183,22 @@ cmd_verificar() {
         fi
     done
 
-    if [ "$remoto" = 1 ]; then
+    if [ "$remoto" = 1 ] && usa_http; then
+        # DEPLOY11: Fog sale por HTTPS hacia Cloud; no hay túnel, ni Tailscale, ni Redis.
+        "$PY_SIS" -c 'import sys; from urllib.parse import urlsplit as u; p=u(sys.argv[1]); sys.exit(0 if p.hostname and (p.scheme=="https" or (p.scheme=="http" and p.hostname in ("localhost","127.0.0.1"))) and not p.username else 1)' "${CLOUD_URL:-}" \
+            && ok "CLOUD_URL válida (https)" \
+            || falta "CLOUD_URL falta o no es https://" "sh scripts/instalar_fog.sh modo --remoto --cloud-url https://... --frontend-url https://..."
+        [ -n "${CORS_ORIGINS:-}" ] && ok "CORS_ORIGINS definido" \
+            || falta "CORS_ORIGINS vacío (el navegador no podría hablar con este Fog)" "sh scripts/instalar_fog.sh modo --remoto --cloud-url https://... --frontend-url https://..."
+        token="${SECRETS_DIR:-.secrets}/cloud_token.txt"
+        if [ -s "$token" ]; then
+            permisos=$(stat -f '%Lp' "$token" 2>/dev/null || stat -c '%a' "$token" 2>/dev/null || echo ?)
+            [ "$permisos" = 600 ] && ok "token de nodo presente (permisos 600)" \
+                || falta "el token de nodo tiene permisos $permisos (debe ser 600)" "chmod 600 $token"
+        else
+            falta "falta el token de nodo ($token)" "sh scripts/instalar_fog.sh importar-token <archivo que le entregó el autor>"
+        fi
+    elif [ "$remoto" = 1 ]; then
         modo=${FOG_REMOTO_MODO:-tailscale}
         if [ "$modo" = cloudflared ]; then
             command -v cloudflared >/dev/null 2>&1 && ok "cloudflared instalado" \
@@ -288,7 +309,7 @@ paso_env() {
         # shellcheck disable=SC2086
         "$(venv_python)" scripts/instalador.py generar-env --plantilla .env.example --destino "$ENV_FILE" $opcion \
             || fallo "no se creó $ENV_FILE"
-        echo "      Certificado y clave de cliente de Redis del nodo Fog: se importan aparte (ver LEEME_MIGRACION.md / SEC01)."
+        usa_http || echo "      Certificado y clave de cliente de Redis del nodo Fog: se importan aparte (ver LEEME_MIGRACION.md / SEC01)."
     fi
 }
 
@@ -321,12 +342,15 @@ paso_base() {
     fi
     # Si ya están en marcha no se vuelve a correr `up`: con otra configuración (p. ej. otra POSTGRES_PASSWORD
     # en .secrets) Compose recrearía el contenedor en vez de dejarlo como está.
+    COMPOSE_ARCHIVOS=$(archivos_compose)
+    servicios="postgres redis"
+    usa_http && servicios="postgres"   # DEPLOY11: con Cloud por HTTP no hay Redis
     redis_activo=$(docker ps -q --filter "publish=${REDIS_HOST_PORT:-6380}" 2>/dev/null | head -n 1 || true)
-    if buscar_contenedor && [ -n "$redis_activo" ]; then
-        ok "PostgreSQL y Redis ya están en marcha: no se tocan"
+    if buscar_contenedor && { usa_http || [ -n "$redis_activo" ]; }; then
+        ok "$(usa_http && echo PostgreSQL || echo 'PostgreSQL y Redis') ya está(n) en marcha: no se toca(n)"
     else
         # shellcheck disable=SC2086
-        compose $COMPOSE_ARCHIVOS up -d postgres redis || fallo "compose no pudo levantar postgres y redis"
+        compose $COMPOSE_ARCHIVOS up -d $servicios || fallo "compose no pudo levantar $servicios"
     fi
     buscar_contenedor || fallo "no encuentro el contenedor de PostgreSQL"
     esperar_postgres
@@ -566,6 +590,11 @@ cmd_estado() {
     fi
     echo "Modelo activo:  $activo"
     echo "Dispositivo:    FOG_DEVICE=${FOG_DEVICE:-cpu}"
+    if usa_http; then
+        echo "Cloud:          http · ${CLOUD_URL:-?} · token de nodo $([ -s "${SECRETS_DIR:-.secrets}/cloud_token.txt" ] && echo presente || echo FALTA)"
+    else
+        echo "Cloud:          redis"
+    fi
     leer_respaldo_dir
     if [ -z "$RESPALDO_DIR" ]; then
         echo "Último respaldo: RESPALDO_DIR no definida"
@@ -593,7 +622,31 @@ while [ "$n_args" -gt 0 ]; do
 done
 export MODO_REMOTO
 
+cmd_importar_token() {
+    [ $# -eq 1 ] || fallo "uso: importar-token <archivo con el token de nodo>"
+    destino="${SECRETS_DIR:-.secrets}/cloud_token.txt"
+    resultado=$("$PY_SIS" scripts/instalador.py importar-token "$1" --destino "$destino") || fallo "no se importó el token"
+    echo "Token de nodo $resultado en $destino (permisos 600; no se muestra)."
+    echo "Siguiente paso: sh scripts/instalar_fog.sh probar --remoto"
+}
+
 cmd_modo() {
+    CLOUD_URL_ARG=""; FRONT_URL_ARG=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --cloud-url) CLOUD_URL_ARG=${2:-}; shift 2 || fallo "--cloud-url necesita un valor" ;;
+            --frontend-url) FRONT_URL_ARG=${2:-}; shift 2 || fallo "--frontend-url necesita un valor" ;;
+            *) fallo "argumento desconocido: $1" ;;
+        esac
+    done
+    if [ -n "$CLOUD_URL_ARG$FRONT_URL_ARG" ]; then
+        [ "$MODO_REMOTO" = 1 ] || fallo "--cloud-url y --frontend-url solo con --remoto"
+        [ -n "$CLOUD_URL_ARG" ] && [ -n "$FRONT_URL_ARG" ] || fallo "indique las dos: --cloud-url y --frontend-url"
+        "$PY_SIS" scripts/instalador.py configurar-remoto --archivo "${ENV_SECRETO:-.secrets/fog_remoto.env}" \
+            --cloud-url "$CLOUD_URL_ARG" --frontend-url "$FRONT_URL_ARG" || fallo "no se configuró el modo remoto"
+        echo "Modo remoto configurado en ${ENV_SECRETO:-.secrets/fog_remoto.env}."
+    fi
+    cargar_env
     echo "modo: $([ "$MODO_REMOTO" = 1 ] && echo remoto || echo local)"
     echo "archivos: $(archivos_env | tr '\n' ' ')"
     echo "clave de PostgreSQL: $([ -s "$(archivo_clave_postgres)" ] && echo "de $(archivo_clave_postgres)" || echo "de los .env (no hay $(archivo_clave_postgres))")"
@@ -601,11 +654,12 @@ cmd_modo() {
 
 case "${1:-}" in
     modo) shift; cmd_modo "$@" ;;
+    importar-token) shift; cmd_importar_token "$@" ;;
     verificar) shift; cmd_verificar "$@" ;;
     instalar) shift; cmd_instalar "$@" ;;
     exportar) shift; cmd_exportar "$@" ;;
     importar) shift; cmd_importar "$@" ;;
     probar) shift; cmd_probar "$@" ;;
     estado) shift; cmd_estado "$@" ;;
-    *) echo "Uso: sh scripts/instalar_fog.sh {modo|verificar|instalar [--paquete DIR]|exportar --destino DIR --evento UUID|importar --desde DIR|probar|estado} [--remoto]  (local por defecto)" >&2; exit 2 ;;
+    *) echo "Uso: sh scripts/instalar_fog.sh {modo|verificar|instalar [--paquete DIR]|exportar --destino DIR --evento UUID|importar --desde DIR|probar|estado|importar-token ARCHIVO|modo --remoto --cloud-url URL --frontend-url URL} [--remoto]  (local por defecto)" >&2; exit 2 ;;
 esac

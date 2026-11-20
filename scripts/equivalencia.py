@@ -11,6 +11,10 @@ Modos:
     medir                corre N veces (por defecto 2) y reporta la diferencia máxima entre corridas, para
                          proponer la cota; no escribe nada
 
+Con CLOUD_TRANSPORTE=http (modo remoto, DEPLOY11) la clasificación no se hace en el equipo: cada clip se
+manda a Cloud por HTTPS con el adaptador de producción (`HttpCloudTransport`, CLOUD_URL y el token de
+.secrets/cloud_token.txt) y se compara con la misma referencia y la misma cota.
+
 Variables: MODEL_RUN_ID, DATASET_DIR (por defecto ../dataset), FOG_DEVICE (cpu), CLIPS_REFERENCIA_DIR
 (opcional: carpeta con <stem>.mp4; si falta, se usa DATASET_DIR/<ruta_dataset>), DATOS_DIR (./datos).
 
@@ -103,8 +107,56 @@ def hash_keypoints(tracked) -> str:
     return digest.hexdigest()
 
 
+class ClasificadorCloudHttp:
+    """Clasifica pidiéndole a Cloud por HTTP, con el mismo adaptador que usa Fog (DEPLOY11)."""
+
+    def __init__(self):
+        import asyncio
+
+        from fog.infrastructure.messaging.http_cloud_transport import HttpCloudTransport
+        from shared import config
+
+        self._bucle = asyncio.new_event_loop()
+        self._transporte = HttpCloudTransport(
+            config.CLOUD_URL, config.leer_token_cloud(), config.CLOUD_HTTP_TIMEOUT_S
+        )
+        self._n = 0
+
+    def classify(self, sequence, luz):
+        """Pide la clasificación a Cloud.
+
+        Args:
+            sequence: secuencia (T, 192) de features.
+            luz: señal de luz del clip.
+
+        Returns:
+            Un veredicto con `action_class.value` y `probs`, igual que el clasificador local.
+
+        Raises:
+            RuntimeError: si Cloud no devuelve un veredicto (con el motivo, sin datos sensibles).
+        """
+        from types import SimpleNamespace
+
+        from fog.domain.models import ExtractedFeatures, UnavailableResult, WeaponSide
+
+        self._n += 1
+        revision = f"equivalencia-{self._n}"
+
+        async def pedir():
+            await self._transporte.publish(
+                "equivalencia", revision, ExtractedFeatures(sequence=sequence), luz,
+                WeaponSide.RIGHT, WeaponSide.RIGHT,
+            )
+            return await self._transporte.wait_for_verdict(revision)
+
+        resultado = self._bucle.run_until_complete(pedir())
+        if isinstance(resultado, UnavailableResult):
+            raise RuntimeError(f"Cloud no clasificó el clip ({resultado.motivo.value})")
+        return SimpleNamespace(action_class=SimpleNamespace(value=resultado.action), probs=resultado.probs)
+
+
 def construir_pipeline(dataset_dir: Path, run_id: str, dispositivo: str):
-    """Arma el extractor de Fog y el clasificador de Cloud con los mismos constructores de producción.
+    """Arma el extractor de Fog y el clasificador (local, o Cloud por HTTP) con los constructores de producción.
 
     Args:
         dataset_dir: carpeta con yolov8x-pose.pt y lstm_6class/.
@@ -127,9 +179,12 @@ def construir_pipeline(dataset_dir: Path, run_id: str, dispositivo: str):
     extractor = _build_feature_extractor(
         str(dataset_dir / "lstm_6class" / "feature_stats.npz"), PERFIL, config.FEATURE_PREPROCESSING_PROFILES_PATH
     )
-    clasificador = LSTM6ClassAdapter(
-        str(dataset_dir / "lstm_6class" / "checkpoints" / run_id), torch.device("cpu")
-    )
+    if config.CLOUD_TRANSPORTE == "http":
+        clasificador = ClasificadorCloudHttp()
+    else:
+        clasificador = LSTM6ClassAdapter(
+            str(dataset_dir / "lstm_6class" / "checkpoints" / run_id), torch.device("cpu")
+        )
     return adaptador, extractor, clasificador
 
 
@@ -222,6 +277,7 @@ def _contexto(dispositivo: str, run_id: str) -> dict:
         "commit": commit_actual(),
         "dispositivo": dispositivo,
         "modelo_run_id": run_id,
+        "clasificacion": "cloud por http" if os.environ.get("CLOUD_TRANSPORTE") == "http" else "local",
         "sistema": f"{platform.system()} {platform.machine()}",
         "python": platform.python_version(),
         "versiones": versiones(),

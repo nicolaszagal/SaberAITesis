@@ -56,7 +56,13 @@ if [ "$MOSTRAR" = 1 ]; then
     echo "ENTORNO=$ENTORNO"
     echo "BIND_HOST=$BIND_HOST"
     echo "archivos: $(archivos_env | tr '\n' ' ')"
-    echo "REDIS_URL=$(enmascarar "$REDIS_URL")"
+    if usa_http; then
+        echo "CLOUD_TRANSPORTE=http  CLOUD_URL=$CLOUD_URL  (sin Redis)"
+        echo "CORS_ORIGINS=${CORS_ORIGINS:-}"
+        echo "CLOUD_TOKEN_FILE=$CLOUD_TOKEN_FILE ($([ -s "$CLOUD_TOKEN_FILE" ] && echo presente || echo FALTA))"
+    else
+        echo "REDIS_URL=$(enmascarar "$REDIS_URL")"
+    fi
     echo "DATABASE_URL=$(enmascarar "$DATABASE_URL")"
     echo "bloqueo: $([ -n "$REMOTO" ] && echo "exigido (--remoto)" || echo "solo si FOG_DEVICE no es cpu")"
 fi
@@ -66,11 +72,15 @@ python scripts/instalador.py bloqueo --datos "$DATOS_DIR" --commit "$COMMIT" --d
 [ "$MOSTRAR" = 0 ] || exit 0
 
 DESTINOS="postgres:$POSTGRES_HOST_PORT"
-[ -n "${REDIS_URL_REMOTO:-}" ] || DESTINOS="$DESTINOS redis:$REDIS_HOST_PORT"
+# Con Cloud por HTTP (DEPLOY11) Fog no usa Redis; con Redis remoto de Railway tampoco el local.
+usa_http || [ -n "${REDIS_URL_REMOTO:-}" ] || DESTINOS="$DESTINOS redis:$REDIS_HOST_PORT"
+if usa_http; then
+    [ -s "$CLOUD_TOKEN_FILE" ] || { echo "Falta el token de nodo ($CLOUD_TOKEN_FILE). Instálelo con: sh scripts/instalar_fog.sh importar-token <archivo>" >&2; exit 1; }
+fi
 for destino in $DESTINOS; do
     nc -z 127.0.0.1 "${destino#*:}" 2>/dev/null || {
         echo "${destino%%:*} no responde en 127.0.0.1:${destino#*:}. Levántelo con:" >&2
-        echo "  sh scripts/compose.sh -f docker-compose.yml -f docker-compose.nativo.yml up -d" >&2
+        echo "  sh scripts/compose.sh $(archivos_compose) up -d" >&2
         exit 1
     }
 done

@@ -19,14 +19,13 @@ combate admite N revisiones y cada una tiene su propio stream.
 from __future__ import annotations
 
 import logging
-import time
 
 from cloud.domain.models import InvalidFeatureMessage, Verdict
+from cloud.application.clasificar_secuencia import ClasificarSecuencia
 from cloud.ports.action_classifier import ActionClassifierPort
 from cloud.ports.arbitration_policy import ArbitrationPolicyPort
 from cloud.ports.feature_consumer import FeatureStreamConsumerPort
 from cloud.ports.verdict_publisher import VerdictPublisherPort
-from shared import config
 
 log = logging.getLogger("cloud.application")
 
@@ -41,23 +40,16 @@ class ClassifyAndPublish:
         modelo_version_name: str,
     ):
         self._consumer = consumer
-        self._classifier = classifier
-        self._arbitration = arbitration
         self._publisher = publisher
-        self._modelo_version_name = modelo_version_name
+        self._clasificar = ClasificarSecuencia(classifier, arbitration, modelo_version_name)
 
     def precalentar(self) -> None:
         """Precalienta el clasificador antes de consumir el stream (F-027).
 
-        La salida se descarta: no se publica, no se persiste y no entra en
-        ninguna métrica. Registra "modelo precalentado" con su duración.
-
         Raises:
             Exception: si el precalentamiento falla; Cloud no debe arrancar.
         """
-        inicio = time.perf_counter()
-        self._classifier.precalentar()
-        log.info("modelo precalentado en %d ms", (time.perf_counter() - inicio) * 1000)
+        self._clasificar.precalentar()
 
     async def run_forever(self) -> None:
         async for entry_id, item in self._consumer.consume():
@@ -81,30 +73,6 @@ class ClassifyAndPublish:
                 ))
             return
 
-        features = item
-        start = time.perf_counter()
-        raw = self._classifier.classify(features.sequence, features.luz)
-        latencia_inferencia_ms = int((time.perf_counter() - start) * 1000)
-        resolved = self._arbitration.resolve(raw, features.luz)
-
-        side = resolved.action_class.value[-1]  # "A" o "B"
-        fencer = config.FENCER_COLOR[side]
-
-        log.info(
-            "[%s] veredicto: %s (%s) conf=%.3f",
-            features.revision_id, resolved.action_class.value, fencer, resolved.confidence,
-        )
-
-        await self._publisher.publish(Verdict(
-            match_id=features.match_id,
-            revision_id=features.revision_id,
-            disponible=True,
-            action_class=resolved.action_class,
-            confidence=resolved.confidence,
-            fencer=fencer,
-            probs=resolved.probs,
-            latencia_inferencia_ms=latencia_inferencia_ms,
-            modelo=self._modelo_version_name,
-            atencion=resolved.atencion,
-        ))
+        veredicto = self._clasificar.execute(item)
+        await self._publisher.publish(veredicto)
         await self._consumer.ack(entry_id)

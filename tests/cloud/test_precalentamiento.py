@@ -91,12 +91,17 @@ async def test_cloud_no_arranca_si_el_precalentamiento_falla(monkeypatch):
             self.config = type("C", (), {
                 "redis_url": type("P", (), {"from_value": lambda *a: None})(),
                 "model_run_dir": type("P", (), {"from_value": lambda *a: None})(),
+                "nodos_sha256": type("P", (), {"from_value": lambda *a: None})(),
             })()
+
+        def clasificar_secuencia(self):
+            return CasoDeUso()
 
         def classify_and_publish(self):
             return CasoDeUso()
 
     monkeypatch.setattr(config, "MODEL_RUN_DIR", "/ruta/run")
+    monkeypatch.setattr(config, "REDIS_URL_ENV", "redis://localhost:6379/0")
     monkeypatch.setattr(cloud_main, "Container", ContenedorFalso)
 
     with pytest.raises(RuntimeError, match="modelo roto"):

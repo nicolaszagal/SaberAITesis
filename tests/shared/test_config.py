@@ -79,17 +79,34 @@ def test_require_redis_remoto_no_exige_nada_en_local(monkeypatch):
     config.require_redis_remoto()
 
 
-def test_cloud_no_arranca_en_remoto_sin_redis_url(monkeypatch):
+def test_cloud_remoto_con_redis_activo_exige_rediss(monkeypatch):
+    """DEPLOY09: con el transporte Redis activo, en remoto la URL debe ser rediss:// (DEPLOY11 no lo relaja)."""
+    import asyncio
+
+    from cloud import main as cloud_main
+
+    monkeypatch.setattr(config, "ENTORNO", "remoto")
+    monkeypatch.setattr(config, "REDIS_URL_ENV", "redis://localhost:6379/0")
+    monkeypatch.setattr(config, "MODEL_RUN_DIR", "/tmp/modelo")
+
+    with pytest.raises(RuntimeError, match="rediss://"):
+        asyncio.run(cloud_main.main())
+
+
+def test_cloud_sin_ninguna_entrada_no_arranca(monkeypatch):
+    """DEPLOY11: sin REDIS_URL ni CLOUD_NODOS_SHA256 no hay por dónde recibir features."""
     import asyncio
 
     from cloud import main as cloud_main
 
     monkeypatch.setattr(config, "ENTORNO", "remoto")
     monkeypatch.setattr(config, "REDIS_URL_ENV", None)
+    monkeypatch.setattr(config, "CLOUD_NODOS_SHA256", None)
     monkeypatch.setattr(config, "MODEL_RUN_DIR", "/tmp/modelo")
 
-    with pytest.raises(RuntimeError, match="REDIS_URL"):
+    with pytest.raises(SystemExit) as salida:
         asyncio.run(cloud_main.main())
+    assert salida.value.code == 1
 
 
 def test_fog_no_arranca_en_remoto_sin_redis_url():

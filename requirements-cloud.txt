@@ -1,9 +1,11 @@
-# Subconjunto de requirements.txt usado por Dockerfile.cloud. Cloud es un
-# worker puro (consume Redis Streams, corre el LSTM, publica veredicto) —
-# no necesita fastapi, opencv-python, ultralytics ni lap (todo
-# eso es exclusivo de Fog, ver requirements-fog.txt). torch se instala por
+# Subconjunto de requirements.txt usado por cloud/Dockerfile. Cloud clasifica con el LSTM y
+# recibe features por Redis Streams (modo local) o por HTTP (DEPLOY11: fastapi + uvicorn);
+# no necesita opencv-python, ultralytics ni lap (exclusivos de Fog, ver requirements-fog.txt). torch se instala por
 # separado en el Dockerfile (wheel CPU vía índice oficial de PyTorch).
 
 redis==8.0.0
 dependency-injector==4.49.1
 numpy==2.3.4
+fastapi==0.138.0
+uvicorn==0.49.0
+pydantic==2.13.4

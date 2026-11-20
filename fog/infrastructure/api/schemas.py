@@ -397,7 +397,9 @@ class ModeloActivoResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     fog: Literal["ok", "error"]
-    redis: Literal["ok", "error"]
+    # Solo una de las dos, según CLOUD_TRANSPORTE: `redis` (local) o `cloud` (HTTP, DEPLOY11).
+    redis: Literal["ok", "error"] | None = None
+    cloud: Literal["ok", "error"] | None = None
     postgres: Literal["ok", "error"]
 
 

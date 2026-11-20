@@ -3,7 +3,8 @@
 #
 # exportar_entorno_fog fija y exporta las variables que lee Fog (DATABASE_URL, REDIS_URL, rutas del modelo,
 # FOG_DEVICE...). Variables opcionales: DATOS_DIR, DATASET_DIR, MODEL_RUN_ID, POSTGRES_HOST_PORT,
-# REDIS_HOST_PORT, POSTGRES_DB_NAME, REDIS_URL_REMOTO (solo con MODO_REMOTO=1), FOG_DEVICE, SECRETS_DIR.
+# REDIS_HOST_PORT, POSTGRES_DB_NAME, REDIS_URL_REMOTO (solo con MODO_REMOTO=1), FOG_DEVICE, SECRETS_DIR,
+# CLOUD_TRANSPORTE/CLOUD_URL (modo remoto con Cloud por HTTP, DEPLOY11).
 
 MODEL_RUN_ID_POR_DEFECTO=20260928_141021
 
@@ -27,6 +28,10 @@ exportar_entorno_fog() {
     MODEL_RUN_ID=${MODEL_RUN_ID:-$MODEL_RUN_ID_POR_DEFECTO}
     # DEPLOY10: dispositivo de YOLO explícito (cpu es lo que corrió en la Validación 1).
     export FOG_DEVICE="${FOG_DEVICE:-cpu}"
+    # DEPLOY11: con http el token de nodo se lee de .secrets/cloud_token.txt (ruta absoluta: Fog corre en backend/).
+    if usa_http; then
+        export CLOUD_TOKEN_FILE="${CLOUD_TOKEN_FILE:-${SECRETS_DIR:-$BACKEND_DIR/.secrets}/cloud_token.txt}"
+    fi
 }
 
 # --- Archivos de configuración -------------------------------------------------------------------
@@ -69,14 +74,32 @@ cargar_clave_postgres() {
     export POSTGRES_PASSWORD
 }
 
+# usa_http: verdadero si Fog manda las features a Cloud por HTTPS (CLOUD_TRANSPORTE=http, DEPLOY11): no usa Redis.
+usa_http() {
+    [ "${CLOUD_TRANSPORTE:-redis}" = http ]
+}
+
+# archivos_compose: archivos de Compose del modo vigente. Con http se suma el perfil sin Redis.
+archivos_compose() {
+    if usa_http; then
+        printf '%s' "-f docker-compose.yml -f docker-compose.nativo.yml -f docker-compose.http.yml"
+    else
+        printf '%s' "-f docker-compose.yml -f docker-compose.nativo.yml"
+    fi
+}
+
 # aplicar_modo: fija ENTORNO según el modo. Local por defecto; remoto solo con MODO_REMOTO=1. En local se
 # ignoran las variables del modo remoto que hubiera en el entorno del shell (Redis de Railway, token de proxy).
 aplicar_modo() {
     if [ "${MODO_REMOTO:-0}" = 1 ]; then
         ENTORNO=remoto
+        # Con Cloud por HTTP (DEPLOY11) no hay proxy: la protección es el JWT de este Fog, CORS y la escucha
+        # en loopback, así que un PROXY_SHARED_TOKEN heredado dejaría fuera al navegador (403).
+        if usa_http; then unset PROXY_SHARED_TOKEN; fi
     else
         ENTORNO=local
         unset REDIS_URL_REMOTO PROXY_SHARED_TOKEN REDIS_TLS_CA REDIS_TLS_CERT REDIS_TLS_KEY
+        unset CLOUD_TRANSPORTE CLOUD_URL CLOUD_TOKEN_FILE
     fi
     export ENTORNO
 }

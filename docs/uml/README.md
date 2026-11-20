@@ -10,3 +10,4 @@ Fuentes PlantUML y PNG generados con `java -jar plantuml.jar -tpng -charset UTF-
 | `UML3_Clases_Edge_Frontend` | Frontend (pantallas, contextos, `fogApi`); el nombre conserva «Edge» por historia, el nodo salió a `future/edge-favero` |
 | `UML4_Secuencia_Carga_Clip` | Carga de clip con persistencia, veredicto de Cloud y decisión del árbitro |
 | `UML6_Actividad_Revision_VAR` | Actividad de la revisión VAR asistida |
+| `UML7_Despliegue` | Despliegue del modo remoto (DEPLOY11): navegador, Fog en el equipo del usuario, frontend y Cloud en Railway |

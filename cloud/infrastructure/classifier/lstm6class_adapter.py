@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 
 import numpy as np
 import torch
@@ -52,6 +53,9 @@ PRECALENTAMIENTO_FRAMES = config.MIN_FRAMES
 class LSTM6ClassAdapter(ActionClassifierPort):
     def __init__(self, run_dir: str, device: "torch.device"):
         self._device = device
+        # DEPLOY11: la API HTTP infiere en un hilo y el consumidor de Redis en el del bucle; el modelo
+        # no se comparte entre hilos sin candado.
+        self._candado = threading.Lock()
 
         with open(os.path.join(run_dir, RUN_CONFIG_FILENAME)) as f:
             run_config = json.load(f)
@@ -118,7 +122,7 @@ class LSTM6ClassAdapter(ActionClassifierPort):
             dtype=torch.float32, device=self._device,
         )
 
-        with torch.no_grad():
+        with self._candado, torch.no_grad():
             salida = self._model(x, lengths, luz_t, return_attention=True)
             # Sin atención el modelo devuelve solo los logits (F-035: sin pesos).
             logits, pesos = salida if isinstance(salida, tuple) else (salida, None)

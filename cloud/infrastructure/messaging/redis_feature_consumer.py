@@ -20,7 +20,6 @@ import asyncio
 import logging
 from typing import AsyncIterator
 
-import numpy as np
 import redis.asyncio as redis
 from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import ResponseError
@@ -29,15 +28,12 @@ from redis.exceptions import TimeoutError as RedisTimeoutError
 from cloud.domain.models import (
     FeatureSequence, InvalidFeatureMessage, LuzSignal, MotivoNoDisponible,
 )
+from cloud.domain.secuencia_features import ContratoInvalidoError, construir_secuencia
 from cloud.ports.feature_consumer import ColaPerdidaError, FeatureStreamConsumerPort
 from shared import config
 
 log = logging.getLogger("cloud.infrastructure")
 
-# "T,192" — T = frames reales del clip, 192 = features por frame (A+B).
-# Ver CONTRATO_API.md sección 5.
-_EXPECTED_FEATURE_DIM = 192
-_EXPECTED_DTYPE = "float32"
 _REQUIRED_FIELDS = (
     b"match_id", b"revision_id", b"shape", b"dtype", b"features",
     b"weapon_side_A", b"weapon_side_B",
@@ -48,8 +44,8 @@ _REQUIRED_FIELDS = (
 _ERRORES_DE_CONEXION = (RedisConnectionError, RedisTimeoutError, asyncio.TimeoutError, OSError)
 
 
-class InvalidMessageError(ValueError):
-    """Una entrada de `fog:features` no respeta el contrato."""
+# La validación vive en el dominio (la comparte la API HTTP); este alias conserva el nombre.
+InvalidMessageError = ContratoInvalidoError
 
 
 class RedisFeatureConsumer(FeatureStreamConsumerPort):
@@ -117,41 +113,16 @@ class RedisFeatureConsumer(FeatureStreamConsumerPort):
         missing = [f.decode() for f in _REQUIRED_FIELDS if f not in fields]
         if missing:
             raise InvalidMessageError(f"campos faltantes: {', '.join(missing)}")
-
-        dtype_str = fields[b"dtype"].decode(errors="replace")
-        if dtype_str != _EXPECTED_DTYPE:
-            raise InvalidMessageError(
-                f"dtype inesperado: '{dtype_str}' (se espera '{_EXPECTED_DTYPE}')"
-            )
-
-        try:
-            shape_str = fields[b"shape"].decode(errors="replace")
-            shape = tuple(int(v) for v in shape_str.split(","))
-        except ValueError:
-            raise InvalidMessageError(f"shape inválido: {fields[b'shape']!r}") from None
-        if len(shape) != 2 or shape[0] < 1 or shape[1] != _EXPECTED_FEATURE_DIM:
-            raise InvalidMessageError(
-                f"shape inesperado: {shape} (se espera (T>=1, {_EXPECTED_FEATURE_DIM}))"
-            )
-
-        buffer = fields[b"features"]
-        expected_size = shape[0] * shape[1] * np.dtype(dtype_str).itemsize
-        if len(buffer) != expected_size:
-            raise InvalidMessageError(
-                f"tamaño de buffer ({len(buffer)} bytes) no coincide con shape {shape} "
-                f"y dtype '{dtype_str}' (esperado {expected_size} bytes)"
-            )
-
-        sequence = np.frombuffer(buffer, dtype=dtype_str).reshape(shape)
-        luz = LuzSignal(
-            has_luz_a=fields.get(b"has_luz_A", b"0") == b"1",
-            has_luz_b=fields.get(b"has_luz_B", b"0") == b"1",
-        )
-        return FeatureSequence(
+        return construir_secuencia(
             match_id=fields[b"match_id"].decode(errors="replace"),
             revision_id=fields[b"revision_id"].decode(errors="replace"),
-            sequence=sequence,
-            luz=luz,
+            shape=fields[b"shape"].decode(errors="replace"),
+            dtype=fields[b"dtype"].decode(errors="replace"),
+            buffer=fields[b"features"],
+            luz=LuzSignal(
+                has_luz_a=fields.get(b"has_luz_A", b"0") == b"1",
+                has_luz_b=fields.get(b"has_luz_B", b"0") == b"1",
+            ),
             weapon_side_a=fields[b"weapon_side_A"].decode(errors="replace"),
             weapon_side_b=fields[b"weapon_side_B"].decode(errors="replace"),
         )

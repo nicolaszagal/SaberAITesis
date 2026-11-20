@@ -1,4 +1,4 @@
-"""Lógica aislable de scripts/instalar_fog.sh (DEPLOY10): manifiestos, equivalencia y bloqueos.
+"""Lógica aislable de scripts/instalar_fog.sh (DEPLOY10, DEPLOY11): manifiestos, equivalencia, bloqueos y modo remoto.
 
 Solo usa la biblioteca estándar para correr con el `python3` del sistema antes de que exista el
 `.venv`. No toca la base ni Docker; eso lo hace el script de shell.
@@ -13,6 +13,8 @@ Uso desde el shell:
     python3 scripts/instalador.py lista-clips --dataset <dir> [--extra <dir>]
     python3 scripts/instalador.py estado-probar --datos <dir>
     python3 scripts/instalador.py mensaje-final [--dispositivo cpu] [--remoto]
+    python3 scripts/instalador.py configurar-remoto --archivo <fog_remoto.env> --cloud-url <https://...> --frontend-url <https://...>
+    python3 scripts/instalador.py importar-token <archivo> --destino <.secrets/cloud_token.txt>
     python3 scripts/instalador.py obtener-modelo --dataset <dir> --ruta <ruta> --hash <sha256> --origen-repo <dir> [--url <url>]
 """
 
@@ -29,6 +31,7 @@ import shutil
 import string
 import sys
 import urllib.request
+from urllib.parse import urlsplit
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -458,6 +461,100 @@ def evaluar_bloqueo(reporte: dict | None, commit: str, dispositivo: str, remoto:
     return True, "equivalencia aprobada para este commit y dispositivo"
 
 
+# --- Modo remoto con Cloud por HTTP (DEPLOY11) ------------------------------------------------------
+
+def _hosts_loopback(url: str) -> bool:
+    return urlsplit(url).hostname in ("localhost", "127.0.0.1")
+
+
+def validar_url_https(url: str, nombre: str) -> str:
+    """Comprueba que una URL sea `https://host[:puerto]` (o `http://localhost`, en pruebas).
+
+    Args:
+        url: la URL a validar.
+        nombre: nombre de la opción, para el mensaje.
+
+    Returns:
+        La URL sin barra final.
+
+    Raises:
+        ValueError: si no es una URL con host, lleva usuario o clave, o usa `http://` hacia un host
+            remoto. El mensaje no incluye la URL.
+    """
+    partes = urlsplit(url)
+    if partes.scheme not in ("http", "https") or not partes.hostname:
+        raise ValueError(f"{nombre} no es una URL válida (https://host[:puerto]).")
+    if partes.username or partes.password:
+        raise ValueError(f"{nombre} no admite usuario ni clave.")
+    if partes.scheme == "http" and not _hosts_loopback(url):
+        raise ValueError(f"{nombre} debe empezar por https:// (http:// solo hacia localhost, en pruebas).")
+    return url.rstrip("/")
+
+
+def configurar_remoto(archivo: Path, cloud_url: str, frontend_url: str) -> dict[str, str]:
+    """Deja en `archivo` (`.secrets/fog_remoto.env`) la configuración del modo remoto con Cloud por HTTP.
+
+    Fija `CLOUD_TRANSPORTE=http`, `CLOUD_URL` y `CORS_ORIGINS` (el origen del frontend desplegado), conserva
+    el resto de las líneas y quita `PROXY_SHARED_TOKEN` (ya no hay proxy, DEPLOY11). Permisos 600.
+
+    Args:
+        archivo: archivo de configuración del modo remoto; se crea si no existe.
+        cloud_url: URL de Cloud (`https://...`).
+        frontend_url: URL del frontend desplegado; solo se usa su origen.
+
+    Returns:
+        Los valores escritos.
+
+    Raises:
+        ValueError: si alguna URL no es válida.
+    """
+    cloud = validar_url_https(cloud_url, "--cloud-url")
+    partes = urlsplit(validar_url_https(frontend_url, "--frontend-url"))
+    origen = f"{partes.scheme}://{partes.netloc}"
+    valores = {"CLOUD_TRANSPORTE": "http", "CLOUD_URL": cloud, "CORS_ORIGINS": origen}
+    lineas = archivo.read_text(encoding="utf-8").splitlines() if archivo.exists() else []
+    conservadas = [
+        linea for linea in lineas
+        if linea.split("=", 1)[0].strip() not in (*valores, "PROXY_SHARED_TOKEN")
+    ]
+    conservadas += [f"{k}={v}" for k, v in valores.items()]
+    archivo.parent.mkdir(parents=True, exist_ok=True)
+    archivo.write_text("\n".join(conservadas) + "\n", encoding="utf-8")
+    os.chmod(archivo, 0o600)
+    return valores
+
+
+def importar_token(origen: Path, destino: Path) -> bool:
+    """Copia el token de nodo a `destino` (`.secrets/cloud_token.txt`) con permisos 600, sin mostrarlo.
+
+    Args:
+        origen: archivo que entregó el autor (una línea, el token).
+        destino: archivo de destino; se reemplaza si ya existe.
+
+    Returns:
+        True si había un token distinto que se reemplazó; False si es nuevo o igual.
+
+    Raises:
+        ValueError: si el archivo falta, está vacío o no es un único token de una línea sin espacios.
+            El mensaje nunca incluye el contenido.
+    """
+    try:
+        texto = origen.read_text(encoding="utf-8")
+    except OSError:
+        raise ValueError(f"no se pudo leer {origen}.") from None
+    token = texto.strip()
+    if not token or len(token.split()) != 1 or len(token) < 32:
+        raise ValueError(f"{origen} no contiene un token válido (una sola línea de al menos 32 caracteres).")
+    anterior = destino.read_text(encoding="utf-8").strip() if destino.exists() else None
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(destino.parent, 0o700)
+    descriptor = os.open(destino, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as f:
+        f.write(token + "\n")
+    os.chmod(destino, 0o600)
+    return anterior is not None and anterior != token
+
+
 def mensaje_final_instalacion(remoto: bool, dispositivo: str) -> str:
     """Texto con el que termina `instalar_fog.sh instalar`, según si el equipo exige la prueba de equivalencia.
 
@@ -541,6 +638,13 @@ def main(argv: list[str] | None = None) -> int:
     mf = sub.add_parser("mensaje-final")
     mf.add_argument("--dispositivo", default="cpu")
     mf.add_argument("--remoto", action="store_true")
+    cr = sub.add_parser("configurar-remoto")
+    cr.add_argument("--archivo", required=True)
+    cr.add_argument("--cloud-url", required=True)
+    cr.add_argument("--frontend-url", required=True)
+    it = sub.add_parser("importar-token")
+    it.add_argument("origen")
+    it.add_argument("--destino", required=True)
     om = sub.add_parser("obtener-modelo")
     om.add_argument("--dataset", required=True)
     om.add_argument("--ruta", required=True)
@@ -578,6 +682,23 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd == "mensaje-final":
         print(mensaje_final_instalacion(args.remoto, args.dispositivo))
+        return 0
+    if args.cmd == "configurar-remoto":
+        try:
+            valores = configurar_remoto(Path(args.archivo), args.cloud_url, args.frontend_url)
+        except ValueError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        for clave, valor in valores.items():
+            print(f"  {clave}={valor}")
+        return 0
+    if args.cmd == "importar-token":
+        try:
+            reemplazado = importar_token(Path(args.origen), Path(args.destino))
+        except ValueError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        print("reemplazado" if reemplazado else "instalado")
         return 0
     if args.cmd == "obtener-modelo":
         try:
