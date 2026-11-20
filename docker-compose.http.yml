@@ -1,0 +1,16 @@
+# Perfil sin Redis (DEPLOY11): con CLOUD_TRANSPORTE=http, Fog sale por HTTPS hacia Cloud y no necesita
+# Redis, Cloud local ni frontend local. Se suma a docker-compose.yml y docker-compose.nativo.yml:
+#
+#   sh scripts/compose.sh -f docker-compose.yml -f docker-compose.nativo.yml -f docker-compose.http.yml up -d
+#
+# Con esos tres archivos, `up -d` levanta solo PostgreSQL. Los servicios del modo local siguen en el
+# compose, pero bajo el perfil "local": no arrancan salvo que se pida (--profile local).
+services:
+  redis:
+    profiles: ["local"]
+
+  cloud:
+    profiles: ["local"]
+
+  frontend:
+    profiles: ["local"]
