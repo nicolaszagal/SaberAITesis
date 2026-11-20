@@ -510,7 +510,7 @@ cmd_importar() {
     exportar_entorno_fog
     py=$(venv_python)
     "$py" -m alembic upgrade head || fallo "alembic upgrade head falló tras importar"
-    "$py" scripts/registrar_modelo.py "$MODEL_RUN_ID" --solo-si-no-hay-activo || fallo "no se pudo verificar el modelo activo"
+    "$py" scripts/registrar_modelo.py "$MODEL_RUN_ID" --solo-si-no-hay-activo --dataset-dir "$DS/lstm_6class" || fallo "no se pudo verificar el modelo activo"
     final=$(psql_base "$PGBASE" "$SQL_CONTEOS")
     [ "$final" = "$esperado" ] || fallo "conteos finales distintos de los esperados: $final"
     filas=$(psql_base "$PGBASE" "SELECT count(*) FROM sabre.fn_verificar_auditoria()")
