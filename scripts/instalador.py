@@ -12,6 +12,8 @@ Uso desde el shell:
     python3 scripts/instalador.py generar-env [--plantilla .env.example] [--destino .env] [--volumen-existente]
     python3 scripts/instalador.py lista-clips --dataset <dir> [--extra <dir>]
     python3 scripts/instalador.py estado-probar --datos <dir>
+    python3 scripts/instalador.py mensaje-final [--dispositivo cpu] [--remoto]
+    python3 scripts/instalador.py obtener-modelo --dataset <dir> --ruta <ruta> --hash <sha256> --origen-repo <dir> [--url <url>]
 """
 
 from __future__ import annotations
@@ -23,8 +25,10 @@ import json
 import os
 import re
 import secrets
+import shutil
 import string
 import sys
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -159,6 +163,55 @@ def fusionar_sin_pisar(origen: Path, destino: Path) -> dict[str, list[str]]:
         meta.write_bytes(archivo.read_bytes())
         resultado["copiados"].append(relativa.as_posix())
     return resultado
+
+
+def obtener_archivo_modelo(
+    dataset: Path, ruta: str, hash_esperado: str, origen_repo: Path | None = None, url: str | None = None
+) -> str:
+    """Deja en `dataset/ruta` un archivo del paquete de modelo, verificado contra su SHA-256.
+
+    Un archivo que ya está en `dataset` solo se verifica (nunca se sobrescribe). Si falta, se copia de
+    `origen_repo` (la carpeta `dataset/` versionada en el repositorio del backend: trae el checkpoint, las
+    estadísticas y las métricas) y, si tampoco está ahí, se descarga de `url`. En ambos casos el hash se
+    comprueba antes de dejar el archivo en su lugar.
+
+    Args:
+        dataset: carpeta destino (la que Fog lee como `../dataset`).
+        ruta: ruta relativa del archivo dentro de `dataset` (p. ej. `lstm_6class/feature_stats.npz`).
+        hash_esperado: SHA-256 de `scripts/datos/MODELO.sha256`.
+        origen_repo: carpeta de la que copiar si el archivo falta, o None.
+        url: dirección oficial de descarga si no está en `origen_repo`, o None.
+
+    Returns:
+        Cómo quedó el archivo: `"ya estaba"`, `"copiado del repositorio"` o `"descargado"`.
+
+    Raises:
+        FileNotFoundError: si no existe en ningún origen disponible.
+        ValueError: si el hash del archivo (existente, copiado o descargado) no coincide.
+    """
+    destino = dataset / ruta
+    if destino.is_file():
+        if sha256_archivo(destino) != hash_esperado:
+            raise ValueError(f"{destino} existe pero su hash no coincide con MODELO.sha256. No se sobrescribe.")
+        return "ya estaba"
+    candidato = origen_repo / ruta if origen_repo else None
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    temporal = destino.with_name(destino.name + ".parte")
+    try:
+        if candidato is not None and candidato.is_file():
+            shutil.copyfile(candidato, temporal)
+            como = "copiado del repositorio"
+        elif url:
+            urllib.request.urlretrieve(url, temporal)
+            como = "descargado"
+        else:
+            raise FileNotFoundError(f"falta {ruta} en {dataset} y no hay de dónde obtenerlo")
+        if sha256_archivo(temporal) != hash_esperado:
+            raise ValueError(f"el hash de {ruta} ({como}) no coincide con MODELO.sha256; no se instala")
+        temporal.replace(destino)
+        return como
+    finally:
+        temporal.unlink(missing_ok=True)
 
 
 def ruta_de_clip(clip: dict, dataset_dir: Path, extra_dir: Path | None = None) -> Path:
@@ -405,6 +458,28 @@ def evaluar_bloqueo(reporte: dict | None, commit: str, dispositivo: str, remoto:
     return True, "equivalencia aprobada para este commit y dispositivo"
 
 
+def mensaje_final_instalacion(remoto: bool, dispositivo: str) -> str:
+    """Texto con el que termina `instalar_fog.sh instalar`, según si el equipo exige la prueba de equivalencia.
+
+    Args:
+        remoto: True si la instalación es del modo remoto (`--remoto`).
+        dispositivo: `FOG_DEVICE` vigente.
+
+    Returns:
+        El aviso a imprimir: "falta la prueba de equivalencia" solo si `evaluar_bloqueo` la exigiría.
+    """
+    if evaluar_bloqueo(None, "", dispositivo, remoto)[0]:
+        return (
+            "Instalación terminada. En modo local con cpu no se exige la prueba de equivalencia.\n"
+            "Siguiente paso: arrancar Fog con  sh scripts/fog_nativo.sh"
+        )
+    return (
+        "INSTALACIÓN TERMINADA, PERO EL EQUIPO NO ESTÁ LISTO.\n"
+        "Falta la prueba de equivalencia:  sh scripts/instalar_fog.sh probar\n"
+        "Hasta que pase, Fog no arranca en modo remoto (ni con FOG_DEVICE distinto de cpu)."
+    )
+
+
 def _cmd_bloqueo(args) -> int:
     hallado = ultimo_reporte(Path(args.datos))
     permitido, motivo = evaluar_bloqueo(hallado[1] if hallado else None, args.commit, args.dispositivo, args.remoto)
@@ -463,6 +538,15 @@ def main(argv: list[str] | None = None) -> int:
     lc.add_argument("--clips-json", default=str(Path(__file__).with_name("datos") / "clips_referencia.json"))
     e = sub.add_parser("estado-probar")
     e.add_argument("--datos", required=True)
+    mf = sub.add_parser("mensaje-final")
+    mf.add_argument("--dispositivo", default="cpu")
+    mf.add_argument("--remoto", action="store_true")
+    om = sub.add_parser("obtener-modelo")
+    om.add_argument("--dataset", required=True)
+    om.add_argument("--ruta", required=True)
+    om.add_argument("--hash", required=True)
+    om.add_argument("--origen-repo")
+    om.add_argument("--url")
     args = p.parse_args(argv)
 
     if args.cmd == "manifiesto-crear":
@@ -491,6 +575,19 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         for ruta in rutas.values():
             print(ruta)
+        return 0
+    if args.cmd == "mensaje-final":
+        print(mensaje_final_instalacion(args.remoto, args.dispositivo))
+        return 0
+    if args.cmd == "obtener-modelo":
+        try:
+            como = obtener_archivo_modelo(
+                Path(args.dataset), args.ruta, args.hash, Path(args.origen_repo) if args.origen_repo else None, args.url
+            )
+        except (FileNotFoundError, ValueError, OSError) as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        print(como)
         return 0
     if args.cmd == "fusionar":
         r = fusionar_sin_pisar(Path(args.origen), Path(args.destino))

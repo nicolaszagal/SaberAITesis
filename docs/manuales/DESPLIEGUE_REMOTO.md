@@ -1,4 +1,6 @@
-# Despliegue remoto de SABRE.AI (DEPLOY07 y DEPLOY09)
+# Despliegue remoto de SABRE.AI (DEPLOY09)
+
+> **Solo para el autor.** Requiere su tailnet de Tailscale y su cuenta de Railway. Los revisores usan el modo A de [`GUIA_EJECUCION.md`](GUIA_EJECUCION.md).
 
 Estado (13/11/2026): tras el incidente de Railway del 21/10/2026 el despliegue se rehízo con Tailscale (DEPLOY09). En Railway solo hay dos servicios, `frontend` y `cloud`, en el proyecto `sabre-ai-tailscale`; no hay servicio Redis ni URL pública de Fog. Fog, Redis y PostgreSQL corren en el Mac del autor. Al cierre de la verificación los dos servicios de Railway se detuvieron para no gastar el crédito Free. Registro del incidente: `docs/seguridad/INCIDENTE_2026-10-21_railway.md`.
 
@@ -88,24 +90,7 @@ Notas:
 - Las pruebas 4 y 17 bloquean la IP de quien las hace durante 15 min.
 - Datos de la verificación: se creó un evento y un árbitro de prueba en `sabre_expo`; al terminar se recreó la base vacía y se borraron los 5 ficheros de la prueba en `datos/`. El material del piloto de octubre no se tocó.
 
-### Verificación de DEPLOY07 (arquitectura anterior, solo histórico)
-| # | Prueba | Resultado |
-|---|---|---|
-| 1 | `curl -I` al frontend | 200; `strict-transport-security`, `content-security-policy`, `x-content-type-options: nosniff`, `referrer-policy`, `permissions-policy`; `server: railway-hikari` (sin versión de nginx) |
-| 2 | App sin login | **Pendiente de confirmación visual** (el build exige token; no se probó con navegador) |
-| 3 | `/api/eventos` y `/api/revisiones` sin token | 401 (`/api/health` es público por diseño) |
-| 4 | 6 logins fallidos con `X-Forwarded-For` falsificado distinto en cada intento | 401 ×5 y 429 al sexto; el bloqueo es por la IP real |
-| 5 | Túnel `/health` sin `X-Proxy-Token` | 403 |
-| 6 | Preflight CORS desde `https://ejemplo.com` | 400 sin `Access-Control-Allow-Origin` |
-| 7 | `redis-cli` al TCP proxy (`maglev.proxy.rlwy.net:33093`) | sin TLS: conexión cerrada; TLS sin certificado de cliente: error de E/S; certificado sin contraseña: `NOAUTH`; `sabre` con `FLUSHALL`: `NOPERM`. TLS 1.3 de extremo a extremo con verificación del certificado propio: el proxy no termina TLS |
-| 8 | Cloud sin dominio público | `railway domain list --service cloud`: sin dominios |
-| 9 | Flujo completo con 2 clips | Por el frontend público: login, configuración y clip → sugerencia (AttackA_0007: AttackB 0.53; RiposteB_0004: RiposteB 0.44). Desde datos móviles: **pendiente** (lo hace el autor) |
-| 10 | `fn_verificar_auditoria()` en `sabre_expo` | 0 filas (2 revisiones) |
-| 11 | Logs de Fog | `auth.login_ok` / `auth.login_fallo` con IP real y usuario; 0 apariciones de contraseñas, tokens o hashes |
-| 12 | `fog_remoto.sh stop` | la URL del túnel responde 530 |
-| 13 | Latencia de 2 clips (cliente → frontend → túnel → Fog → Redis → Cloud → respuesta) | 6.0 s y 7.9 s (límite D-08: 60 s) |
-
-Imagen del frontend: 93.6 MB; `/usr/share/nginx/html` solo contiene el build (`_expo`, `index.html`…), sin `node_modules`.
+La verificación de DEPLOY07 (arquitectura anterior, con Redis público en Railway) está en [`historico/DEPLOY07_verificacion.md`](historico/DEPLOY07_verificacion.md).
 
 ### Hallazgo durante la verificación
 Detrás de nginx y del túnel, Cloudflare añade la IP de salida de Railway a `X-Forwarded-For`; Fog tomaba la última entrada y todos los clientes compartían un solo bloqueo (cinco fallos de cualquiera bloqueaban al árbitro). Corregido con `PROXY_SALTOS_CONFIANZA=2` (el cliente es la penúltima entrada) y una prueba que falla sin el cambio.
@@ -135,7 +120,7 @@ La base `sabre_expo` se crea vacía con `CREATE DATABASE sabre_expo` si no exist
 Desde la carpeta de cada repo (`backend/` para Cloud y `SaberAISoftware/` para el frontend), con el proyecto `sabre-ai-tailscale` enlazado: `railway up -s cloud --ci` y `railway up -s frontend --ci`. Comprobar en los logs de cada servicio que aparezca **una sola vez** `tailnet lista` y, en Cloud, `Cloud escuchando 'fog:features'`. Si un servicio se reinicia, detenerlo (`railway down -s <servicio> -y`) y revisar el error antes de insistir.
 
 ### 4. Comprobar la cadena completa
-`curl -s https://<dominio del frontend>/api/health` debe responder `{"fog":"ok","redis":"ok","postgres":"ok"}`. Después ingresar desde el navegador con el usuario del árbitro. El dominio actual del frontend es `frontend-production-23fc2e14.up.railway.app` (un dominio nuevo cada vez que se crea el servicio).
+`curl -s https://<dominio del frontend>/api/health` debe responder `{"fog":"ok","redis":"ok","postgres":"ok"}`. Después ingresar desde el navegador con el usuario del árbitro. El dominio del frontend lo asigna Railway y cambia cada vez que se crea el servicio (`<dominio-del-frontend>`).
 
 ### 5. Al terminar
 1. `railway down -s cloud -y` y `railway down -s frontend -y` (despliegues en `REMOVED`).

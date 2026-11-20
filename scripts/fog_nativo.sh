@@ -1,5 +1,5 @@
 #!/bin/sh
-# Modo piloto (DOCK02): arranca Fog nativo (venv de GUIA_EJECUCION.md) contra
+# Modo piloto (DOCK02): arranca Fog nativo (venv de docs/manuales/GUIA_INSTALACION.md) contra
 # PostgreSQL y Redis de Docker publicados en 127.0.0.1 por docker-compose.nativo.yml.
 # Usa las mismas carpetas de datos que el modo Docker (backend/datos).
 #
@@ -36,7 +36,7 @@ ENV_FILE=${ENV_FILE:-.env}
 . scripts/lib_fog_env.sh
 [ -n "$(archivos_env)" ] || { echo "Falta $ENV_FILE (cp .env.example .env) y no hay ${ENV_SECRETO:-.secrets/fog_remoto.env}" >&2; exit 1; }
 VENV_DIR=${VENV_DIR:-.venv}
-[ -f "$VENV_DIR/bin/activate" ] || { echo "Falta $VENV_DIR (ver GUIA_EJECUCION.md, sección 2)" >&2; exit 1; }
+[ -f "$VENV_DIR/bin/activate" ] || { echo "Falta $VENV_DIR (corra: sh scripts/instalar_fog.sh instalar; ver docs/manuales/GUIA_INSTALACION.md)" >&2; exit 1; }
 cargar_archivos_env
 aplicar_modo
 . "$VENV_DIR/bin/activate"
@@ -79,6 +79,6 @@ done
 ENV_FILE="$ENV_FILE" sh scripts/recordar_respaldo.sh || true
 
 alembic upgrade head
-python scripts/registrar_modelo.py "$MODEL_RUN_ID" --solo-si-no-hay-activo
+python scripts/registrar_modelo.py "$MODEL_RUN_ID" --solo-si-no-hay-activo --dataset-dir "$DS/lstm_6class"
 
 exec uvicorn fog.main:app --host "$BIND_HOST" --port "${FOG_HOST_PORT:-8001}"

@@ -1,5 +1,5 @@
 # Verificado por instalación + import-graph + pytest en este entorno
-# (ver GUIA_EJECUCION.md). torch y ultralytics no se pinnean acá: torch
+# (ver docs/manuales/GUIA_INSTALACION.md). torch y ultralytics no se pinnean acá: torch
 # depende de la plataforma (CPU/CUDA/MPS) — instalar siguiendo
 # https://pytorch.org/get-started/locally/ antes de este archivo;
 # ultralytics se deja sin fijar para no acoplar este archivo a una

@@ -362,3 +362,70 @@ def test_verificar_clave_postgres_acepta_la_de_secrets_y_rechaza_sabre_local(tmp
         assert mal.returncode == 1 and "RECHAZADA" in mal.stdout
     finally:
         subprocess.run(["docker", "stop", nombre], capture_output=True)
+
+
+# --- obtener_archivo_modelo (DOC01: instalación en un clon sin ../dataset) ------
+
+
+def _sha(contenido: bytes) -> str:
+    import hashlib
+
+    return hashlib.sha256(contenido).hexdigest()
+
+
+def test_obtener_modelo_copia_del_repositorio_y_verifica(tmp_path):
+    repo = tmp_path / "repo_dataset"
+    (repo / "lstm_6class").mkdir(parents=True)
+    (repo / "lstm_6class" / "stats.npz").write_bytes(b"estadisticas")
+    destino = tmp_path / "dataset"
+    como = instalador.obtener_archivo_modelo(destino, "lstm_6class/stats.npz", _sha(b"estadisticas"), repo)
+    assert como == "copiado del repositorio"
+    assert (destino / "lstm_6class" / "stats.npz").read_bytes() == b"estadisticas"
+
+
+def test_obtener_modelo_descarga_si_no_esta_en_el_repositorio(tmp_path):
+    fuente = tmp_path / "pesos.pt"
+    fuente.write_bytes(b"pesos")
+    destino = tmp_path / "dataset"
+    como = instalador.obtener_archivo_modelo(destino, "yolov8x-pose.pt", _sha(b"pesos"), None, fuente.as_uri())
+    assert como == "descargado"
+    assert (destino / "yolov8x-pose.pt").read_bytes() == b"pesos"
+
+
+def test_obtener_modelo_hash_distinto_no_deja_el_archivo(tmp_path):
+    fuente = tmp_path / "pesos.pt"
+    fuente.write_bytes(b"otros pesos")
+    destino = tmp_path / "dataset"
+    with pytest.raises(ValueError, match="no coincide"):
+        instalador.obtener_archivo_modelo(destino, "yolov8x-pose.pt", _sha(b"pesos"), None, fuente.as_uri())
+    assert not (destino / "yolov8x-pose.pt").exists()
+    assert not (destino / "yolov8x-pose.pt.parte").exists()
+
+
+def test_obtener_modelo_existente_no_se_sobrescribe(tmp_path):
+    destino = tmp_path / "dataset"
+    destino.mkdir()
+    (destino / "a.bin").write_bytes(b"distinto")
+    with pytest.raises(ValueError, match="No se sobrescribe"):
+        instalador.obtener_archivo_modelo(destino, "a.bin", _sha(b"esperado"), None, None)
+    assert (destino / "a.bin").read_bytes() == b"distinto"
+
+
+def test_obtener_modelo_sin_origen_falla(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        instalador.obtener_archivo_modelo(tmp_path / "dataset", "x.bin", _sha(b"x"), None, None)
+
+
+# --- mensaje final de `instalar` (DOC01) ---------------------------------------
+
+
+def test_mensaje_final_local_con_cpu_no_exige_probar():
+    texto = instalador.mensaje_final_instalacion(remoto=False, dispositivo="cpu")
+    assert "NO ESTÁ LISTO" not in texto
+    assert "fog_nativo.sh" in texto
+
+
+@pytest.mark.parametrize("remoto,dispositivo", [(True, "cpu"), (False, "mps")])
+def test_mensaje_final_exige_probar_donde_el_bloqueo_la_exige(remoto, dispositivo):
+    assert "probar" in instalador.mensaje_final_instalacion(remoto, dispositivo)
+    assert instalador.evaluar_bloqueo(None, "", dispositivo, remoto)[0] is False

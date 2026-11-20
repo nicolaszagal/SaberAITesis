@@ -1,400 +1,206 @@
 # Guía de instalación de SABRE.AI
 
-Destinatario: la persona que instala y pone en marcha el sistema. Versión cubierta: Validación 1 (carga de clip y tocado simulado). El uso de la interfaz está en `MANUAL_USUARIO.md`.
+Para una persona con conocimientos técnicos que instala el sistema por primera vez, sin ayuda del autor y sin acceso a sus secretos. Después de instalar, siga [`GUIA_EJECUCION.md`](GUIA_EJECUCION.md) (modo A). El uso de la interfaz está en [`MANUAL_USUARIO.md`](MANUAL_USUARIO.md) y lo que el sistema **no** hace, en [`LIMITACIONES.md`](LIMITACIONES.md).
 
-Método: Docker Compose. No requiere Python, Node, entorno virtual, Alembic ni variables exportadas a mano. Los comandos son para una terminal de macOS o Linux.
+**Cómo se validó esta guía.** Se siguió en un clon limpio de `main` en una carpeta nueva (un `.venv` nuevo y una base nueva, `sabre_revision`), copiando cada comando del documento. Las salidas "Debe verse" se copiaron de esa ejecución. La tabla de defectos hallados está en la sección 8. Si un paso no se comporta como aquí, es un defecto de la guía: repórtelo.
 
-Validación de esta guía: se siguió en un clon limpio de ambos repositorios desde GitHub, con `docker compose build --no-cache` y sin volúmenes, sobre macOS 27.0 (arm64) con Colima (2 CPU y 4 GiB).
+## 1. Qué se instala
 
-## 1. Requisitos
-
-### Software
-
-| Elemento | Versión verificada |
-|---|---|
-| Docker Engine (servidor) | 29.5.2 |
-| Docker CLI | 28.2.2 |
-| Docker Compose | 5.5.1 |
-| Colima (solo macOS sin Docker Desktop) | 0.10.3 |
-| Git | Cualquier versión reciente |
-| Navegador | Google Chrome |
-
-Las versiones de Python, PostgreSQL, Redis, Node y nginx van dentro de las imágenes y no se instalan en el equipo.
-
-### Recursos
-
-| Recurso | Mínimo verificado | Medición |
+| Pieza | Dónde corre | Cómo se instala |
 |---|---|---|
-| CPU | 2 | La prueba de humo y el flujo completo de revisión pasaron con 2 CPU. |
-| Memoria para Docker | 4 GiB | Con 4 GiB el flujo completo, la exportación y la prueba de humo pasaron. Con 2 GiB la prueba de humo pasó, pero una exportación de evidencia terminó con código 137 (falta de memoria). |
-| Disco libre | No medido como mínimo | Imágenes: Fog 3 GB, Cloud 1.43 GB, frontend 94 MB, PostgreSQL 411 MB, Redis 59 MB (unos 5 GB), más la caché de construcción. Con 7 GB libres en el equipo el build se completó. Con menos de 1 GB libres falló (sección 7). |
+| Fog (API, pose YOLOv8-pose, 192 features) | **Nativo** en su equipo (Python 3.14 + `.venv`) | `scripts/instalar_fog.sh instalar` |
+| Cloud (clasificador BiLSTM) | Docker | `docker compose` construye la imagen |
+| PostgreSQL 16 y Redis 7 | Docker | `docker compose` |
+| Frontend (interfaz web) | Docker (nginx, build estático) | `docker compose` construye la imagen |
 
-Memoria de cada contenedor (`docker stats`, equipo con 4 CPU y 8 GiB en Colima):
+Fog corre fuera de Docker porque en CPU es más rápido y es lo que se usó en las pruebas de rendimiento (ver [`LIMITACIONES.md`](LIMITACIONES.md), sección 2). Esta guía cubre la instalación local para revisar el sistema. El despliegue remoto es solo del autor ([`DESPLIEGUE_REMOTO.md`](DESPLIEGUE_REMOTO.md)).
 
-| Servicio | En reposo | Durante el análisis de clips (pico) |
+## 2. Requisitos verificados
+
+| Elemento | Verificado en esta sesión | No verificado |
 |---|---|---|
-| Fog | 647 MiB | 669 MiB, 125 % de CPU |
-| Cloud | 274 MiB | 162 MiB, 52 % de CPU |
-| PostgreSQL | 35 MiB | 32 MiB |
-| Redis | 3.5 MiB | 4 MiB |
-| Frontend | 7 MiB | 7 MiB |
+| Sistema operativo | **macOS 27.0.1 (arm64)**, Apple M4 | **Linux x86_64**: existe `requirements-fog.linux-x86_64.lock`, pero se generó a partir de metadatos de PyPI y **no es un `pip freeze` de un Linux real** (lo dice su cabecera). No se instaló en Linux. Windows queda fuera. |
+| Memoria | 16 GB en el equipo; Colima con **2 CPU y 2 GiB**. Con esos 2 GiB corrieron Cloud, PostgreSQL, Redis y el frontend, la suite de pruebas y el flujo completo | Mínimo del equipo: no medido. Fog nativo llegó a 883 MiB con una pista y 1577 MiB con cuatro (`docs/evidencia/estres/ESTRES01_2026-11-19.md`, otro equipo: M4 de 16 GB). Se recomienda Colima con 4 GiB. |
+| Disco | 28 GB libres al empezar. Ocupó: `.venv` 1,2 GB, imagen de Cloud 1,54 GB, imagen de PostgreSQL 411 MB, imagen del frontend 94 MB, Redis 59 MB, `yolov8x-pose.pt` 133 MB (unos 3,5 GB en total, sin la caché de construcción) | Mínimo del instalador: 7 GB libres (`ESPACIO_MIN_GB`). No hay otro mínimo medido. |
+| Python | **3.14.5** (Homebrew). El lock se generó con 3.14.5 y el instalador exige la misma versión menor (3.14) | Otras versiones menores: rechazadas por `verificar`. |
+| Docker | Docker Engine 29.5.2 (servidor), CLI 28.2.2, Colima 0.10.3, `docker-compose` 5.5.1 (binario suelto, sin el plugin `docker compose`). Los scripts usan `docker compose` o `docker-compose`, el que exista | Docker Desktop: no probado. |
+| Git | 2.54.0 | |
+| Navegador | Google Chrome (el que se usó para las capturas y el que reproduce H.264) | Otros: no probados. |
+| Node.js | **No hace falta** para el modo A: el frontend se construye dentro de Docker. Solo se necesita para desarrollo (v22.22.0, npm 11.17.0; ver [`GUIA_DESARROLLO.md`](GUIA_DESARROLLO.md)) | |
 
-Fog crece hasta unos 850 MiB tras varios análisis. `exportar_evidencia.py` y los demás scripts de `docker compose exec fog` inician otro proceso de Python que importa torch y llega a 447 MiB: por eso 2 GiB no bastan.
+Conexión a internet: la instalación descarga las dependencias (torch incluido), las imágenes de Docker y los pesos de YOLO. No se midió el volumen descargado; el espacio que ocupa todo es el de la fila de disco de arriba.
 
-Con Colima, cree la máquina virtual con los recursos mínimos antes de instalar:
+### Instalar los requisitos en macOS (Homebrew)
 
 ```bash
+brew install python@3.14 git colima docker docker-compose
 colima start --cpu 2 --memory 4
 ```
 
-Si la memoria es insuficiente, Fog se queda sin memoria al cargar la pose YOLOv8x (sección 7).
+Debe verse: `colima is running using macOS Virtualization.Framework`. Compruebe que Docker responde con `docker info` (sin error). En Linux instale Python 3.14, Docker Engine con el plugin Compose y Git con el gestor de paquetes (sin verificar, ver arriba).
 
-Tiempos medidos:
+Con Colima, ponga la carpeta del proyecto dentro de su carpeta de usuario: Colima solo comparte esa ruta con Docker.
 
-| Paso | Tiempo |
-|---|---|
-| `docker compose build --no-cache` (las tres imágenes, con descargas) | 82 s y 85 s en dos corridas |
-| `docker compose up -d --build` con las imágenes construidas, hasta Fog `healthy` | 17 s |
-| Análisis de un clip en CPU (`ms_clip` de `prueba_humo.py`) | 23 a 47 s, con 2 y con 4 CPU |
+## 3. Obtener el código
 
-Cloud responde en unos 5 ms por clip. El tiempo de análisis lo domina la pose en Fog.
-
-### Carpetas
-
-`backend` y `SaberAISoftware` deben ser carpetas hermanas. El compose construye el frontend desde `../SaberAISoftware`.
-
-Con Colima, coloque las carpetas dentro de su carpeta de usuario (`/Users/<usuario>`): Colima solo comparte esa ruta con Docker. En otra ubicación, la evidencia queda dentro de la máquina virtual y no aparece en `backend/datos`.
-
-## 2. Instalación
-
-1. Cree una carpeta y clone los dos repositorios. El frontend debe llamarse `SaberAISoftware`.
+Las tres carpetas `backend`, `SaberAISoftware` y `dataset` deben quedar **juntas** (hermanas). `dataset` la crea el instalador en el paso 4. Elija una carpeta de trabajo (aquí `sabre`):
 
 ```bash
 mkdir sabre && cd sabre
 git clone https://github.com/nicolaszagal/SaberAITesis.git backend
 git clone https://github.com/nicolaszagal/SaberAI-Frontend.git SaberAISoftware
-```
-
-Resultado esperado: dos carpetas, `backend` y `SaberAISoftware`, ambas en la rama `main`.
-
-2. Cree el archivo de configuración.
-
-```bash
 cd backend
-cp .env.example .env
+git branch --show-current
 ```
 
-Resultado esperado: existe `backend/.env` con `POSTGRES_PASSWORD`, `FRONTEND_HOST_PORT` y `FOG_HOST_PORT`. Cambie `POSTGRES_PASSWORD` si el equipo es compartido (solo letras y números). Cambie los puertos si 8081 o 8001 están ocupados.
+Debe verse: `main` (la rama vigente de ambos repositorios). Si los repositorios son privados, necesita acceso que le dé el autor.
 
-3. Construya y levante el sistema.
+## 4. Instalación
 
-```bash
-docker compose up -d --build
-```
-
-Resultado esperado: el comando termina sin errores y crea los contenedores `sabre-postgres-1`, `sabre-redis-1`, `sabre-cloud-1`, `sabre-fog-1` y `sabre-frontend-1`. La primera construcción descarga las imágenes base, torch y los pesos de YOLOv8x, y verifica su SHA-256 (`yolov8x-pose.pt verificado ...`).
-
-4. Espere a que los servicios estén sanos.
-
-```bash
-docker compose ps
-```
-
-Resultado esperado: `postgres`, `redis`, `fog` y `frontend` en `healthy`, y `cloud` en `Up`. Fog puede figurar como `health: starting` durante los primeros 20 segundos. Al arrancar, Fog aplica las migraciones y registra el modelo desplegado solo si no hay uno activo. No hay pasos manuales.
-
-Cada servicio se puede levantar por separado con `docker compose up -d <servicio>` (`postgres`, `redis`, `cloud`, `fog`, `frontend`). Sus dependencias se levantan con él.
-
-## 3. Verificación
-
-1. Estado del sistema.
-
-```bash
-curl -s -w " %{http_code}\n" http://localhost:8001/health
-```
-
-Resultado esperado: `{"fog":"ok","redis":"ok","postgres":"ok"} 200`.
-
-2. Modelo activo.
-
-```bash
-curl -s http://localhost:8001/modelo/activo
-```
-
-Resultado esperado: `{"nombre":"lstm6class-20260928_141021","num_clases":6,"f1_macro_test":0.5249,"kappa_piloto":null}`.
-
-3. Interfaz. Abra `http://localhost:8081` en el navegador.
-
-Resultado esperado: aparece el encabezado SABRE.AI con la pantalla "Revisión VAR" (la interfaz abre directo en ella, sin pantalla de inicio), el texto "Modelo activo:" con el nombre del modelo y el indicador "Conectado". Si cambió los puertos en `.env`, use `http://localhost:<FRONTEND_HOST_PORT>`.
-
-4. Cloud listo.
-
-```bash
-docker compose logs cloud
-```
-
-Resultado esperado: las líneas `modelo precalentado en N ms` y `Cloud escuchando 'fog:features' como 'cloud-worker-1'...`.
-
-Solo se publican el frontend (8081) y Fog (8001). PostgreSQL y Redis no se publican en el equipo. Los puertos se cambian en `.env`. Si cambia `FOG_HOST_PORT`, reconstruya el frontend (`docker compose up -d --build frontend`), porque la dirección de Fog se incrusta en el build.
-
-## 4. Preparar sesión y exportar evidencia
-
-### Datos precargados: eventos, árbitro y operador
-
-No hay que registrar nada a mano: la migración `0005` de la base (`alembic upgrade head`, que el arranque de Fog ejecuta solo) precarga dos eventos y dos usuarios. Inserta solo los que no existen por nombre y no modifica los existentes, de modo que también completa una base creada con una versión anterior.
-
-| Dato | Nombre | Tipo o rol | Uso |
-|---|---|---|---|
-| Evento | "Evento de prueba" | `formativo` | Ensayos. |
-| Evento | "Validación 1" | `piloto` | Sesión real. |
-| Usuario | "Árbitro de prueba" | `arbitro` | Árbitro del combate. |
-| Usuario | "Operador de prueba" | `operador` | Operador técnico. |
-
-La fecha de ambos eventos es la del día en que corrió la migración: no hay una fecha documentada para la sesión. Los ensayos y la sesión real usan eventos distintos para que no se mezclen en la evidencia y en el resumen de la sesión.
-
-En la interfaz, "Combate" abre "Configurar combate" con el evento "Validación 1", el árbitro único y la pista "P1" ya seleccionados. Los alias de los tiradores son opcionales ("Tirador A" y "Tirador B" por defecto) y el brazo armado de ambos es obligatorio. Para ensayar, seleccione "Evento de prueba". Si la lista aparece vacía, pulse "Recargar".
-
-El formulario no pide datos de consentimiento. El sistema guarda a los tiradores con `es_menor = true` y sin consentimiento registrado, un valor conservador: el consentimiento informado se gestiona en papel, fuera del sistema (RNF-16).
-
-Uso técnico (opcional): `scripts/crear_sesion_validacion.py` crea otro evento `piloto` u otros usuarios. Es idempotente por nombre.
-
-```bash
-docker compose exec fog python scripts/crear_sesion_validacion.py --evento "<nombre>" \
-    --fecha AAAA-MM-DD --arbitro "<nombre>" --operador "<nombre>"
-```
-
-### Dónde queda la evidencia
-
-| Carpeta del equipo | Contenido |
-|---|---|
-| `backend/datos/storage/clips/` y `keypoints/` | Clips y keypoints por SHA-256. |
-| `backend/datos/evidencia/<evento_id>.jsonl` | Una línea por revisión cerrada. Solo adición. |
-| `backend/datos/evidencia/<evento_id>/` | Exportación: `resumen.json`, `revisiones.csv`, `resumen.md`. |
-
-Las carpetas se abren desde el Finder. La evidencia no incluye nombres de atletas: usa alias.
-
-### Exportar la evidencia
-
-```bash
-docker compose exec fog python scripts/exportar_evidencia.py --evento <evento_id>
-```
-
-Resultado esperado: `Evidencia exportada en /data/evidencia/<evento_id>` y código 0. Los tres archivos aparecen en `backend/datos/evidencia/<evento_id>/`. El comando se puede repetir: sobrescribe los archivos. La tabla de M01 del resumen indica "no disponible" porque el log de experimentos no va dentro de la imagen.
-
-## 5. Detener, actualizar, respaldar y restaurar
-
-### Ver logs
-
-```bash
-docker compose logs -f fog
-```
-
-Use `cloud`, `postgres`, `redis` o `frontend` en lugar de `fog` para otro servicio. Salga con Ctrl+C.
-
-### Detener e iniciar
-
-```bash
-docker compose down
-docker compose up -d
-```
-
-Resultado esperado: `down` elimina los contenedores y conserva los datos (volumen de PostgreSQL y carpeta `datos/`). Nunca use `down -v`: borra la base (ver "Qué borra la base" más abajo).
-
-### Actualizar
-
-```bash
-git pull
-git -C ../SaberAISoftware pull
-docker compose up -d --build
-```
-
-Resultado esperado: se reconstruyen solo las imágenes que cambiaron y Fog aplica las migraciones pendientes al arrancar.
-
-### Qué borra la base
-
-La base vive en un volumen de Docker (`sabre_pgdata`). Estos comandos la **borran** sin pedir confirmación y, sin respaldo, la evidencia de la sesión se pierde (así se perdió la base de la Validación 1, DEF-31):
-
-- `docker compose down -v` (la opción `-v` elimina los volúmenes).
-- `colima delete` o recrear la máquina de Colima.
-- Cambiar de motor de Docker (Colima, Docker Desktop, OrbStack): cada uno tiene sus propios volúmenes.
-- `docker volume rm sabre_pgdata` o `docker system prune --volumes`.
-
-`docker compose down` sin `-v` conserva la base. La carpeta `datos/` (clips, `.npz`, JSONL) vive en el disco del equipo, pero sin las filas de la base no se puede reconstruir qué revisión es cuál.
-
-### Respaldar una sesión
-
-Defina `RESPALDO_DIR`, una carpeta **fuera del repo y fuera de Docker** (por ejemplo un disco externo). No tiene valor por defecto: sin ella el script se niega a correr. Se define en el entorno o con una línea `RESPALDO_DIR=...` en `.env`.
-
-```bash
-export RESPALDO_DIR="$HOME/Documents/Respaldo_Validación/Tesis"
-sh scripts/respaldar_sesion.sh --evento <id del evento>
-```
-
-Con la base del despliegue remoto agregue `POSTGRES_DB_NAME=sabre_expo`. El script crea `RESPALDO_DIR/R<NNN>-<fecha UTC>/` (por ejemplo `R001-20261102T194746Z`; NNN es el número correlativo del respaldo, que no se reutiliza ni siquiera si un respaldo queda `*.FALLIDO`) con el `.dump` (`sabre_<evento>_<fecha>.dump`, formato custom de `pg_dump`), el `.tgz` de `datos/storage` y `datos/evidencia`, y `MANIFEST.sha256`. Después **verifica** el respaldo: comprueba los hashes, lee el `.tgz`, restaura el dump en una base temporal (que elimina), compara los conteos de revisiones, clasificaciones, veredictos y auditoría con los de la base, y exige que `fn_verificar_auditoria()` devuelva 0 filas. Resultado esperado: termina con `Respaldo verificado: <carpeta>`. Si algo no cuadra sale con error y renombra la carpeta a `*.FALLIDO`: ese respaldo no sirve; repita el comando (con Fog en reposo, porque falla si la base cambia durante el respaldo).
-
-Cuándo respaldar:
-
-- Al cerrar cada sesión: `python scripts/exportar_evidencia.py --evento <id>` exporta la evidencia y llama al respaldo. Sin `RESPALDO_DIR` avisa en grande y sale con código 2.
-- `scripts/fog_nativo.sh` (al arrancar) y `scripts/fog_remoto.sh stop` avisan si hay revisiones nuevas desde el último respaldo verificado. Es solo un aviso: no respaldan por usted.
-
-Copie además la carpeta de `RESPALDO_DIR` a un segundo disco o a la nube antes de apagar el equipo.
-
-### Restaurar
-
-Restaure en una base vacía, sin ejecutar antes migraciones: el dump ya trae el esquema y la tabla `alembic_version`. Primero compruebe el respaldo:
-
-```bash
-sh scripts/respaldar_sesion.sh --verificar "$RESPALDO_DIR/R<NNN>-<fecha>"
-```
-
-Luego, la base y los archivos:
-
-```bash
-docker compose exec -T postgres createdb -U sabre sabre_restaurada
-docker compose exec -T postgres pg_restore --exit-on-error -U sabre -d sabre_restaurada \
-    < "$RESPALDO_DIR/R<NNN>-<fecha>/sabre_<evento>_<fecha>.dump"
-docker compose exec -T postgres psql -U sabre -d sabre_restaurada \
-    -c "select count(*) from sabre.veredicto" -c "select * from sabre.fn_verificar_auditoria()"
-tar -xzf "$RESPALDO_DIR/R<NNN>-<fecha>/sabre_<evento>_<fecha>.tgz" -C datos
-```
-
-Resultado esperado: la cuenta de veredictos coincide con la de la base original y `fn_verificar_auditoria()` devuelve 0 filas. Para usar la base restaurada, apunte Fog a ella con `POSTGRES_DB_NAME=sabre_restaurada` (modo piloto) o renómbrela a `sabre` con Fog detenido.
-
-## 6. Prueba de humo
-
-Recorre un clip por clase hasta el veredicto. Usa el proyecto `sabre-humo`, con base, Redis y carpeta de datos propios (`datos-humo`) y los puertos 8003 y 8083, sin tocar la validación. Monta `../dataset` en solo lectura: requiere la carpeta `dataset` hermana de `backend`, con `dataset trimmed/test_trimmed/` y `labels/`.
-
-```bash
-sh scripts/prueba_humo_docker.sh
-```
-
-Resultado esperado: seis líneas JSON, una por clase, cada una con `"disponible": true` y `"veredicto_http": 200`, y código de salida 0 (`echo $?`). El script sale con código 1 si algún veredicto no se registra. Dura unos cuatro minutos. Los resultados quedan en `backend/datos-humo/evidencia/humo.json`.
-
-Para retirar la prueba, incluidos sus datos:
-
-```bash
-docker compose -p sabre-humo --env-file humo.env -f docker-compose.yml -f docker-compose.humo.yml down -v
-rm -rf datos-humo
-```
-
-## 7. Solución de problemas
-
-| Síntoma | Causa | Acción |
-|---|---|---|
-| `required variable POSTGRES_PASSWORD is missing a value: copiar .env.example a .env` | Falta `backend/.env`. | Ejecute `cp .env.example .env` (sección 2, paso 2). |
-| `unable to prepare context: path "<ruta>/SaberAISoftware" not found` | El frontend no es carpeta hermana de `backend`, o tiene otro nombre. | Clone el frontend como `SaberAISoftware` junto a `backend` (sección 2, paso 1). |
-| `Bind for 0.0.0.0:8081 failed: port is already allocated` (o 8001) | Otro proceso usa el puerto. | Cambie `FRONTEND_HOST_PORT` o `FOG_HOST_PORT` en `.env` y repita `docker compose up -d --build`. |
-| Fog se reinicia sin llegar a `healthy`; `docker compose logs fog` termina en `Cargando modelo YOLO y extractor de features` | Falta de memoria (`OOMKilled`). | Confirme con `docker inspect -f '{{.RestartCount}}' sabre-fog-1`: un número mayor que 0 indica reinicios (`OOMKilled` solo es `true` justo después del corte). Con Colima: `colima stop` y `colima start --cpu 2 --memory 4`. |
-| Un comando de `docker compose exec fog python scripts/...` termina con código 137 | Falta de memoria: el script carga torch (447 MiB) sobre Fog. | Suba la memoria a 4 GiB (`colima stop` y `colima start --cpu 2 --memory 4`) y repita. |
-| `backend/datos` queda vacía aunque hay revisiones | Con Colima, las carpetas están fuera de `/Users/<usuario>` y Docker escribe dentro de la máquina virtual. | Mueva `backend` y `SaberAISoftware` a su carpeta de usuario y repita. |
-| El build de Fog falla con `SHA-256 de yolov8x-pose.pt no coincide` | El archivo descargado no es el usado en el entrenamiento. | No continúe. Avise al equipo de desarrollo. |
-| El build falla con `input/output error` o `no space left on device` | Disco del equipo lleno. | Libere espacio en el equipo y repita. Con Colima, reinicie con `colima stop` y `colima start`. |
-| `Cannot connect to the Docker daemon` | Docker o Colima no están en marcha. | Ejecute `colima start` (o abra Docker Desktop). |
-| La interfaz muestra "Sin conexión" | Fog no está sano, o `FOG_HOST_PORT` cambió sin reconstruir el frontend. | Revise `docker compose ps`. Si cambió el puerto, ejecute `docker compose up -d --build frontend`. |
-| La interfaz muestra "No hay eventos registrados" o "No hay árbitros registrados" | La migración `0005` no se aplicó (Fog no reinició tras una actualización). | Ejecute `docker compose restart fog`: el arranque aplica las migraciones y precarga los datos (sección 4). Pulse "Recargar". |
-| La carga de un clip responde 503 | No hay una versión de modelo activa. | Ejecute `docker compose restart fog`: el arranque registra el modelo si falta. |
-| `/health` responde 503 | Un componente está en `"error"`. | Lea el cuerpo: `redis` o `postgres` indican cuál. Revise `docker compose ps` y los logs de ese servicio. |
-| Aviso `objc: Class AVFFrameReceiver is implemented in both` en los logs de Fog | Bibliotecas duplicadas en la imagen. | Es un aviso. No impide el funcionamiento. |
-
-## 8. Modo piloto: Fog nativo
-
-Para un equipo con Apple Silicon donde el análisis en Docker es lento. Fog corre fuera de Docker, con el entorno virtual de `GUIA_EJECUCION.md` (sección 2); PostgreSQL, Redis, Cloud y el frontend siguen en Docker. Usa las mismas carpetas `backend/datos` que el modo Docker, pero no se ejecuta a la vez que el Fog de Docker (ambos usan el puerto 8001). El flujo de las secciones 2 a 7 no cambia.
-
-1. Levante todo menos Fog. PostgreSQL y Redis quedan publicados solo en `127.0.0.1` (puertos 5436 y 6380; cámbielos con `POSTGRES_HOST_PORT` y `REDIS_HOST_PORT` en `.env`).
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.nativo.yml up -d
-```
-
-2. Arranque Fog nativo. El script fija las variables, aplica `alembic upgrade head`, registra el modelo si no hay uno activo y arranca `uvicorn` en el puerto 8001. Se detiene con Ctrl+C.
-
-```bash
-sh scripts/fog_nativo.sh
-```
-
-Resultado esperado: `Application startup complete` y `curl -s http://localhost:8001/health` responde `{"fog":"ok","redis":"ok","postgres":"ok"}`.
-
-Medición (`prueba_humo.py`, 6 clips, tiempo `ms_clip` de la carga del clip, cliente en el equipo; mediana y p95 por rango superior de 6 valores):
-
-| Modo | Mediana | p95 |
-|---|---|---|
-| Docker, Colima con 2 CPU y 4 GiB | 43.9 s | 48.9 s |
-| Docker, Colima con 4 CPU y 4 GiB | 42.2 s | 45.7 s |
-| Fog nativo (Python 3.14) | 5.4 s | 5.9 s |
-
-Las seis sugerencias coincidieron entre Docker y nativo. En modo nativo la pose usa la CPU: el código no fija `device`, el log de Fog no muestra el dispositivo (`ultralytics` queda en WARNING) y una carga del mismo modelo con la llamada por defecto reporta `cpu`, aunque MPS está disponible en el equipo. Usar MPS no se ha probado. Para volver al flujo principal, detenga `fog_nativo.sh` y ejecute `docker compose up -d`.
-
-## 9. Instalar o migrar Fog a otro equipo
-
-Fog corre local (DEPLOY09). Esta sección lo instala en otro equipo y migra sus datos sin perder funcionalidad ni evidencia. Todo pasa por `scripts/instalar_fog.sh`, que **no borra datos** (sin `down -v`, `volume rm` ni `DROP DATABASE` sobre bases con datos) y **no instala nada del sistema**.
-
-**Plataformas**: macOS arm64 (el Mac de la Validación 1) y Linux x86_64. Windows queda fuera. PostgreSQL y Redis siguen en Docker (Colima en macOS, Docker Engine en Linux); Fog corre nativo.
-
-**Por qué hay una prueba de equivalencia.** Una versión distinta de `ultralytics` o del tracker cambia las features (`contexto_sabre.md` §8), y un equipo que "arranca" no prueba que clasifique igual. Por eso `probar` corre 10 clips fijos y exige la misma clase que el Mac de referencia. Y el volumen de PostgreSQL vive dentro de la máquina virtual del motor de Docker: la base se mueve con `exportar` e `importar`, no copiando volúmenes (DEF-31).
-
-### Equipo de origen: exportar
-
-1. Detenga Fog (el respaldo debe hacerse con la base en reposo) y deje PostgreSQL arriba.
-2. Elija el evento a respaldar (el comando lista los eventos si falta `--evento`):
-
-```bash
-sh scripts/instalar_fog.sh exportar --destino /Volumes/Respaldo/fog_migracion --evento <uuid>
-```
-
-El destino debe estar vacío y fuera del repo. Genera `respaldo/` (el respaldo verificado de FIX03), `modelo/`, `lock/`, `referencia/clips/`, `CONTEOS.txt`, `MANIFEST.sha256` y `LEEME_MIGRACION.md` (con el commit de `main` que hay que clonar en el destino).
-
-3. **Mueva a mano las claves.** No entran al paquete: `.env`, `.secrets/` y el certificado y la clave de cliente de Redis del nodo Fog (`REDIS_TLS_CERT`, `REDIS_TLS_KEY`, SEC01). Cópielos por un canal propio (llave USB cifrada o `scp` entre equipos suyos), con permisos 600. El `.env` del destino lo genera `instalar`: no copie el del origen.
-
-### Equipo de destino: instalar, importar, probar
-
-1. Clone `SaberAITesis` y `SaberAI-Frontend` como carpetas hermanas y haga `git checkout <commit de main del LEEME>`.
-2. Compruebe los requisitos (no cambia nada; con `--remoto` también revisa `cloudflared` o `tailscale`):
+### 4.1 Comprobar los requisitos (no cambia nada)
 
 ```bash
 sh scripts/instalar_fog.sh verificar
 ```
 
-Lista lo que falta y cómo instalarlo. Si no hay ni `docker compose` ni `docker-compose`: en macOS con Colima, `brew install docker-compose` (queda el binario `docker-compose`; para usarlo como plugin hay que registrar `/opt/homebrew/lib/docker/cli-plugins` en `cliPluginsExtraDirs` de `~/.docker/config.json`); en Linux, el plugin oficial (<https://docs.docker.com/compose/install/linux/>). Todos los scripts usan la misma función (`scripts/lib_compose.sh`) y funcionan con cualquiera de los dos.
+Debe verse una línea `✓` por requisito y, al final, `Requisitos cumplidos.` (la línea `! Modo remoto no verificado` es normal). Cada `✗` trae el comando para arreglarlo. Si un puerto está ocupado, cambie `FOG_HOST_PORT`, `POSTGRES_HOST_PORT` o `REDIS_HOST_PORT` (por defecto 8001, 5436 y 6380) en el entorno antes de seguir.
 
-3. Instale:
-
-```bash
-sh scripts/instalar_fog.sh instalar --paquete /Volumes/Respaldo/fog_migracion
-```
-
-Crea `.venv` con `requirements-fog.lock` (macOS) o `requirements-fog.linux-x86_64.lock` (Linux), copia el modelo y lo verifica contra `scripts/datos/MODELO.sha256` (si un hash no coincide, aborta), genera `.env` (los valores aleatorios se generan; pide por `getpass` la contraseña maestra), levanta PostgreSQL y Redis, aplica las migraciones y registra el modelo activo. Si el volumen `sabre_pgdata` ya existe con datos no lo toca, y pide la contraseña de esa base en vez de generar otra. Termina avisando que **el equipo no está listo hasta que `probar` pase**.
-
-4. Importe (restaura en una base sin revisiones; se niega si la base de destino ya tiene alguna):
+### 4.2 Instalar
 
 ```bash
-sh scripts/instalar_fog.sh importar --desde /Volumes/Respaldo/fog_migracion
+sh scripts/instalar_fog.sh instalar
 ```
 
-Verifica el manifiesto antes de tocar nada, restaura en una base temporal, compara los conteos con `CONTEOS.txt` y exige que `fn_verificar_auditoria()` dé 0 filas; solo entonces la renombra a la base definitiva (la anterior, vacía, queda como `<base>_previa_<n>`; bórrela usted si quiere). Después restaura `datos/storage` y `datos/evidencia` sin pisar archivos.
+Hace cuatro cosas y **no instala nada del sistema**:
 
-5. Pruebe la equivalencia (unos minutos con CPU):
+1. `[1/4] Entorno Python`: crea `.venv` e instala **exactamente** las versiones de `requirements-fog.lock` (macOS arm64) con `-c constraints.txt` (fija `torch`, `torchvision` y `ultralytics`), y compara el resultado con el lock. Es el paso más largo (unos 8 minutos en la medición, por la descarga de torch). Verá avisos `Cache entry deserialization failed, entry ignored` de pip: son inofensivos.
+2. `[2/4] Paquete de modelo`: deja en `../dataset` los archivos del modelo y **verifica su SHA-256** (sección 5).
+3. `[3/4] Configuración`: crea `.env` y `.secrets/postgres_password.txt` con **sus propios secretos** (sección 6). Le pregunta usuario, carpeta de respaldos y contraseña.
+4. `[4/4] Base de datos`: levanta PostgreSQL y Redis en Docker, crea la base, aplica las migraciones y registra el modelo.
+
+Debe verse, al final, algo como:
+
+```text
+[2/4] Paquete de modelo
+  ✓ yolov8x-pose.pt (descargado y verificado)
+  ✓ lstm_6class/feature_stats.npz (copiado del repositorio y verificado)
+  ✓ lstm_6class/checkpoints/20260928_141021/best_model.pt (copiado del repositorio y verificado)
+  ✓ lstm_6class/checkpoints/20260928_141021/run_config.json (copiado del repositorio y verificado)
+[3/4] Configuración
+...
+.env creado (permisos 600). Los secretos no se muestran.
+[4/4] Base de datos
+  ✓ base sabre creada
+Registrado modelo_version <uuid> (lstm6class-20260928_141021): f1_macro_test=0.5249 activo=True
+  ✓ migraciones aplicadas y modelo 20260928_141021 registrado como activo (si no había otro)
+
+################################################################
+#  Instalación terminada. En modo local con cpu no se exige la prueba de equivalencia.
+#  Siguiente paso: arrancar Fog con  sh scripts/fog_nativo.sh
+################################################################
+```
+
+(`base sabre creada` dice `sabre_revision` si usó `POSTGRES_DB_NAME=sabre_revision`.) Si el comando se interrumpe, se puede repetir: no borra nada y no toca lo que ya existe. Si ya tenía un volumen `sabre_pgdata` de otra instalación de SABRE.AI, el instalador lo dice (`Ya existe el volumen de PostgreSQL`) y le pide la contraseña de **esa** base en lugar de generar una; un equipo nuevo no ve esa pregunta. La carpeta de respaldos se crea sola si no existe.
+
+No use `sh scripts/instalar_fog.sh probar`: esa prueba de equivalencia exige los 10 clips de referencia del autor y solo hace falta en modo remoto o con una GPU (`FOG_DEVICE` distinto de `cpu`).
+
+## 5. Paquete de modelo (con hashes)
+
+El sistema usa cuatro archivos, que **no se versionan todos del mismo modo**. Sus hashes SHA-256 están en `scripts/datos/MODELO.sha256` y son los de los resultados de la tesis:
+
+| Archivo (en `dataset/`) | SHA-256 | Cómo se obtiene |
+|---|---|---|
+| `yolov8x-pose.pt` (133 MB, pesos de pose) | `7a9bf952c2fc1c07d4a1da00dbb4cfab5ed71f89cbe8824d51a8f7a61cee5825` | **No está en git.** El instalador lo descarga de la release oficial de Ultralytics (`https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov8x-pose.pt`) y rechaza el archivo si el hash no coincide. |
+| `lstm_6class/feature_stats.npz` (media y desviación de las 192 features) | `8d7464ae987a66c5355806d77d4b07dc58165394fda4bff89ec3506de0669b62` | Sí está en git (`backend/dataset/lstm_6class/`); el instalador lo copia a `../dataset`. |
+| `lstm_6class/checkpoints/20260928_141021/best_model.pt` (checkpoint activo) | `382a03e368ed21368ba179632f2e7c0881c8f00876d82a54d900358e854b4505` | Sí está en git; ídem. |
+| `lstm_6class/checkpoints/20260928_141021/run_config.json` (configuración de la corrida) | `93aeaeebce0ab78d5f31587dc5b8d5bd3ac6995dca80f5e52414093fe270978b` | Sí está en git; ídem. |
+
+Además el instalador copia `lstm_6class/results/20260928_141021_metrics.json` (métricas de la corrida, de las que sale `f1_macro_test=0.5249`). Ese archivo no lleva hash propio.
+
+**Verificar que usa el mismo modelo que los resultados** (desde `backend/`, tras instalar):
 
 ```bash
-sh scripts/instalar_fog.sh probar
+(cd ../dataset && shasum -a 256 -c ../backend/scripts/datos/MODELO.sha256)
 ```
 
-Aprobado: misma clase en 10/10 y diferencia máxima de probabilidad dentro de la cota de `scripts/datos/referencia_salidas.json` (0.01, provisional). Escribe `datos/evidencia/equivalencia_<equipo>_<fecha>.json` con las versiones instaladas; si falla, compare las versiones con las del Mac (`referencia`) en ese reporte.
+Debe verse `OK` en las cuatro líneas. En Linux use `sha256sum -c` en lugar de `shasum -a 256 -c`. Cualquier otra salida significa que el archivo es distinto del de los resultados: no use ese equipo para comparar cifras.
 
-6. `sh scripts/instalar_fog.sh estado` muestra versión, commit, modelo activo, dispositivo, último respaldo, túnel y el resultado de la última `probar`.
+**Instalación sin internet o con el paquete del autor.** `instalar_fog.sh instalar --paquete <carpeta>` usa los archivos de una carpeta con la estructura `modelo/<ruta>` (la que crea `instalar_fog.sh exportar`) y verifica los mismos hashes. El autor decide el medio de entrega:
 
-### Reglas que impone el sistema
+> **[ENLACE A COMPLETAR POR EL AUTOR]** (paquete de modelo para instalar sin internet: `yolov8x-pose.pt`, `feature_stats.npz` y `checkpoints/20260928_141021/`).
 
-- `fog_nativo.sh` se niega a arrancar en modo remoto (`ENTORNO=remoto`) si la última `probar` de ese equipo no pasó o es de otro commit: tras cada `git pull` o commit nuevo hay que repetir `probar`.
-- `FOG_DEVICE` (por defecto `cpu`, lo que corrió en la Validación 1; `mps` o `cuda` opcionales) llega a YOLO. Un dispositivo distinto de `cpu` solo arranca si la última `probar` se corrió con ese mismo dispositivo y pasó.
-- Con `FOG_DEVICE=cuda` en Linux hay que correr `probar` con `FOG_DEVICE=cuda sh scripts/instalar_fog.sh probar`.
+Con el hueco sin completar, la instalación igualmente funciona con internet, por las dos vías de la tabla.
 
-### Limitaciones conocidas
+## 6. Secretos propios
 
-- `requirements-fog.linux-x86_64.lock` se generó por metadatos de PyPI con `scripts/generar_lock_linux.py` (mismas versiones que el lock del Mac más las dependencias solo de Linux: CUDA y triton); no es un `pip freeze` de un Linux real. La instalación en Linux está **pendiente de probar** en el PC de casa.
-- La cota de probabilidad de `probar` es **0.01, provisional: a recalibrar con la primera medición entre plataformas**. Se confirmó tras medir dos corridas seguidas en un solo equipo (el Mac, diferencia 0.0), así que no incluye el ruido entre plataformas.
+**Nunca use valores del autor.** El instalador genera los suyos y no los muestra:
 
-## Anexo. Fuera de la Validación 1
+- `.secrets/postgres_password.txt`: contraseña de PostgreSQL, al azar (32 letras y números), permisos 600. Es la única fuente: no se copia a ningún `.env`.
+- `.env` (permisos 600), creado desde `.env.example`, con:
+  - `AUTH_USER`: el usuario maestro que usted elige. **Pregunta:** `Usuario maestro de Fog (AUTH_USER):`.
+  - `AUTH_PASSWORD_HASH`: el hash Argon2id de la contraseña maestra que usted escribe (mínimo 16 caracteres, por `getpass`, sin eco). **Pregunta:** `Contraseña del usuario maestro (mínimo 16 caracteres):` y `Repetir contraseña:`. La contraseña en sí no se guarda en ningún archivo: **no hay forma de recuperarla**; anótela.
+  - `AUTH_JWT_SECRET`: al azar (48 bytes).
+  - `RESPALDO_DIR`: la carpeta donde se guardarán los respaldos de sesión. **Pregunta:** `Carpeta de respaldos (RESPALDO_DIR, fuera de Docker y del repo):`. Debe estar **fuera del repositorio y de Docker** (no use `~/.colima` ni `~/.docker`). Ejemplo: `~/sabre-respaldos`. Escriba la ruta completa.
+- Con `ENTORNO=local` (por defecto), Fog **escucha en todas las interfaces** (`0.0.0.0:8001`) para que el frontend en Docker lo alcance. En una red compartida, cualquiera con la dirección llega a la pantalla de login (toda ruta exige token salvo `/health` y `/auth/login`, con bloqueo tras 5 fallos). Si no quiere eso, trabaje en una red de confianza o exporte `FOG_BIND_HOST=127.0.0.1` antes de `sh scripts/fog_nativo.sh`: Fog escucha solo en su equipo. Se verificó: `curl` a `http://localhost:8001/health` responde 200 y a la dirección de la red local (`http://<ip-de-su-equipo>:8001/health`) no conecta, y el inicio de sesión desde `http://localhost:8081` sigue funcionando (el navegador habla con `localhost:8001`).
 
-| Tema | Dónde |
-|---|---|
-| Despliegue de Cloud en Render | `GUIA_EJECUCION.md`, secciones 6.2 y 6.3 |
-| Modo de desarrollo (venv, pruebas, frontend con Expo) | `GUIA_EJECUCION.md` |
+Si ya tiene un `.env`, el instalador **no lo toca** y solo comprueba que defina `POSTGRES_PASSWORD` (o `.secrets/postgres_password.txt`), `AUTH_USER`, `AUTH_PASSWORD_HASH` y `AUTH_JWT_SECRET`.
+
+Para cambiar la contraseña maestra más adelante: `.venv/bin/python scripts/crear_hash_password.py --env` imprime la línea `AUTH_PASSWORD_HASH='...'` lista para pegar en `.env` (reinicie Fog). El script `scripts/rotar_secretos.sh` rota además la PKI de Redis del despliegue remoto y no hace falta en el modo local.
+
+## 7. Verificación
+
+Con la instalación hecha, siga **A.1 a A.3** de [`GUIA_EJECUCION.md`](GUIA_EJECUCION.md) (levantar Docker y arrancar Fog) y compruebe:
+
+1. **Estado del sistema.**
+
+   ```bash
+   curl -s -w " %{http_code}\n" http://localhost:8001/health
+   ```
+
+   Debe verse: `{"fog":"ok","redis":"ok","postgres":"ok"} 200`. Si algún componente dice `"error"`, el código es 503 (ver la solución de problemas de `GUIA_EJECUCION.md`).
+
+2. **Interfaz.** Abra `http://localhost:8081`. Debe verse la pantalla "Iniciar sesión" y, tras entrar con el usuario y la contraseña de la sección 6, el encabezado SABRE.AI, `Modelo activo: lstm6class-20260928_141021` y el indicador "Conectado".
+
+3. **Modelo activo** (necesita el token del login; `/modelo/activo` responde 401 sin él):
+
+   ```bash
+   TOKEN=$(curl -s -X POST http://localhost:8001/auth/login -H 'content-type: application/json' \
+     -d '{"usuario":"<su usuario>","password":"<su contraseña>"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+   curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8001/modelo/activo
+   ```
+
+   Debe verse: `{"nombre":"lstm6class-20260928_141021","num_clases":6,"f1_macro_test":0.5249,"kappa_piloto":null}`.
+
+4. **Cloud listo.**
+
+   ```bash
+   sh scripts/compose.sh -f docker-compose.yml -f docker-compose.nativo.yml logs cloud
+   ```
+
+   Debe verse: `modelo precalentado en N ms` y `Cloud escuchando 'fog:features' como 'cloud-worker-1'...`.
+
+5. **Sugerencia de punta a punta.** Cargue un clip propio (MP4 o MOV de sable de ≥ 720p) siguiendo A.4 de `GUIA_EJECUCION.md`.
+
+   > **[ORIGEN DE LOS CLIPS DE PRUEBA A DEFINIR POR EL AUTOR]** Este repositorio no incluye clips de competencia: sus derechos de imagen no son del autor y la política de datos (D-22) impide conservarlos. Cualquier clip MP4/MOV de sable de ≥ 720p sirve para probar el flujo.
+
+**Prueba de humo (solo con el conjunto de datos del autor).** `scripts/prueba_humo.py` recorre un clip por clase de `dataset/dataset trimmed/test_trimmed` con las luces de `dataset/labels/`. Ese conjunto **no está en git** y no se distribuye, así que un revisor no puede correrla con lo que instala esta guía. En la ejecución de verificación de DOC01 se corrió, con acceso de solo lectura al conjunto del autor, sobre una base nueva y un evento propio, y dio:
+
+```text
+{"clip": "AttackA_0007", "frames": 15, "fps": 30.0, ..., "sugerida": "AttackB", "confianza": 0.534145, "clase_final": "AttackA", "decision": "cambiar", "veredicto_http": 200, "auditoria_seq": 12, ..., "ms_clip": 3076, ..., "inferencia_ms": 7}
+... (una línea JSON por cada una de las 6 clases)
+```
+
+con código de salida 0 (6 de 6 veredictos registrados) y 29 s en total. Con ese evento, `exportar_evidencia.py` dio: 6 revisiones, latencia p95 5619 ms (umbral 60 000 ms: cumple), inferencia p95 7 ms (umbral 50 ms: cumple), κ = 0,4 (umbral 0,61: no cumple) y concordancia 50 % (n = 6). Son cifras de una prueba de humo de 6 clips, no de la validación.
+
+## 8. Defectos encontrados al instalar en limpio
+
+Hallados siguiendo la guía en un clon nuevo (DOC01). Los tres primeros se corrigieron en el código (con prueba que falla antes y pasa después); el resto son límites que la guía ya advierte.
+
+| # | Qué falló | Causa | Corrección |
+|---|---|---|---|
+| 1 | `instalar_fog.sh instalar` se detenía en `[2/4]` con `falta yolov8x-pose.pt en .../dataset` en cualquier equipo sin la carpeta `dataset` del autor | El instalador exigía `../dataset` ya poblado o el paquete del autor | `instalador.py obtener-modelo`: copia lo versionado en `backend/dataset/`, descarga YOLO de la release oficial y verifica todo contra `MODELO.sha256` (`tests/shared/test_instalador.py`) |
+| 2 | Tras instalar, el aviso decía "el equipo no está listo, falta `probar`" aunque en local no se exige y `probar` necesita clips del autor | Mensaje fijo | `mensaje_final_instalacion`: solo pide `probar` donde el bloqueo la exige (modo remoto o `FOG_DEVICE` distinto de `cpu`) |
+| 3 | `registrar_modelo.py` buscaba las métricas siempre en `../dataset`, sin respetar `DATASET_DIR` | Ruta fija en el script | `instalar_fog.sh` y `fog_nativo.sh` pasan `--dataset-dir "$DS/lstm_6class"` |
+| 4 | La suite de pruebas daba 1 fallo (`ModuleNotFoundError: sklearn`) con el entorno del lock | El lock de Fog no incluye `scikit-learn` (solo `requirements.txt`) | Documentado en [`GUIA_DESARROLLO.md`](GUIA_DESARROLLO.md): `pip install scikit-learn==1.9.1`. No se edita el lock a mano |
+| 5 | `exportar_evidencia.py` imprimió `ERROR: el evento ... no existe en la base sabre` y siguió | Con una base distinta de `sabre`, el respaldo que invoca usa `POSTGRES_DB_NAME` (por defecto `sabre`) | Documentado: exporte `POSTGRES_DB_NAME` (y `POSTGRES_HOST_PORT` si cambió el puerto) antes de los scripts |
+| 6 | El primer intento de `instalar` terminó sin mensaje durante el paso 1 y quedó un `pip` huérfano instalando en el mismo `.venv` | No determinada: ocurrió al lanzar el instalador desde un proceso en segundo plano de la sesión de automatización con la que se hizo la verificación; no se repitió en el segundo intento | Se borró el `.venv` y se repitió. Si `instalar` se interrumpe, compruebe con `pgrep -fl "pip install"` que no queda un `pip` vivo antes de repetir |

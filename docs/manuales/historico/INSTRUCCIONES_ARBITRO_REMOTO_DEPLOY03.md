@@ -1,3 +1,5 @@
+> **DOCUMENTO HISTÓRICO. Vigente hasta el 13/11/2026 (acompañaba al túnel de cloudflared de DEPLOY03). No siga estas instrucciones: las vigentes están en [`../GUIA_INSTALACION.md`](../GUIA_INSTALACION.md), [`../GUIA_EJECUCION.md`](../GUIA_EJECUCION.md) y [`../MANUAL_USUARIO.md`](../MANUAL_USUARIO.md).**
+
 # Instrucciones para el árbitro: prueba de SABRE.AI
 
 SABRE.AI **sugiere** una clasificación de la acción; **usted decide**. Nada se cierra sin su veredicto.

@@ -1,74 +1,69 @@
 # Manual de usuario de SABRE.AI
 
-Versión de la interfaz: Validación 1 (carga de clip y tocado simulado). Destinatarios: el árbitro y el operador que usan la interfaz durante una sesión. La instalación del sistema está en `GUIA_INSTALACION.md`.
+Para el árbitro y el operador que usan la interfaz web. La instalación está en [`GUIA_INSTALACION.md`](GUIA_INSTALACION.md), el arranque en [`GUIA_EJECUCION.md`](GUIA_EJECUCION.md) y lo que el sistema no hace, en [`LIMITACIONES.md`](LIMITACIONES.md).
+
+**Las capturas son reales.** Se tomaron en la ejecución de verificación de DOC01: instalación en limpio, Fog, Cloud y base reales, sin API simulada ni datos de prueba, con clips de sable del autor analizados por el sistema. **El área del video aparece en negro a propósito:** los clips son de competencia y sus derechos de imagen no son del autor, así que las capturas no muestran fotogramas de atletas. Los trazos de pose (que no son imagen de video) sí se muestran. Los alias, el árbitro y el evento son los precargados por la instalación o los de una sesión de ejemplo.
 
 ## 1. Propósito y alcance
 
-SABRE.AI clasifica la acción táctica de un tocado de sable en 6 clases y entrega una sugerencia con su porcentaje de confianza. El sistema solo sugiere. El árbitro decide, y el sistema no asigna puntos ni cierra una revisión sin la decisión del árbitro (RNF-01).
+SABRE.AI clasifica la acción táctica de un tocado de sable en 6 clases y entrega una **sugerencia** con su porcentaje de confianza. **El sistema solo sugiere. El árbitro decide**, y el sistema no asigna puntos ni cierra una revisión sin la decisión del árbitro (RNF-01).
 
-La validación del sistema es una sola: el árbitro revisa clips cargados en la interfaz y se mide el acuerdo sistema-árbitro (κ). Usted carga el clip y marca el instante de cada luz.
+La validación del sistema es una sola: el árbitro revisa clips cargados en la interfaz y se mide el acuerdo sistema-árbitro (κ de Cohen). Usted carga el clip y marca el instante de cada luz.
 
-Esta versión no captura video en tiempo real ni lee el aparato Favero (fuera de alcance por solicitud de cambio del 20/11/2026; ver el Anexo B).
+Esta versión **no captura video en tiempo real, no lee el aparato Favero ni tiene botón "Solicitar VAR", lista de tocados o decisión en pista**: todo eso salió de `main` por la solicitud de cambio del 20/11/2026 (D-12; está en la rama `future/edge-favero`). En `main` el clip se carga a mano y "ANALIZAR" abre la revisión (el sistema no registra qué tirador la pidió, D-04). Ver el Anexo B.
 
-## 2. Roles
+## 2. Acceso e inicio de sesión
 
-El esquema de la base define tres roles: `arbitro`, `operador` y `administrador`. La interfaz no tiene inicio de sesión: cualquier persona que abra la dirección accede a todas las pantallas (sección 7).
+El sistema tiene **un usuario maestro único**, el que se creó al instalar (`AUTH_USER` y su contraseña, [`GUIA_INSTALACION.md`](GUIA_INSTALACION.md), sección 6). Toda pantalla exige iniciar sesión.
 
-| Rol | Qué hace en la interfaz | Pantalla propia |
-|---|---|---|
-| Árbitro | Se selecciona al configurar el combate. Revisa la sugerencia y registra la decisión. | No. Usa "Revisión VAR". |
-| Operador | Configura el combate, carga el clip y marca el instante de cada luz. | No. Usa "Combate" y "Revisión VAR". |
-| Administrador | Consulta el historial y exporta la evidencia. | No. Usa "Historial". La gestión de versiones del modelo se hace con scripts (Anexo B). |
+1. Abra un navegador web de escritorio (se probó con Google Chrome) y escriba la dirección de la interfaz. Con la instalación de la guía es `http://localhost:8081`.
+2. Debe verse la pantalla **"Iniciar sesión"** con los campos "Usuario" y "Contraseña" y el botón "Ingresar".
 
-La lista de árbitros de la pantalla "Combate" sale de la base de datos. Si no aparece un árbitro, pida a quien instala el sistema que lo registre (`GUIA_INSTALACION.md`, sección 4).
+![Inicio de sesión](img/00-login.png)
 
-## 3. Acceso
+3. Escriba usuario y contraseña y pulse **Ingresar** ("Ingresando…" mientras responde). Entra a **Revisión VAR**.
 
-1. Abra un navegador web de escritorio. Las capturas de este manual se tomaron con Google Chrome.
-2. Escriba la dirección de la interfaz. Con la instalación de la guía es `http://localhost:8081`.
-3. Verifique que aparezca el encabezado con el nombre SABRE.AI y la pantalla "Revisión VAR". La interfaz abre siempre en "Revisión VAR". Sin combate activo, la pantalla muestra "No hay combate activo" y el botón "Configurar combate".
+Si los datos son incorrectos aparece **"Usuario o contraseña incorrectos."**, sin decir cuál campo falló; si Fog no responde, "No se pudo conectar con el servidor.". **Tras 5 intentos fallidos en 15 minutos el acceso desde esa dirección se bloquea durante 15 minutos**, aunque luego escriba la contraseña correcta (mensaje: "Demasiados intentos fallidos. Intente de nuevo en N min."). La sesión dura 8 horas y se pierde al cerrar la pestaña; si caduca, la interfaz vuelve sola al inicio de sesión. Para salir, pulse **Cerrar sesión** en el encabezado (esto cierra *su acceso*; no es lo mismo que "Cerrar sesión de validación", sección 4.9).
 
-![Revisión VAR sin combate activo](img/01-revision-sin-combate.png)
+### El encabezado
 
-El encabezado contiene los botones "Revisión VAR", "Historial" y "Combate", el texto "Modelo activo:" con el nombre de la versión del modelo en uso, el indicador de estado y el botón de tema ("Tema claro" o "Tema oscuro"). Con un combate activo agrega "Pista", "Árbitro:" y el botón "Finalizar combate". El nombre del modelo se lee del sistema: si la consulta falla, no se muestra.
+Contiene los botones **Revisión VAR**, **Historial** y **Combate**; con un combate activo agrega "Pista", "Árbitro:" y **Finalizar combate**; luego el texto "Modelo activo:" con el nombre de la versión del modelo (se lee del sistema: si la consulta falla, no se muestra), el indicador de estado, el botón de tema ("Tema claro" o "Tema oscuro") y **Cerrar sesión**.
 
 ### Indicador de estado
 
-El indicador consulta el estado del sistema cada 10 segundos (`GET /health`).
+Consulta el estado del sistema cada 10 segundos (`GET /health`).
 
 | Texto | Significado | Qué hacer |
 |---|---|---|
 | "Verificando" | Aún no hay respuesta. | Espere unos segundos. |
-| "Conectado" | El servicio Fog, Redis y PostgreSQL responden. | Continúe. |
-| "Degradado" | Al menos uno de los tres componentes falla. | No inicie una sesión. Avise a quien instala el sistema (`GUIA_INSTALACION.md`, sección 7). |
-| "Sin conexión" | El servicio Fog no responde. | Compruebe que Fog esté en marcha y avise a quien instala el sistema. |
+| "Conectado" | Fog, Redis y PostgreSQL responden. | Continúe. |
+| "Degradado" | Al menos uno de los tres componentes falla. | No inicie una sesión. Avise a quien instala el sistema (`GUIA_EJECUCION.md`, solución de problemas). |
+| "Sin conexión" | Fog no responde. | Compruebe que Fog esté en marcha y avise a quien instala el sistema. |
 
-## 4. Flujo de una sesión
+## 3. Flujo de una sesión
 
-El flujo tiene siete pasos: configurar el combate, cargar el clip, analizar, revisar la sugerencia, registrar la decisión, consultar el historial y finalizar el combate. Los pasos 1 a 5 se repiten por cada clip. Un combate admite cualquier número de clips y cada clip abre su propia revisión.
+Siete pasos: configurar el combate, cargar el clip, analizar, revisar la sugerencia (y su interpretación), registrar la decisión, consultar el historial y cerrar la sesión. Los pasos 2 a 5 se repiten por cada clip. Un combate admite cualquier número de clips y cada clip abre su propia revisión.
+
+## 4. Pasos
 
 ### 4.1 Configurar el combate (CU-01, F-039)
 
-1. Seleccione "Combate" en el encabezado. El título de la pantalla es "Configurar combate".
-2. "Evento" viene con "Validación 1" seleccionado. Para ensayar, seleccione "Evento de prueba". Cada opción muestra el nombre y la fecha.
-3. "Pista" viene con "P1". Edítela si es otra.
-4. "Árbitro" viene seleccionado si hay uno solo. Si hay varios, seleccione el del combate.
-5. En la tarjeta "Tirador A · ROJ", "Alias" es opcional. Si lo deja vacío, se usa "Tirador A". Use siempre alias, nunca nombres de atletas.
-6. En "Brazo armado", seleccione "Diestro" o "Zurdo". Es obligatorio y no tiene valor por defecto: las características del movimiento se calculan sobre ese brazo.
-7. Repita los pasos 5 y 6 en la tarjeta "Tirador B · VER" (alias por defecto "Tirador B").
-8. Pulse "Crear combate" (atajo Ctrl+Intro). Resultado esperado: aparece la tarjeta "Combate activo" con la pista, el árbitro y los alias, y el encabezado muestra "Pista" y "Árbitro:".
-
-Con un clic en el brazo de cada tirador y "Crear combate" el combate queda listo. El consentimiento informado se gestiona en papel fuera del sistema.
+1. Pulse **Combate**. El título es "Configurar combate" (o "Nuevo combate" si ya hay uno activo).
+2. **Evento:** vienen "Validación 1" y "Evento de prueba" desde la instalación; "Validación 1" viene seleccionado. Cada opción muestra nombre y fecha. Para otro evento, ver `GUIA_EJECUCION.md` (crear una sesión).
+3. **Pista:** viene con "P1". Edítela si es otra.
+4. **Árbitro:** viene seleccionado si hay uno solo; si hay varios, elija el del combate.
+5. En la tarjeta **Tirador ROJ** (A), "Alias" es opcional; si lo deja vacío se usa "Tirador A". Use siempre alias, nunca nombres de atletas.
+6. **Brazo armado:** pulse "Diestro" o "Zurdo". Es **obligatorio y no tiene valor por defecto**: las características del movimiento se calculan sobre ese brazo.
+7. Repita 5 y 6 en **Tirador VER** (B; alias por defecto "Tirador B").
+8. Pulse **Crear combate** (atajo Ctrl+Intro). Debe aparecer la tarjeta **Combate activo** con la pista, el árbitro y los alias, y el encabezado muestra "Pista" y "Árbitro:".
 
 ![Formulario del combate](img/02-combate-formulario.png)
 
 ![Combate activo](img/03-combate-activo.png)
 
-A es el tirador ROJ (izquierda en cámara) y B es el tirador VER (derecha en cámara). Esta asignación es fija.
+A es el tirador **ROJ** (izquierda en cámara) y B es el tirador **VER** (derecha en cámara). Esta asignación es fija. El consentimiento informado se gestiona en papel, fuera del sistema. El combate activo se conserva si recarga la página; si ya no existe en el sistema, se descarta.
 
-El combate activo se conserva si recarga la página. Si el combate ya no existe en el sistema, se descarta.
-
-Si falta un dato, la pantalla no crea el combate y muestra un mensaje con la indicación "Corrige el dato y vuelve a pulsar Crear combate."
+Si falta un dato, la pantalla no crea el combate y muestra uno de estos mensajes, con "Corrige el dato y vuelve a pulsar Crear combate.":
 
 | Mensaje | Causa |
 |---|---|
@@ -77,153 +72,172 @@ Si falta un dato, la pantalla no crea el combate y muestra un mensaje con la ind
 | "Falta seleccionar el árbitro" | No eligió un árbitro. |
 | "Falta el brazo armado del tirador A" (o B) | No eligió "Diestro" o "Zurdo". |
 
-Si la lista de eventos o de árbitros no carga, la pantalla muestra "No se pudo cargar el catálogo" con el botón "Reintentar", o bien "No hay eventos registrados", "No hay árbitros registrados" o "No hay eventos ni árbitros registrados" con el botón "Recargar". En ambos casos no se puede crear el combate hasta que el catálogo cargue.
+Si la lista de eventos o de árbitros no carga, aparece "No se pudo cargar el catálogo" con el botón "Reintentar", o "No hay eventos registrados", "No hay árbitros registrados" o "No hay eventos ni árbitros registrados" con el botón "Recargar". No se puede crear el combate hasta que el catálogo cargue.
 
-### 4.2 Cargar el clip y simular el tocado (CU-02, CU-03)
+Sin combate activo, **Revisión VAR** muestra "No hay combate activo" y el botón "Configurar combate"; **Historial**, "No hay un evento activo".
 
-1. Seleccione "Revisión VAR" en el encabezado. Si no hay combate activo, la pantalla muestra "No hay combate activo" y el botón "Configurar combate".
-2. En "Paso 1 · Clip", pulse "Elegir archivo" (atajo S) y seleccione un archivo MP4 o MOV. Resultado esperado: el nombre del archivo aparece junto al botón y el clip se muestra en el reproductor.
-3. Con el reproductor, lleve el clip al instante en que se encendió la luz de A. Puede usar "Reproducir" o "Pausa", "◀ Cuadro" (atajo coma), "Cuadro ▶" (atajo punto) y las velocidades "1×", "0.5×" y "0.25×".
-4. En "Luz Favero simulada · instante de cada luz (al menos una)", pulse "Marcar luz A · ROJ aquí" (atajo R). Resultado esperado: junto al botón aparece el instante en milisegundos, por ejemplo "Luz A: 433 ms". Antes de marcar se lee "Luz A: sin marcar".
-5. Si también se encendió la luz de B, lleve el reproductor a su instante y pulse "Marcar luz B · VER aquí" (atajo V). En un tocado doble las dos luces pueden encenderse con algunos fotogramas de diferencia: marque cada una en su propio instante. Para deshacer una marca, pulse "Quitar luz A" o "Quitar luz B".
+![Revisión VAR sin combate activo](img/01-revision-sin-combate.png)
+
+### 4.2 Cargar el clip y marcar las luces (CU-02, CU-03)
+
+El clip es un MP4 o MOV de sable de ≥ 720p. No hay lista de tocados: usted carga un clip por revisión.
+
+1. Pulse **Revisión VAR**. En **Paso 1 · Clip**, pulse **Elegir archivo** (atajo S) y elija el archivo. El nombre aparece junto al botón y el clip se muestra en el reproductor.
+2. Con el reproductor, lleve el clip al instante en que se encendió la luz de A. Puede usar "Reproducir" o "Pausa", "◀ Cuadro" (atajo coma), "Cuadro ▶" (atajo punto) y las velocidades "1×", "0.5×" y "0.25×".
+3. En "Luz Favero simulada · instante de cada luz (al menos una)", pulse **Marcar luz ROJ aquí** (atajo R). Debe verse el instante en milisegundos, por ejemplo "Luz A: 3633 ms". Antes de marcar se lee "Luz A: sin marcar".
+4. Si también se encendió la luz de B, lleve el reproductor a su instante y pulse **Marcar luz VER aquí** (atajo V). En un tocado doble las dos luces pueden encenderse con algunos fotogramas de diferencia: marque cada una en su propio instante. Para deshacer, "Quitar luz A" o "Quitar luz B".
 
 ![Clip listo para analizar](img/04-revision-clip-listo.png)
 
-Al elegir otro archivo, las dos luces vuelven a "sin marcar" y se descarta el resultado anterior. Una luz sin marcar se envía como apagada.
+Al elegir otro archivo, las dos luces vuelven a "sin marcar" y se descarta el resultado anterior. Una luz sin marcar se envía como apagada. El instante de la luz sirve para centrar la ventana del clip: **2,0 s antes y 0,5 s después** del primer instante marcado (D-19). Una luz mal marcada cambia la sugerencia (el filtro Favero descarta las clases del tirador sin luz).
 
-El botón "ANALIZAR" permanece desactivado hasta completar los requisitos. Debajo aparece "Falta: un combate activo.", "Falta: elegir un clip.", o "Falta: marcar la luz A o la luz B." ANALIZAR se habilita con al menos una luz marcada.
+**ANALIZAR** queda desactivado hasta completar los requisitos. Debajo aparece "Falta: un combate activo.", "Falta: elegir un clip." o "Falta: marcar la luz A o la luz B."
+
+Si el navegador no puede medir los fps del clip, bajo el reproductor aparece "Avance por cuadro no disponible: no se pudo medir los fps del clip." y los botones de cuadro quedan desactivados; el resto funciona.
 
 ### 4.3 Solicitar la revisión y esperar la sugerencia (CU-05)
 
-1. Pulse "ANALIZAR" (atajo Intro). En esta versión, pulsar "ANALIZAR" abre la revisión del clip. El sistema no registra qué tirador la solicitó.
-2. Espere. El botón cambia a "Analizando…" y aparece "Analizando… N s de 60 s". La latencia objetivo de la sugerencia es de 60 segundos como máximo.
-3. Resultado esperado: aparece "Listo" y el "Paso 2 · Sugerencia" muestra el resultado.
+1. Pulse **ANALIZAR** (atajo Intro). Abre la revisión del clip. El sistema no registra qué tirador la pidió.
+2. Espere. El botón cambia a "Analizando…" y aparece "Analizando… N s de 60 s". La latencia objetivo es de 60 segundos como máximo; en un equipo de referencia un clip tarda unos 15 s ([`LIMITACIONES.md`](LIMITACIONES.md), sección 2).
+3. Debe verse **✓ Listo** y el **Paso 2 · Sugerencia** con el resultado.
 
 ![Análisis en curso](img/05-revision-analizando.png)
 
-Si pasan 60 segundos sin respuesta, la pantalla muestra "Clasificación no disponible" con el motivo `timeout` (sección 5) y usted sigue el procedimiento VAR habitual.
-
-Si el sistema rechaza el clip o no hay conexión, aparece "Error: no se pudo analizar el clip", el detalle y el botón "Reintentar". En ese caso no se abre revisión.
+Si pasan 60 segundos sin respuesta, la pantalla muestra "Clasificación no disponible" con el motivo `timeout` (sección 5) y usted sigue el procedimiento VAR habitual. Si el sistema rechaza el clip o no hay conexión, aparece "Error: no se pudo analizar el clip", el detalle y el botón "Reintentar"; en ese caso no se abre revisión.
 
 ### 4.4 Revisar la sugerencia
 
-El "Paso 2 · Sugerencia" muestra, bajo el rótulo "Sugerencia del sistema":
+El **Paso 2 · Sugerencia** muestra, bajo "Sugerencia del sistema":
 
 - La acción: "Ataque", "Contraataque" o "Riposte".
-- El tirador atribuido: "A · ROJ" o "B · VER".
-- La "Confianza" en porcentaje, con una barra.
+- El tirador atribuido: "ROJ" (A) o "VER" (B).
+- La **Confianza** en porcentaje, con una barra.
+- Una **insignia de razonamiento** (sección 4.5) y una frase que resume la evidencia, con el botón **Ver interpretación** (atajo I).
 
 ![Sugerencia del sistema](img/06-revision-sugerencia.png)
 
-Si el sistema no puede clasificar, el paso muestra "Clasificación no disponible", el motivo y la indicación "Continúe con el procedimiento VAR habitual." Los motivos están en la sección 5.
+Si el sistema no puede clasificar, el paso muestra **"Clasificación no disponible"**, el motivo y "Continúe con el procedimiento VAR habitual." Los motivos están en la sección 5.
 
 ![Clasificación no disponible](img/09-revision-no-disponible.png)
 
-Esta versión no muestra la superposición biomecánica sobre el video (CU-08) ni la justificación de la clasificación con los eventos clave (CU-09). Ambas están en el Anexo B.
+### 4.5 Ver la interpretación: trazos y razonamiento (CU-08, CU-09)
 
-### 4.5 Registrar la decisión (CU-10, F-033)
+Pulse **Ver interpretación** (atajo I; también T abre los trazos y J el razonamiento). Se abre una vista, "Interpretación · Apoyo a la sugerencia: la decisión es del árbitro.", con dos partes. Se cierra con **Cerrar** (Esc).
 
-El "Paso 3 · Decisión del árbitro" se activa cuando el análisis terminó y hay una revisión abierta. Usted siempre declara la clase final entre las 6 clases, o anula la acción. La sugerencia del sistema aparece destacada con la marca "Sugerencia del sistema", pero nunca viene elegida.
+![Interpretación: trazos y razonamiento](img/06b-interpretacion.png)
 
-Procedimiento:
+**Trazos de pose** (a la izquierda, sobre fondo negro, **sin video**): el esqueleto de ambos tiradores (ROJ y VER), el ángulo del codo, la extensión del brazo y la trayectoria de las extremidades. **No se dibuja la línea del arma**: el detector no ve la hoja y el sistema no dibuja trazos inventados ([`LIMITACIONES.md`](LIMITACIONES.md), sección 5). Debajo hay controles: "Reproducir", "◀ Cuadro" y "Cuadro ▶" (atajos coma y punto), velocidades "1×" y "0,25×", y una barra de tiempo con el cuadro actual ("Frame N de M") y marcas para el **tocado**, el inicio de extensión del brazo de cada tirador, el inicio del acercamiento y la **ventana de atención del modelo**.
 
-1. Revise el video y la sugerencia (sección 4.4).
-2. En "Clase final (elige una de las 6)", pulse la clase que usted decide. Puede coincidir o no con la sugerida. Con el botón aparte "Anular la acción" (atajo A) registra la anulación, sin clase final (acción simultánea, FIE t.106).
-3. Si eligió una clase, responda "¿Cambia la decisión original en pista?". "Sí" registra "Cambia" y "No" registra "Mantiene". La pregunta no tiene respuesta por defecto. Si anula, no aparece.
-4. Revise "Resumen antes de registrar" y pulse "Confirmar y registrar". El botón está desactivado mientras falte la clase (o Anular) o la respuesta; debajo aparece "Falta:" con lo que falta. "Borrar elección" (atajo Esc) deja todo sin elegir.
-5. Resultado esperado: aparece "Veredicto registrado" con "Mantiene", "Cambia" o "Anula" y, si corresponde, la clase final.
+**Razonamiento** (a la derecha): la sugerencia con su confianza; una **insignia** con el estado de la evidencia; frases que explican la sugerencia; el criterio FIE de referencia (por ejemplo "t.105"); y los "Eventos medidos sobre la pose", cada uno con su tiempo respecto del tocado y un enlace **Ver en trazos** que mueve el cursor de los trazos a ese instante. Termina con la nota "Los eventos se miden sobre la pose y el artículo FIE es la referencia de la clase sugerida. La decisión es del árbitro."
 
-![Selección de la clase final, respuesta y resumen](img/08-revision-selector-clase.png)
+| Insignia | Significado |
+|---|---|
+| "Respaldada por la pose" | Los eventos medidos sobre la pose respaldan la sugerencia. |
+| "Evidencia discordante" | La pose indica otra cosa que la sugerencia (por ejemplo, que el otro tirador extendió el brazo primero). Revise el video antes de decidir. |
+| "No concluyente" | La pose no basta para respaldar ni contradecir la sugerencia. |
+| "Evidencia insuficiente" | No hay evidencia suficiente para sostener la sugerencia. |
+
+El razonamiento es **determinista**: plantillas fijas con la atención del modelo y eventos medidos sobre la pose, sin LLM (D-15). Se calcula al clasificar y se guarda con la revisión. Las revisiones anteriores a F-035 muestran "Esta revisión es anterior al registro de razonamiento." y no se recalculan. Si no se pudo calcular, "No se pudo calcular el razonamiento de esta sugerencia."
+
+Casos especiales de los trazos: "No hay trazos: la pose no se extrajo" (la clasificación no tuvo pose), "Detección incompleta" en los cuadros sin ambos tiradores, "El clip no tiene frames con ambos tiradores detectados." y "Los keypoints de esta revisión no pasan la verificación de integridad": en ese caso **no se dibuja nada** para no mostrar datos alterados, y se sigue el procedimiento VAR habitual. Si la revisión aún no tiene clasificación, la vista dice "Esta revisión aún no tiene una clasificación registrada". Cada parte tiene su botón "Reintentar" si falla la carga.
+
+### 4.6 Registrar la decisión (CU-10, F-033)
+
+El **Paso 3 · Decisión del árbitro** se activa cuando el análisis terminó y hay una revisión abierta. Usted declara siempre la clase final entre las 6 o anula la acción. La sugerencia del sistema aparece destacada ("Sugerencia del sistema") pero **nunca viene elegida**.
+
+1. Revise el video, la sugerencia y, si quiere, la interpretación.
+2. Responda **¿Modifica la clase sugerida?** ("Sí" o "No"). No tiene respuesta por defecto. "No" mantiene la clase sugerida; "Sí" le deja elegir otra.
+3. Si respondió "Sí", elija la **Clase final (elige una de las 6)**. Con el botón aparte **Anular la acción** (atajo A) registra la anulación, sin clase final (acción simultánea, FIE t.106); en ese caso no hace falta responder la pregunta.
+4. Lea el **Resumen antes de registrar** (por ejemplo "Cambia la decisión en pista · clase final: Ataque · ROJ") y pulse **Confirmar y registrar**. Está desactivado mientras falte algo; debajo aparece "Falta:" con lo que falta. **Borrar elección** (atajo Esc) deja todo sin elegir.
+5. Debe verse **✓ Veredicto registrado** con "Mantiene", "Cambia" o "Anula" y, si corresponde, la clase final.
+
+![Selección de la clase final y resumen](img/08-revision-selector-clase.png)
 
 ![Veredicto registrado](img/07-revision-veredicto-registrado.png)
 
-Si la sugerencia no estuvo disponible, el selector muestra las 6 clases sin marca y usted decide igual. Una vez registrada, la decisión no se puede editar: el selector desaparece y el sistema rechaza un segundo veredicto sobre la misma revisión (error 409). Los registros son de solo adición.
-
-Si el registro falla, aparece "No se pudo registrar el veredicto" con la indicación "Revisa tu decisión y vuelve a confirmarla." Si no hay revisión abierta, el paso indica "No hay revisión abierta: continúe con el procedimiento VAR habitual." Antes de terminar el análisis indica "Disponible cuando el análisis termine."
-
-### 4.6 Finalizar el combate
-
-1. Pulse "Finalizar combate" en el encabezado.
-2. Resultado esperado: la interfaz abre "Combate", sin combate activo. Las revisiones registradas se conservan.
-
-![Combate finalizado](img/13-combate-finalizado.png)
-
-Sin combate activo, "Revisión VAR" muestra "No hay combate activo" y "Historial" muestra "No hay un evento activo". Para continuar, cree un combate nuevo (sección 4.1).
-
-![Revisión VAR sin combate](img/01-revision-sin-combate.png)
+Si la sugerencia no estuvo disponible, el selector muestra las 6 clases sin marca y usted decide igual. **Una vez registrada, la decisión no se puede editar**: el selector desaparece y el sistema rechaza un segundo veredicto sobre la misma revisión (error 409). Los registros son de solo adición (RNF-05). Si el registro falla, aparece "No se pudo registrar el veredicto" con "Revisa tu decisión y vuelve a confirmarla." Si no hay revisión abierta: "No hay revisión abierta: continúe con el procedimiento VAR habitual." Antes de terminar el análisis: "Disponible cuando el análisis termine."
 
 ### 4.7 Historial (CU-12)
 
-1. Seleccione "Historial" en el encabezado. Con combate activo, el título es "Revisiones del evento" seguido del número de revisiones.
-2. Lea la línea de resumen de la sesión, sobre la lista. Muestra una línea por validación con revisiones, por ejemplo "Validación 1 · 3 revisiones · κ 0.33 (aceptable) · latencia p95 48 ms".
-3. Lea la lista, de la revisión más reciente a la más antigua. Muestra solo las revisiones del evento del combate activo.
-
-La línea de resumen solo aparece si el evento del combate activo tiene revisiones con veredicto. Si κ no es calculable, la línea omite κ. Si el p95 supera los 60 s, la línea indica "latencia p95 > 60 s". Una revisión sin sugerencia cuenta como más de 60 s: basta con que más del 5 % de las revisiones no tenga sugerencia para que aparezca "latencia p95 > 60 s". Los datos se leen del sistema: si no existen o la consulta falla, la línea no se muestra.
+1. Pulse **Historial**. Con combate activo, el título es "Revisiones del evento" seguido del número de revisiones, de la más reciente a la más antigua, solo las del evento del combate activo.
+2. Lea la línea de resumen de la sesión, sobre la lista: por ejemplo "Validación · 3 revisiones · κ 0.00 (leve) · latencia p95 > 60 s". Aparece solo si el evento tiene revisiones con veredicto. Si κ no es calculable, la línea lo omite. Una revisión sin sugerencia cuenta como más de 60 s: basta que más del 5 % de las revisiones no tenga sugerencia para que aparezca "latencia p95 > 60 s".
 
 | Columna | Contenido |
 |---|---|
 | Fecha y hora | Momento en que se abrió la revisión. |
-| "Sugerencia" | Acción y tirador (por ejemplo, "RIPOSTE · B") o "No disponible". |
-| "Confianza" | Porcentaje de la sugerencia. Vacío si no hubo sugerencia. |
+| "Sugerencia" | Acción y tirador (por ejemplo "RIPOSTE · ROJ") o "No disponible". |
+| "Confianza" | Porcentaje de la sugerencia; "—" si no hubo. |
 | "Veredicto del árbitro" | "Mantiene", "Cambia" o "Anula", con la clase final si existe, o "Pendiente". |
-| "Concordancia" | "Coincide" si la clase sugerida es igual a la clase final, "Difiere" si no. Vacío si la sugerencia no estuvo disponible, si no hay veredicto o si se anuló. |
+| "Concordancia" | "Coincide" si la clase sugerida es igual a la final, "Difiere" si no; "—" si no hubo sugerencia, no hay veredicto o se anuló. |
 
 ![Historial](img/10-historial.png)
 
-4. Pulse una fila para abrir el detalle. Pulse otra vez para cerrarlo. El detalle muestra:
-   - "Sugerencia del sistema": la clase, el tirador y la confianza; o "Clasificación no disponible" con el motivo; o "Aún sin clasificación".
-   - Las probabilidades de las 6 clases, cuando existen.
-   - "Decisión del árbitro" y la fecha de registro ("Registrada:").
-   - "Auditoría": "Registro n.º" y el código de integridad (hash) del registro.
+3. Pulse una fila para abrir el detalle (otra vez para cerrarlo): "Sugerencia del sistema" (clase, tirador y confianza; o "Clasificación no disponible" con el motivo; o "Aún sin clasificación"), las probabilidades de las 6 clases, "Decisión del árbitro" con su fecha ("Registrada:"), el botón **Ver interpretación** y "Auditoría": "Registro n.º" y el código de integridad (hash) del registro.
 
 ![Detalle de una revisión](img/11-historial-detalle.png)
 
-Si la carga falla, la pantalla muestra "No se pudo cargar el historial" o "No se pudo cargar el detalle de la revisión", con el botón "Reintentar". Sin revisiones muestra "Sin revisiones registradas" y el botón "Ir a Revisión VAR".
+Si la carga falla: "No se pudo cargar el historial" o "No se pudo cargar el detalle de la revisión", con "Reintentar". Sin revisiones: "Sin revisiones registradas" y el botón "Ir a Revisión VAR".
 
 ### 4.8 Exportar la evidencia
 
-1. En "Historial", pulse "Exportar evidencia".
-2. Resultado esperado: el navegador descarga el archivo `resumen-<evento_id>.json` y aparece "Evidencia exportada:" seguido del nombre del archivo.
+1. En **Historial**, pulse **Exportar evidencia**.
+2. Debe verse "Evidencia exportada: resumen-<evento_id>.json" y el navegador descarga el archivo.
 
 ![Evidencia exportada](img/12-historial-exportado.png)
 
-Si falla, aparece "No se pudo exportar la evidencia" y el botón "Reintentar".
-
-El archivo contiene el resumen de la sesión de validación, con las métricas de la validación. Solo cuentan las revisiones con veredicto.
+Si falla: "No se pudo exportar la evidencia" y "Reintentar". El archivo trae el resumen de la sesión de validación; solo cuentan las revisiones con veredicto:
 
 | Campo | Cómo interpretarlo |
 |---|---|
-| `n_revisiones` | Número de revisiones con veredicto en el bloque. |
-| `no_disponibles.por_motivo` | Cuántas revisiones no tuvieron sugerencia, por cada motivo de la sección 5. |
-| `latencia` | Tiempo desde que se envía el clip hasta que hay sugerencia. Umbral: p95 de 60 000 ms como máximo. Una revisión no disponible cuenta como más de 60 s. |
-| `latencia.p95_ms` vacío con `p95_excede_umbral` verdadero | El percentil 95 supera los 60 s: equivale a "> 60 s". |
-| `latencia_inferencia` | Tiempo del clasificador por clip. Umbral: p95 de 50 ms como máximo. |
-| `kappa.kappa` y `kappa.banda` | κ de Cohen entre la sugerencia y la clase final del árbitro, con su banda. `cumple` es verdadero si κ es 0.61 o más. |
-| `kappa.calculable` falso | κ no se puede calcular (el archivo `resumen.md` lo escribe como "no calculable"). `kappa`, `banda` y `cumple` quedan vacíos y `motivo` explica la causa. |
+| `n_revisiones` | Revisiones con veredicto. |
+| `no_disponibles.por_motivo` | Cuántas no tuvieron sugerencia, por motivo (sección 5). |
+| `latencia` | Del envío del clip a la sugerencia. Umbral: p95 ≤ 60 000 ms. Una no disponible cuenta como más de 60 s; con `p95_ms` vacío y `p95_excede_umbral` verdadero, equivale a "> 60 s". |
+| `latencia_inferencia` | Tiempo del clasificador por clip. Umbral: p95 ≤ 50 ms. |
+| `kappa.kappa` y `kappa.banda` | κ de Cohen entre la sugerencia y la clase final, con su banda. `cumple` es verdadero con κ ≥ 0,61. |
+| `kappa.calculable` falso | κ no calculable (`resumen.md` dice "no calculable"); `motivo` explica por qué. |
 | `concordancia` | Porcentaje de revisiones donde la sugerencia coincide con la clase final. |
-| `matriz_confusion` | Tabla de 6 por 6: filas, clase sugerida; columnas, clase final del árbitro. |
+| `matriz_confusion` | Tabla de 6 por 6: filas, clase sugerida; columnas, clase final. |
 | `integridad` | Resultado de la verificación de la cadena de auditoría. |
 
-κ y la concordancia usan las revisiones con sugerencia disponible y no anuladas (campo `n` de cada bloque). κ no es calculable con menos de 2 revisiones de ese tipo, ni cuando hay una sola clase en ambos lados.
+κ y la concordancia usan las revisiones con sugerencia y no anuladas (`n` de cada bloque). κ no es calculable con menos de 2 de ellas ni cuando hay una sola clase de ambos lados. Bandas de κ (Landis y Koch): < 0 pobre; 0 a 0,20 leve; 0,21 a 0,40 aceptable; 0,41 a 0,60 moderada; 0,61 a 0,80 sustancial; 0,81 a 1,00 casi perfecta. `revisiones.csv` y `resumen.md` los genera quien instala con `scripts/exportar_evidencia.py` ([`GUIA_EJECUCION.md`](GUIA_EJECUCION.md)).
 
-Bandas de κ (Landis y Koch): menor que 0, pobre; 0 a 0.20, leve; 0.21 a 0.40, aceptable; 0.41 a 0.60, moderada; 0.61 a 0.80, sustancial; 0.81 a 1.00, casi perfecta.
+### 4.9 Cerrar la sesión de validación (D-22, D-26)
 
-Los archivos `revisiones.csv` y `resumen.md` de la evidencia los genera quien instala el sistema con un script (`GUIA_INSTALACION.md`, sección 4).
+Ningún clip se conserva después de la sesión. Al terminar:
 
-### 4.9 Atajos de teclado
+1. Pulse **Combate**. Al pie, en la tarjeta **Cerrar la sesión de validación**, pulse **Cerrar sesión de validación** (necesita un combate activo: "No hay un combate activo" si no).
+2. Lea el aviso: "Se hará el respaldo verificado de la sesión (sin los clips) y, solo si pasa, se borrarán los clips de video. Esto no se puede deshacer." Confirme con **Sí, respaldar y borrar los clips** o pulse **Cancelar**.
+
+![Confirmación del cierre](img/12b-cerrar-sesion-confirmacion.png)
+
+3. Mientras trabaja, la pantalla dice "Respaldando y verificando… no cierres esta página." Al terminar debe verse **✓ Sesión cerrada. Respaldo verificado; clips borrados: N.**
+
+![Sesión cerrada](img/12c-cerrar-sesion-ok.png)
+
+El combate activo se limpia: **Revisión VAR** vuelve a pedir configurarlo ("No hay combate activo").
+
+![Después del cierre](img/13-sesion-cerrada.png)
+
+Si el respaldo falla, **no se borra nada** y aparece "✕ La sesión NO se cerró y no se borró ningún clip." con el motivo y "Reintentar"; avise a quien instala el sistema. Un clip que otra sesión también usó (mismo hash) no se borra, así que `N` puede ser menor que el número de clips cargados. La base conserva el hash de cada clip y los metadatos, no el clip.
+
+Para terminar un combate **sin** cerrar la sesión, pulse **Finalizar combate** en el encabezado: abre "Combate" sin combate activo y solo limpia el combate activo de la interfaz (no envía nada a Fog): las revisiones ya registradas siguen en la base y los clips no se tocan. Sin combate activo, "Revisión VAR" muestra "No hay combate activo" e "Historial", "No hay un evento activo".
+
+### 4.10 Atajos de teclado
 
 | Atajo | Acción |
 |---|---|
 | S | Elegir archivo. |
-| R | Marcar la luz A en el instante actual del reproductor, con un clip cargado. |
-| V | Marcar la luz B en el instante actual del reproductor, con un clip cargado. |
+| R | Marcar la luz A en el instante actual del reproductor (con un clip cargado). |
+| V | Marcar la luz B en el instante actual del reproductor (con un clip cargado). |
 | Intro | ANALIZAR, cuando están completos los requisitos. |
+| I | Ver interpretación (trazos y razonamiento), con una revisión abierta. |
+| T / J | Abrir la interpretación en los trazos / en el razonamiento. |
+| , y . | Cuadro anterior y siguiente (en el reproductor del clip y en los trazos). |
 | A | Elegir "Anular la acción". |
-| Esc | Borrar la elección de la decisión. |
-| Coma y punto | Cuadro anterior y cuadro siguiente. |
+| Esc | Borrar la elección de la decisión; con la interpretación abierta, cerrarla. |
 | Ctrl+Intro | Crear combate. |
 
-Los atajos sin Ctrl no actúan mientras escribe en un campo de texto.
+Los atajos sin Ctrl no actúan mientras escribe en un campo de texto, ni con Alt o Mayús, y con una vista abierta solo responden los de esa vista.
 
 ## 5. Estados y mensajes
 
@@ -231,30 +245,33 @@ Los atajos sin Ctrl no actúan mientras escribe en un campo de texto.
 
 | Motivo | Texto en pantalla | Qué significa | Qué hacer |
 |---|---|---|---|
-| `pose_incompleta` | "No se pudo detectar a ambos tiradores en el clip." | El sistema no detectó a los dos tiradores, o el clip tiene menos de 3 fotogramas. | Siga el procedimiento VAR habitual. Verifique que el clip muestre a ambos tiradores y vuelva a cargarlo. Puede elegir la clase final o anular. |
-| `confianza_baja` | "La confianza de la sugerencia quedó por debajo del umbral configurado." | La confianza no alcanzó el umbral. En esta versión el sistema no produce este motivo, porque el umbral no está definido. | Siga el procedimiento VAR habitual. |
-| `clase_fuera_mvp` | "La acción detectada queda fuera de las 6 clases del sistema." | La acción no corresponde a una de las 6 clases. En esta versión el sistema no produce este motivo. | Siga el procedimiento VAR habitual. |
-| `timeout` | "El análisis superó el límite de 60 s." | El sistema no respondió a tiempo. | Siga el procedimiento VAR habitual. Puede volver a cargar el clip. Si se repite, avise a quien instala el sistema. |
-| `sin_senal_favero` | "No llegó la señal de la luz Favero." | Las luces se marcan a mano y el sistema no genera este motivo. | Siga el procedimiento VAR habitual. |
-| `mensaje_invalido` | "El análisis recibió datos inválidos." | Un componente interno rechazó los datos del clip. | Vuelva a cargar el clip. Si persiste, avise a quien instala el sistema. |
-| Otro valor | "El sistema no pudo clasificar la acción." | Motivo no reconocido. | Siga el procedimiento VAR habitual y avise a quien instala el sistema. |
+| `pose_incompleta` | "No se pudo detectar a ambos tiradores en el clip." | No se detectó a los dos tiradores, o el clip tiene menos de 3 fotogramas. | Siga el procedimiento VAR habitual. Verifique que el clip muestre a ambos tiradores y vuelva a cargarlo. Puede elegir la clase final o anular. |
+| `confianza_baja` | "La confianza de la sugerencia quedó por debajo del umbral configurado." | La confianza no alcanzó el umbral. El sistema no produce este motivo porque el umbral no está definido. | Siga el procedimiento VAR habitual. |
+| `clase_fuera_mvp` | "La acción detectada queda fuera de las 6 clases del sistema." | El sistema no produce este motivo. | Siga el procedimiento VAR habitual. |
+| `timeout` | "El análisis superó el límite de 60 s." | No hubo respuesta a tiempo. | Siga el procedimiento VAR habitual. Puede volver a cargar el clip; si se repite, avise a quien instala. |
+| `sin_senal_favero` | "No llegó la señal de la luz Favero." | Las luces se marcan a mano: el sistema no genera este motivo. | Siga el procedimiento VAR habitual. |
+| `mensaje_invalido` | "El análisis recibió datos inválidos." | Un componente interno rechazó los datos del clip. | Vuelva a cargar el clip; si persiste, avise a quien instala. |
+| Otro valor | "El sistema no pudo clasificar la acción." | Motivo no reconocido. | Siga el procedimiento VAR habitual y avise a quien instala. |
 
 En todos los casos la pantalla agrega "Continúe con el procedimiento VAR habitual." y usted puede elegir la clase final o anular.
 
+### "No revisado"
+
+Es un estado de la rama `future/edge-favero` (tocado capturado sin revisión VAR). **No existe en `main`**: aquí toda revisión nace al pulsar ANALIZAR.
+
 ### Errores de la interfaz
 
-Los errores del sistema se muestran con el formato "Fog CÓDIGO: detalle". El detalle lo redacta el sistema.
+Los errores del sistema se muestran como "Fog CÓDIGO: detalle", redactado por el sistema.
 
 | Mensaje | Dónde | Causa y acción |
 |---|---|---|
-| "Error: no se pudo analizar el clip" | Revisión VAR | El sistema rechazó el clip o no hay conexión. Lea el detalle: 400, el archivo no abre como video o tiene menos de 3 fotogramas; 413, el archivo supera el tamaño máximo (200 MB por defecto); 422, falta la luz o el instante del tocado está fuera de la duración del clip; 404, el combate no existe; 503, no hay una versión de modelo activa. Corrija y pulse "Reintentar". |
-| "No se pudo verificar el combate activo" | Revisión VAR | No se pudo comprobar el combate recordado. Pulse "Reintentar". |
-| "No se pudo registrar el veredicto" | Revisión VAR | El registro falló. Un código 409 indica que la revisión ya tiene veredicto o aún no tiene clasificación registrada. Vuelva a elegir la decisión. |
-| "No se pudo cargar el catálogo" | Combate | No se leyeron eventos y árbitros. Pulse "Reintentar". |
-| "No se pudo cargar el historial" | Historial | Falló la lista. Pulse "Reintentar". |
-| "No se pudo cargar el detalle de la revisión" | Historial | Falló el detalle. Pulse "Reintentar". |
-| "No se pudo exportar la evidencia" | Historial | Falló la descarga. Pulse "Reintentar". |
-| "Sin conexión" | Encabezado | El servicio Fog no responde (sección 3). |
+| "Error: no se pudo analizar el clip" | Revisión VAR | El sistema rechazó el clip o no hay conexión. Lea el detalle: 400, el archivo no abre como video o tiene menos de 3 fotogramas; 413, supera el tamaño máximo (200 MB por defecto); 422, falta la luz o el instante está fuera de la duración del clip; 404, el combate no existe; 503, no hay una versión de modelo activa. Corrija y pulse "Reintentar". |
+| "No se pudo verificar el combate activo" | Revisión VAR | No se pudo comprobar el combate recordado. "Reintentar". |
+| "No se pudo registrar el veredicto" | Revisión VAR | Un 409 indica que la revisión ya tiene veredicto o aún no tiene clasificación registrada. Vuelva a elegir la decisión. |
+| "No se pudo cargar el catálogo" | Combate | No se leyeron eventos y árbitros. "Reintentar". |
+| "No se pudo cargar el historial" / "…el detalle de la revisión" / "No se pudo exportar la evidencia" | Historial | Falló la lista, el detalle o la descarga. "Reintentar". |
+| Pantalla "Iniciar sesión" de pronto | Cualquiera | La sesión caducó (8 h) o se cerró la pestaña. Vuelva a entrar. |
+| "Sin conexión" | Encabezado | Fog no responde (sección 2). |
 
 ## 6. Clases tácticas
 
@@ -262,52 +279,50 @@ El modelo distingue 3 acciones para cada tirador, lo que da 6 clases. En "Histor
 
 | Clase en la interfaz | Tirador | Definición |
 |---|---|---|
-| Ataque · A · ROJ | A | Ataque del tirador A. |
-| Ataque · B · VER | B | Ataque del tirador B. |
-| Contraataque · A · ROJ | A | Contraataque del tirador A, simultáneo al ataque del rival. |
-| Contraataque · B · VER | B | Contraataque del tirador B, simultáneo al ataque del rival. |
-| Riposte · A · ROJ | A | Respuesta del tirador A después de parar el ataque del rival. |
-| Riposte · B · VER | B | Respuesta del tirador B después de parar el ataque del rival. |
+| Ataque · ROJ | A | Ataque del tirador A. |
+| Ataque · VER | B | Ataque del tirador B. |
+| Contraataque · ROJ | A | Contraataque del tirador A, simultáneo al ataque del rival. |
+| Contraataque · VER | B | Contraataque del tirador B, simultáneo al ataque del rival. |
+| Riposte · ROJ | A | Respuesta del tirador A después de parar el ataque del rival. |
+| Riposte · VER | B | Respuesta del tirador B después de parar el ataque del rival. |
 
-Estas definiciones describen la anotación del conjunto de datos con el que se entrenó el modelo. El texto de las reglas FIE t.101 a t.105 no forma parte de esta documentación: consulte el reglamento vigente. La opción "Anular" cubre la acción simultánea: se anulan ambos golpes y se repone en guardia (FIE t.106).
+Estas definiciones describen la anotación del conjunto de datos con que se entrenó el modelo. El texto de las reglas FIE t.101 a t.105 no forma parte de esta documentación: consulte el reglamento vigente (FIE 2026). "Anular" cubre la acción simultánea: se anulan ambos golpes y se repone en guardia (t.106).
 
-## 7. Limitaciones visibles para el usuario
+## 7. Limitaciones que debe conocer
 
-- La sugerencia es orientativa. La decisión es siempre del árbitro.
-- Rendimiento del modelo: F1 macro de la serie de 10 corridas de 0.4856 ± 0.0322 (N = 10), frente a 0.167 de un clasificador al azar entre 6 clases. El umbral de aceptación es 0.65 y no se alcanza en esta versión. Cuente con sugerencias equivocadas.
-- No hay autenticación: cualquier persona con acceso a la dirección puede configurar combates, decidir y exportar la evidencia.
-- La luz Favero y su instante los marca usted. Una luz mal marcada cambia la sugerencia; el instante se guarda para la auditoría y no cambia la sugerencia.
-- La interfaz reproduce un solo clip por revisión, sin sincronía de dos cámaras.
+La lista completa, con sus cifras y fuentes, está en [`LIMITACIONES.md`](LIMITACIONES.md). Lo esencial para usar la interfaz:
+
+- La sugerencia es orientativa y **puede ser equivocada**: el F1 macro del modelo (0,4856 ± 0,0322, N = 10) no alcanza el umbral de aceptación (0,65). La decisión es del árbitro.
+- Las luces y su instante los marca usted.
+- Un clip a la vez, sin sincronía de dos cámaras.
 - Clases y reglas corresponden solo a sable.
-- La descarga del resumen y la reproducción de video solo están disponibles en la versión web.
+- La reproducción de video y la descarga del resumen están disponibles en la versión web.
+- Los clips no se conservan tras cerrar la sesión.
 
 ## Anexo A. Trazabilidad
 
 | Sección | CU | HU |
 |---|---|---|
+| 2 Acceso | RF-26 | N/A |
 | 4.1 Configurar el combate | CU-01 | F-039 |
-| 4.2 Cargar el clip y simular el tocado | CU-02, CU-03 | F-037, F-038 |
+| 4.2 Cargar el clip y marcar las luces | CU-02, CU-03 | F-037, F-038 |
 | 4.3 Solicitar la revisión | CU-05, CU-06 | F-030 |
 | 4.4 Revisar la sugerencia | CU-07 | F-030, F-027 |
-| 4.5 Registrar la decisión | CU-10, CU-11 | F-033, F-034 |
-| 4.6 Finalizar el combate | CU-01 | F-039 |
+| 4.5 Interpretación | CU-08, CU-09 | F-031, F-035, F-008 |
+| 4.6 Registrar la decisión | CU-10, CU-11 | F-033, F-034 |
 | 4.7 Historial | CU-12 | F-034 |
 | 4.8 Exportar la evidencia | CU-12 | F-034 |
+| 4.9 Cerrar la sesión de validación | CU-11 | F-034 (D-22, D-26) |
 | 5 Estados y mensajes | CU-06 | F-030 |
 | 6 Clases tácticas | CU-06 | F-005 |
 
 ## Anexo B. Funciones fuera de esta versión
 
-- CU-04 Capturar acción en tiempo real con buffer circular (F-001, F-014, F-015, F-017) y lectura del aparato Favero por RJ12 (F-002, F-004, F-016): fuera de alcance (solicitud de cambio del 20/11/2026; trabajo futuro).
-- CU-05, flujo alterno: rechazo de la solicitud de revisión por el árbitro; la interfaz no tiene botón de rechazo.
-- Ventana del clip (RF-01, D-19): Fog recorta el clip a 2,0 s antes y 0,5 s después del primer instante marcado.
-- Revisión del clip de ambas cámaras con ±3 s alrededor del toque (F-006): la interfaz reproduce un solo clip. El avance cuadro a cuadro (F-007) sí está, con una cámara.
-- CU-08 Superposición biomecánica de esqueleto, arma y trayectoria (F-031).
-- CU-09 Justificación de la clasificación, eventos clave y criterio FIE (F-035, F-008) y mensaje "Evidencia insuficiente".
+- CU-04 Capturar la acción en tiempo real (buffer circular, dos cámaras) y leer el aparato Favero por RJ12; solicitud VAR desde la pista, lista de tocados, decisión en pista y señal de prueba: fuera de `main` (solicitud de cambio del 20/11/2026; rama `future/edge-favero`).
+- CU-05, flujo alterno: rechazo de la solicitud por el árbitro; no hay botón de rechazo.
+- Revisión del clip de ambas cámaras con ±3 s alrededor del toque (F-006): la interfaz reproduce un solo clip (con avance cuadro a cuadro, F-007).
+- La línea del arma (RF-18): no se dibuja (D-18).
 - CU-12, filtros por combate, fecha y árbitro, y verificación del hash con marca de registro alterado: la pantalla muestra el hash pero no lo verifica.
 - CU-13 Gestión de versiones del modelo desde la interfaz: se hace con `scripts/registrar_modelo.py`.
-- CU-14 Reentrenamiento del modelo desde la interfaz.
-- CU-15 Calibración de cámaras (F-010).
-- CU-16 Alertas de baja calidad de video o desincronización (F-011).
-- Autenticación por rol (RF-26).
-- Reportes por sesión en PDF o CSV desde la interfaz (F-009): el CSV de la sesión se genera con `scripts/exportar_evidencia.py`.
+- CU-14 Reentrenamiento (T-018), CU-15 Calibración de cámaras (F-010), CU-16 Alertas de calidad de video (F-011): trabajo futuro o fuera de alcance.
+- Procesamiento de varias pistas (RF-29) y reportes por sesión en PDF o CSV desde la interfaz (F-009): WON'T. El CSV de la sesión se genera con `scripts/exportar_evidencia.py`.
