@@ -167,7 +167,7 @@ Se leen en `shared/config.py` (la fuente de verdad). Con `scripts/fog_nativo.sh`
 
 ## 7. Resultado de la corrida de verificación (DOC01, 20/11/2026)
 
-En un clon limpio de `main` (entorno nuevo con `requirements-fog.lock` y `scikit-learn==1.9.1`), con `TEST_DATABASE_URL` apuntando al PostgreSQL de Docker, en un MacBook Air Apple M4 (macOS 27.0.1, Python 3.14.5):
+En un clon limpio de la rama `docs/DOC01` (`main` más esta documentación; entorno nuevo con `requirements-fog.lock` y `scikit-learn==1.9.1`), con `TEST_DATABASE_URL` apuntando al PostgreSQL de Docker, en un MacBook Air Apple M4 (macOS 27.0.1, Python 3.14.5):
 
 ```text
 618 passed, 2 skipped, 3 deselected, 1 warning in 131.82s (0:02:11)
